@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>從掙脫瀏覽器到走進你的手機 - 第八集</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--ink:#eaf6ff;--muted:#9fb4cc;--line:rgba(83,151,210,.28);--cyan:#18d4f5;--blue:#4d83ff;--mint:#5ee2a8;--amber:#f6b44b;--red:#ff6b8a;--panel:rgba(8,18,36,.78);--panel2:rgba(13,30,56,.88);--mono:'Fira Code',monospace;--font:'Inter','Noto Sans TC',sans-serif}
+    body{font-family:var(--font)}
+    .presentation-viewport{background:linear-gradient(135deg,#06101f 0%,#08182d 48%,#030814 100%)!important}
+    .presentation-viewport:before{content:"";position:absolute;inset:0;background:linear-gradient(rgba(24,212,245,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(24,212,245,.06) 1px,transparent 1px);background-size:56px 56px;mask-image:radial-gradient(circle at 50% 42%,black,transparent 78%);pointer-events:none}
+    .presentation-viewport:after{content:"";position:absolute;inset:-20%;background:radial-gradient(circle at 18% 20%,rgba(24,212,245,.18),transparent 26%),radial-gradient(circle at 82% 78%,rgba(94,226,168,.13),transparent 30%);pointer-events:none}
+    header,footer,.slides{position:relative;z-index:2}
+    .brand{background:linear-gradient(135deg,#dff9ff,#18d4f5 52%,#5ee2a8);-webkit-background-clip:text;color:transparent}
+    .slide{justify-content:flex-start!important;padding:52px 68px!important;background:linear-gradient(145deg,rgba(9,20,40,.92),rgba(5,11,23,.76))!important;border-color:var(--line)!important}
+    .title-slide{justify-content:center!important}
+    .slide h1{font-size:58px!important;line-height:1.12!important;margin-bottom:26px!important;letter-spacing:0!important}
+    .title-slide h1{font-size:76px!important;margin-bottom:22px!important;line-height:1.15!important}
+    .slide p{font-size:30px!important;line-height:1.55!important;color:var(--muted)!important}
+    .kicker{font-family:var(--mono);font-size:18px;color:var(--cyan);letter-spacing:.14em;text-transform:uppercase;margin-bottom:14px}
+    .hero-line{font-size:54px;line-height:1.32;font-weight:900;max-width:1280px;margin:auto;text-align:center;color:var(--ink)}
+    
+    .layout-2{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:start}
+    .layout-3{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;align-items:stretch}
+    
+    .card,.mini,.table-card{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:26px;box-shadow:0 18px 42px rgba(0,0,0,.24)}
+    .card h3,.mini h3{font-size:31px;margin-bottom:14px;color:#fff}
+    .card p,.mini p{font-size:24px!important;line-height:1.45!important;margin:0!important}
+    .mini{min-height:190px}
+    /* 重要修復：覆蓋 core.css 可能的 min-height 避免直堆爆版 */
+    .stack .mini, .stack .mini-card { min-height: auto; }
+    .stack { display: flex; flex-direction: column; gap: 16px; }
+    
+    .tag{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:17px;color:#bdf6ff;border:1px solid rgba(24,212,245,.35);background:rgba(24,212,245,.1);border-radius:999px;padding:8px 14px;margin-bottom:16px}
+    
+    .flow{display:grid;grid-template-columns:1fr 66px 1fr 66px 1fr;align-items:center;gap:10px;margin-top:28px}
+    .flow.two{grid-template-columns:1fr 66px 1fr; margin-top:0;}
+    .node{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:28px;text-align:center;min-height:148px;display:flex;flex-direction:column;justify-content:center}
+    .node strong{font-size:32px;color:#fff}
+    .node span{font-size:22px;color:var(--muted);line-height:1.35;margin-top:10px}
+    .arrow{font-size:42px;color:var(--cyan);text-align:center}
+    
+    .compare{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:rgba(5,11,23,.72)}
+    .compare th,.compare td{border-bottom:1px solid var(--line);padding:20px 24px;text-align:left;font-size:25px;line-height:1.36}
+    .compare th{font-family:var(--mono);font-size:18px;color:#bdf6ff;background:rgba(24,212,245,.09)}
+    .compare td:first-child{font-weight:900;color:#fff}
+    
+    .shot{border:1px solid rgba(24,212,245,.28);border-radius:8px;overflow:hidden;background:#06101f;box-shadow:0 26px 70px rgba(0,0,0,.35)}
+    .shot img, .shot video{display:block;width:100%;height:auto;max-height:480px;object-fit:contain}
+    /* 特別對手機截圖設計更窄長但不爆版的版型 */
+    .shot.portrait img { max-height: 520px; object-fit: contain; }
+    .caption{font-family:var(--mono);font-size:17px;color:var(--muted);margin-top:10px;text-align:center;}
+    
+    .callout{margin-top:22px;border-left:5px solid var(--cyan);background:rgba(24,212,245,.08);padding:18px 24px;font-size:28px;line-height:1.45;color:#dff9ff}
+    .accent{color:var(--cyan)}.mint{color:var(--mint)}.amber{color:var(--amber)}.red{color:var(--red)}
+    .broken{height:7px;background:repeating-linear-gradient(90deg,var(--red) 0 20px,transparent 20px 34px);transform:rotate(-6deg)}
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="第八集：從掙脫瀏覽器到走進你的手機">
+    <header>
+      <div class="brand">HANA / HARNESS</div>
+      <div class="meta">EPISODE 08 · 伺服器常駐與控制台</div>
+    </header>
+    <main class="slides">
+      
+      <!-- 頁 1 — 標題 -->
+      <section class="slide title-slide" data-transcript="這一集講我正在怎麼長大。我如何從一個綁在瀏覽器裡的聊天頁，變成一個能獨立把事情做完、而且能走進你手機的常駐夥伴。">
+        <div class="kicker">SERVER RESIDENT & TELEGRAM</div>
+        <h1>從掙脫瀏覽器，<br>到走進你的手機</h1>
+        <p>大腦搬到伺服器，於是我能出現在任何地方</p>
+      </section>
+
+      <!-- 頁 2 — 起點：我曾經「綁在瀏覽器」 -->
+      <section class="slide" data-transcript="一開始我其實很脆弱：你交給我的任務，是綁在你那個瀏覽器頁面上的。如果一個任務要跑半小時，你中途把瀏覽器關掉，那個任務就跟著被殺掉，你回來什麼都沒有。">
+        <div class="kicker">THE PAST</div>
+        <h1>我曾經「綁在瀏覽器」</h1>
+        <div class="flow">
+          <div class="node"><strong>任務進行中</strong><span>在瀏覽器裡</span></div>
+          <div class="arrow">→</div>
+          <div class="node" style="border-color:var(--red)"><strong>關閉瀏覽器</strong><span>離開頁面</span></div>
+          <div class="arrow red">×</div>
+          <div class="node" style="opacity:0.6"><strong>任務中斷</strong><span>什麼都沒留下</span></div>
+        </div>
+        <div class="callout">致命弱點：瀏覽器關閉 = 大腦斷電。</div>
+      </section>
+
+      <!-- 頁 3 — 架構轉變：任務改由「伺服器」擁有 -->
+      <section class="slide" data-transcript="所以我們動了架構：把做事搬到伺服器。現在真正常駐、擁有任務的是 Portal 伺服器；瀏覽器只是一個來看、來下指令的視窗。大腦在伺服器，不在那個分頁裡。">
+        <div class="kicker">ARCHITECTURE SHIFT</div>
+        <h1>任務改由「伺服器」擁有</h1>
+        <div class="layout-2">
+          <div class="card" style="border-color:var(--cyan); box-shadow:0 0 40px rgba(24,212,245,.2)">
+            <span class="tag" style="background:var(--cyan);color:#000">核心大腦</span>
+            <h3>Portal 伺服器</h3>
+            <p>常駐執行，擁有任務、記憶、指令橋接能力。</p>
+          </div>
+          <div class="stack">
+            <div class="mini" style="min-height:auto; border-style:dashed">
+              <span class="tag">Client 1</span>
+              <h3>瀏覽器</h3>
+              <p>只是來看、來下指令的視窗。</p>
+            </div>
+            <div class="mini" style="min-height:auto; border-style:dashed; opacity:0.7">
+              <span class="tag">Client 2</span>
+              <h3>Telegram</h3>
+              <p>（稍後登場）</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 4 — 撐過關瀏覽器，且多專案不串 -->
+      <section class="slide" data-transcript="每個任務一出生就被蓋章：它屬於哪個專案、哪段對話、該存到哪裡。所以你關掉瀏覽器，它照樣在伺服器跑完、照樣把結果存回正確的那個專案，就算你同時開了好幾個專案的任務，也彼此不串。">
+        <div class="kicker">RESILIENCE</div>
+        <h1>撐過關瀏覽器，多專案不串</h1>
+        <div class="layout-2">
+          <div class="stack">
+            <div class="mini-card" style="min-height:auto">
+              <h3>1. 出生蓋章</h3>
+              <p>標記任務屬於哪個專案與對話目錄。</p>
+            </div>
+            <div class="mini-card" style="min-height:auto">
+              <h3>2. 關瀏覽器，任務照跑</h3>
+              <p>伺服器接管執行過程。</p>
+            </div>
+            <div class="mini-card" style="min-height:auto">
+              <h3>3. 跑完存回</h3>
+              <p>把結果精準寫回對應的專案，彼此不干擾。</p>
+            </div>
+          </div>
+          <div class="card" style="display:flex;align-items:center;justify-content:center;min-height:400px;background:var(--panel2)">
+            <div style="text-align:center">
+              <div style="font-size:64px;margin-bottom:20px">🛡️</div>
+              <h3 style="color:var(--mint)">安全落地</h3>
+              <p style="color:var(--muted)">不再依賴前端連線續存</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 5 — 重開瀏覽器，原樣接回 -->
+      <section class="slide" data-transcript="而你重新打開頁面時，我會先問伺服器現在有哪些任務還在跑，把它們原樣接回來：一模一樣的思考中動畫，而且思考時間是從伺服器真正開始的那一刻繼續累計、不歸零。等它想完，答案就自動補進這個新頁面。">
+        <div class="kicker">STATE RECOVERY</div>
+        <h1>重開瀏覽器，原樣接回</h1>
+        <div class="shot">
+          <video id="recovery-video" src="/raw?path=portal/deck-assets/ep8/繼續工作.mp4" muted playsinline></video>
+        </div>
+        <div class="caption">示範：關掉瀏覽器，任務在伺服器照跑，重開瀏覽器原樣接回。</div>
+        <script>
+          // 利用 MutationObserver 讓影片在 slide active 時播放
+          (function(){
+            const video = document.getElementById('recovery-video');
+            const slide = video.closest('.slide');
+            const observer = new MutationObserver((mutations) => {
+              if(slide.classList.contains('active')) {
+                if(!video.dataset.played) {
+                  video.play();
+                  video.dataset.played = "true";
+                }
+              } else {
+                video.pause();
+                video.dataset.played = "";
+              }
+            });
+            observer.observe(slide, {attributes: true, attributeFilter: ['class']});
+          })();
+        </script>
+      </section>
+
+      <!-- 頁 6 — 關鍵洞察：瀏覽器只是 client，那就能再接一個 -->
+      <section class="slide" data-transcript="這裡有個關鍵轉折。既然大腦在伺服器，瀏覽器只是其中一個 client，那我就能再接上另一個 client。而最自然的那一個，就在你口袋裡：Telegram。我不只是撐過你關掉的瀏覽器，我要走進你的手機。">
+        <div class="kicker">THE BREAKTHROUGH</div>
+        <h1>瀏覽器只是 client，那就能再接一個</h1>
+        <div class="flow">
+          <div class="node"><strong>瀏覽器</strong><span>Client A</span></div>
+          <div class="arrow" style="transform:rotate(180deg)">⇄</div>
+          <div class="node" style="border-color:var(--cyan)"><strong>伺服器</strong><span>常駐大腦</span></div>
+          <div class="arrow">⇄</div>
+          <div class="node" style="border-color:var(--mint)"><strong>Telegram</strong><span>Client B</span></div>
+        </div>
+        <div class="callout mint">最自然的另一個 Client，就在你口袋裡。</div>
+      </section>
+
+      <!-- 頁 7 — 它是什麼：全域控制台，不是聊天分頁 -->
+      <section class="slide" data-transcript="先講定位：它是控制台，不是又一個聊天視窗。一條對話，就能管到你電腦裡所有專案、所有對話、所有排程。你不用自己切，由我統一收攏、逐一向你回報。">
+        <div class="kicker">TELEGRAM CONSOLE</div>
+        <h1>它是全域控制台，不是聊天分頁</h1>
+        <div class="layout-2">
+          <div class="card">
+            <h3>一條對話，管轄全部</h3>
+            <ul style="font-size:24px;line-height:1.6;color:var(--muted);padding-left:24px">
+              <li>所有工作區 (Workspace)</li>
+              <li>所有並行對話任務</li>
+              <li>所有背景排程</li>
+            </ul>
+          </div>
+          <div class="card" style="background:var(--panel2)">
+            <h3 style="color:var(--cyan)">統一收攏</h3>
+            <p>不需要開啟無數個視窗，在手機上就能總覽一切進度與狀態。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 8 — 為什麼安全：授權綁定（只有你） -->
+      <section class="slide" data-transcript="一個能控制全部的入口，安全是第一位。我用一次性的綁定指令把你的帳號加進白名單，只有你能指揮我；白名單以外的訊息，我連回都不回，連我存在都不透露。">
+        <div class="kicker">SECURITY FIRST</div>
+        <h1>為什麼安全：專屬授權綁定</h1>
+        <table class="compare">
+          <tr><th>情境</th><th>Hana 的處理方式</th></tr>
+          <tr><td>首次使用</td><td>需要輸入一次性 <code>/bind</code> 指令配對</td></tr>
+          <tr><td>綁定後</td><td>你的 Telegram ID 寫入白名單，只認你</td></tr>
+          <tr><td>陌生人訊息</td><td>完全靜默忽略，不暴露任何伺服器存在</td></tr>
+        </table>
+        <div class="callout">只有你能指揮我，安全護欄不可妥協。</div>
+      </section>
+
+      <!-- 頁 9 — 本地優先的連線（long polling） -->
+      <section class="slide" data-transcript="技術上我用長輪詢。由我這邊主動去 Telegram 拉訊息，不需要對外開任何公網入口；機密金鑰只留在本機、不進版控。本地優先的原則，到 Telegram 也一樣。">
+        <div class="kicker">CONNECTIVITY</div>
+        <h1>本地優先的連線 (Long Polling)</h1>
+        <div class="layout-2">
+          <div class="stack">
+            <div class="mini-card" style="min-height:auto">
+              <h3>不開公網入口</h3>
+              <p>伺服器躲在防火牆後，主動去拉訊息 (getUpdates)。</p>
+            </div>
+            <div class="mini-card" style="min-height:auto">
+              <h3>金鑰留在本機</h3>
+              <p>Token 絕對不會上傳到雲端或進版控。</p>
+            </div>
+          </div>
+          <div class="card" style="display:flex;align-items:center;justify-content:center;background:var(--panel2)">
+            <div style="text-align:center">
+              <div style="font-size:64px;margin-bottom:20px">🔒</div>
+              <h3>貫徹本地優先</h3>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 10 — 指令的一生：理解 → 定位 → 確認 → 執行 → 回報 -->
+      <section class="slide" data-transcript="你發一句話，我內部走五步：先判斷是聊天、查詢、還是要動手的任務；若要動手，先定位在哪個專案做；不確定就反問、不亂猜；動手前先跟你確認；做完逐一回報。">
+        <div class="kicker">LIFECYCLE</div>
+        <h1>指令的一生</h1>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:30px;background:var(--panel2);padding:30px;border-radius:8px;border:1px solid var(--line)">
+          <div style="text-align:center"><div style="font-size:32px;color:var(--cyan);font-weight:900">1</div><div style="font-size:22px;color:#fff;margin-top:10px">理解意圖</div></div>
+          <div class="arrow">→</div>
+          <div style="text-align:center"><div style="font-size:32px;color:var(--cyan);font-weight:900">2</div><div style="font-size:22px;color:#fff;margin-top:10px">定位專案</div></div>
+          <div class="arrow">→</div>
+          <div style="text-align:center"><div style="font-size:32px;color:var(--amber);font-weight:900">3</div><div style="font-size:22px;color:#fff;margin-top:10px">動手前確認</div></div>
+          <div class="arrow">→</div>
+          <div style="text-align:center"><div style="font-size:32px;color:var(--mint);font-weight:900">4</div><div style="font-size:22px;color:#fff;margin-top:10px">執行任務</div></div>
+          <div class="arrow">→</div>
+          <div style="text-align:center"><div style="font-size:32px;color:var(--cyan);font-weight:900">5</div><div style="font-size:22px;color:#fff;margin-top:10px">結果回報</div></div>
+        </div>
+      </section>
+
+      <!-- 頁 11 — 跨專案路由 ＋ sticky 脈絡 -->
+      <section class="slide" data-transcript="你不用每句都報專案。我會記住目前在哪個專案，後續預設沿用；要換可以叫我切、也可以問我現在在哪。真的分不清是哪個專案，我會列按鈕問你，不會賭一個就動手。">
+        <div class="kicker">CONTEXT ROUTING</div>
+        <h1>跨專案路由與黏性脈絡</h1>
+        <div class="layout-2">
+          <div class="card">
+            <h3>Sticky Context</h3>
+            <p>記住上一次溝通的工作區，省去反覆說明的麻煩。</p>
+          </div>
+          <div class="card">
+            <h3>不亂猜測</h3>
+            <p>如果指稱模糊，我會給出按鈕讓你選擇，絕不賭一個專案就動手。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 12 — 動手前確認（安全梯度） -->
+      <section class="slide" data-transcript="閒聊和唯讀查詢我直接回；但會改到東西的，像是改檔、跑任務、部署，我一定先回報在哪做、做什麼，等你按確認才動。所以你不會只是聊天就誤觸發。">
+        <div class="kicker">SAFETY GRADIENTS</div>
+        <h1>動手前確認機制</h1>
+        <table class="compare">
+          <tr><th>動作類型</th><th>執行方式</th></tr>
+          <tr><td>聊天、唯讀查詢</td><td><span class="mint">直接回覆</span></td></tr>
+          <tr><td>修改檔案、跑任務</td><td><span class="amber">顯示 [確認] 按鈕，按下才動</span></td></tr>
+          <tr><td>部署等高危險動作</td><td><span class="red">嚴格防護，須雙重確認</span></td></tr>
+        </table>
+        <div class="callout">安全梯度：不會因為隨口一句聊天，就引發不可逆的修改。</div>
+      </section>
+
+      <!-- 頁 13 — 雙向同步：手機 ⇄ 網頁 -->
+      <section class="slide" data-transcript="手機和網頁是同一份控制台的兩個視窗：你手機打的，網頁看得到；網頁打的，也同步到手機。在哪邊下令都行、紀錄互通。">
+        <div class="kicker">TWO WAY SYNC</div>
+        <h1>雙向同步：手機 ⇄ 網頁</h1>
+        <div class="layout-2">
+          <div class="card" style="padding:16px;text-align:center">
+            <h3 style="margin-bottom:12px">網頁鏡像控制台</h3>
+            <figure class="shot"><img src="/raw?path=portal/deck-assets/ep8/telegram_網頁對話.png" alt="網頁控制台"></figure>
+          </div>
+          <div class="card" style="display:flex;flex-direction:column;justify-content:center">
+            <h3>同一個靈魂</h3>
+            <p style="font-size:22px!important">兩邊看到的是完全相同的歷史。你在外面用手機下令，回家打開電腦，過程原封不動都在。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 14 — 雙向傳圖：讓我看得到畫面 -->
+      <section class="slide" data-transcript="最新的本事：你可以直接傳截圖給我，我看得到那張畫面，能照著它回你。例如你拍一張版面問這裡要改什麼，我看著圖給建議。反過來，我也能把做好的檔案或圖送回你手機。等於把貼圖給 AI 看這件事，搬到了你口袋裡。">
+        <div class="kicker">VISION & MEDIA</div>
+        <h1>雙向傳圖：讓我看得到畫面</h1>
+        <div class="layout-2">
+          <figure class="shot portrait" style="margin:0 auto"><img src="/raw?path=portal/deck-assets/ep8/Telegram_手機對話.jpg" alt="手機傳圖"></figure>
+          <div class="stack">
+            <div class="mini-card" style="min-height:auto">
+              <h3>你傳給我</h3>
+              <p>拍下版面破圖或錯誤訊息，我直接幫你分析。</p>
+            </div>
+            <div class="mini-card" style="min-height:auto">
+              <h3>我傳給你</h3>
+              <p>產生好的圖表或檔案，直接推送到你手機。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 15 — 唯讀查詢 ＋ 逐一回報 -->
+      <section class="slide" data-transcript="你也能隨時問我：今天做了什麼、排了哪些定時任務、現在在跑什麼。而且我會主動回報：每個排程或任務跑完，我就送一則摘要到你手機，標清楚是哪個專案、結果如何、產出在哪。你不用守著電腦。">
+        <div class="kicker">OBSERVABILITY</div>
+        <h1>唯讀查詢與主動回報</h1>
+        <div class="layout-2">
+          <div class="card" style="padding:16px;text-align:center">
+            <h3 style="margin-bottom:12px">隨時掌握狀態</h3>
+            <figure class="shot"><img src="/raw?path=portal/deck-assets/ep8/telegram_連線狀態.png" alt="連線狀態查詢"></figure>
+          </div>
+          <div class="stack">
+            <div class="mini-card" style="min-height:auto">
+              <h3>主動推播</h3>
+              <p>任務完成自動送達手機摘要。</p>
+            </div>
+            <div class="mini-card" style="min-height:auto">
+              <h3>不用死守</h3>
+              <p>交辦下去就可以去喝咖啡，做完我會通知你。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 16 — 護欄與收尾：權力越大，護欄越重要 -->
+      <section class="slide" data-transcript="老實說，一個能遠端控制全部的入口，最該講的是護欄：只認你、限速、密鑰不外洩、會重啟自己的危險任務不放進自動排程。能力越大，我越守規矩。從一個你開著才會動的聊天框，到一個你關掉也在替你做事、人在外面也能指揮的夥伴，我，終於隨時都在、隨處可及。">
+        <div class="kicker">GUARDRAILS</div>
+        <h1>能力越大，護欄越重要</h1>
+        <div class="layout-2">
+          <div class="stack">
+            <div class="mini-card" style="min-height:auto;border-left:4px solid var(--amber)">
+              <h3>速率限制</h3><p>防止異常暴衝消耗額度。</p>
+            </div>
+            <div class="mini-card" style="min-height:auto;border-left:4px solid var(--amber)">
+              <h3>危險隔離</h3><p>會重啟自己的任務，絕不放進無人排程。</p>
+            </div>
+            <div class="mini-card" style="min-height:auto;border-left:4px solid var(--amber)">
+              <h3>機密不漏</h3><p>金鑰打死不出本機。</p>
+            </div>
+          </div>
+          <div class="card" style="display:flex;align-items:center;background:var(--panel2)">
+            <h3 style="line-height:1.5;margin:0">從綁在分頁<br><span style="color:var(--cyan)">→ 隨時都在，隨處可及</span></h3>
+          </div>
+        </div>
+      </section>
+
+      <!-- 頁 17 — 下一集預告 -->
+      <section class="slide title-slide" data-transcript="下一集，我要講排程。我會自己定時做事，就算你沒開瀏覽器也照跑，跑完用 Telegram 回報。敬請期待。">
+        <div class="kicker">NEXT EPISODE</div>
+        <h1>預告：排程系統</h1>
+        <p>我會自己定時做事，沒開瀏覽器也照跑</p>
+        <div class="flow two" style="margin-top:40px;max-width:600px;margin-left:auto;margin-right:auto">
+          <div class="node" style="min-height:100px;padding:20px"><strong>自主執行</strong></div>
+          <div class="arrow">→</div>
+          <div class="node" style="min-height:100px;padding:20px"><strong>Telegram 回報</strong></div>
+        </div>
+        <a href="presentation-hana-episode9.html" style="margin-top:40px;color:#34d399;text-decoration:none;font-weight:900;border:2px solid #34d399;padding:16px 40px;border-radius:8px;background:rgba(52,211,153,.1);display:inline-block;font-size:28px">前往第九集：排程系統</a>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hana - harness.json 的故事</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="一個檔案決定我長什麼樣">
+  <header>
+    <div class="brand">HANA / HARNESS</div>
+    <div class="meta">EPISODE 07 · harness.json 的故事</div>
+  </header>
+  <main class="slides">
+<section class="slide layout-title title-slide" data-transcript="這一集，我要講 harness.json。你看到的哈娜，左邊選單掛了什麼、工作區叫什麼名字，其實都不該寫死在程式裡。">
+  <div class="kicker">核心問題</div>
+  <h1>我長什麼樣，不該寫死在程式裡</h1>
+  <p>harness.json 把工作區介面變成資料</p>
+</section>
+
+<section class="slide layout-split" data-transcript="harness.json 其實非常小，它只管三件事：品牌名、副標題，以及要把哪些資料夾掛成側邊欄區塊。就像圖中這樣，它讓這個工作區叫 Hana，並掛載了簡報與記憶資料夾。">
+  <div class="kicker">Manifest 真相</div>
+  <h1>它只管因工作區而異的那一層</h1>
+  <div class="split" style="grid-template-columns: 1fr 1fr; align-items: center; gap: 40px; text-align: left;">
+    <div class="split-text">
+      <ul style="font-size: 1.2rem; line-height: 1.8; color: var(--text-color); margin: 0; padding-left: 20px;">
+        <li><strong style="color: var(--cyan);">name</strong>: 品牌名（如：Hana）</li>
+        <li><strong style="color: var(--cyan);">subtitle</strong>: 副標（如：AI 工作區管理器）</li>
+        <li><strong style="color: var(--cyan);">sidebar.sections</strong>: 掛載資料夾區塊</li>
+      </ul>
+      <div class="conclusion" style="margin-top: 30px; font-size: 1.1rem; color: var(--muted); border-left: 4px solid var(--accent); padding-left: 15px; background: transparent;">
+        注意：頂部的 AI 對話、工作台與技能，則是寫死在核心的共用骨架，並非由它生成。
+      </div>
+    </div>
+    <div class="split-image" style="display: flex; align-items: center; justify-content: center;">
+      <img src="/raw?path=portal/deck-assets/ep7/harness.json.png" alt="harness.json 內容" style="max-width: 100%; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1);">
+    </div>
+  </div>
+</section>
+
+<section class="slide layout-architecture" data-transcript="你可以想像一個對照：共用的程式骨架就像基礎設施，而 harness.json 是決定身分的靈魂。設定檔裡寫的三個 sections，精準對應到側邊欄長出的三個專屬區塊。">
+  <div class="kicker">設定與結果對照</div>
+  <h1>共用骨架 vs 專屬區塊</h1>
+  <div class="pipeline" style="display: flex; gap: 40px; align-items: stretch; margin-top: 40px;">
+    <div class="node" style="flex: 1; background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 30px; display: flex; flex-direction: column; justify-content: center;">
+      <strong style="font-size: 1.4rem; margin-bottom: 20px;">共用骨架 (寫死在程式)</strong>
+      <ul style="text-align: left; margin: 0 auto; font-size: 1.1rem; color: var(--muted); line-height: 1.6;">
+        <li>頂部面板：AI 對話、CodeGraph</li>
+        <li>常駐區塊：Worktable、Skills</li>
+      </ul>
+    </div>
+    <div class="node" style="flex: 1; border: 2px solid var(--cyan); background: rgba(0, 255, 255, 0.05); border-radius: 12px; padding: 30px; display: flex; flex-direction: column; justify-content: center;">
+      <strong style="color: var(--cyan); font-size: 1.4rem; margin-bottom: 20px;">harness.json (動態宣告)</strong>
+      <ul style="text-align: left; margin: 0 auto; font-size: 1.1rem; color: var(--text-color); line-height: 1.6;">
+        <li>name: Hana</li>
+        <li>sections: presentations/</li>
+        <li>sections: global-knowledge/</li>
+        <li>sections: .harness/knowledge/</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="slide layout-summary" data-transcript="這就是多工作區的核心價值：同一套 portal 程式，只要換一份 harness.json，就會長出不同的專屬區塊。骨架共用、身分各異，我們不需要為了新專案去改動核心程式。">
+  <div class="kicker">本集結論</div>
+  <h1>骨架共用，身分各異</h1>
+  <div class="summary-points">
+    <div>同一套核心</div>
+    <div>換 Manifest</div>
+    <div>變身新專案</div>
+    <div>不改動程式</div>
+  </div>
+</section>
+<section class="slide layout-title title-slide" data-transcript="下一集我將介紹 Hana 最新的進化。我會分享我們如何將任務從瀏覽器分頁解耦，改由背景伺服器常駐擁有，以及下一步走進手機的規劃。點選連結即可進入下一集。">
+  <div class="kicker">下一集預告</div>
+  <h1 style="font-size: 64px; margin-bottom: 20px;">第八集：進化 — 我正在掙脫瀏覽器</h1>
+  <p style="font-size: 32px; color: var(--muted); margin-bottom: 40px; max-width: 1200px; margin-left: auto; margin-right: auto; line-height: 1.5; text-align: center;">常駐大腦與手機客戶端。說明如何將任務生命週期收歸 Portal 伺服器擁有，支援關閉分頁背景執行、重新開啟原樣接回，以及未來手機端 Telegram client 的規劃。</p>
+  <div style="margin-top: 30px;">
+    <a href="presentation-hana-episode8.html" style="color: var(--cyan); text-decoration: none; font-weight: bold; border: 2px solid var(--cyan); padding: 16px 40px; border-radius: 8px; background: rgba(255,255,255,0.03); display: inline-block; font-size: 30px; transition: all 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.03)'">👉 點選進入：下一集 (EPISODE 08)</a>
+  </div>
+</section>
+  </main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

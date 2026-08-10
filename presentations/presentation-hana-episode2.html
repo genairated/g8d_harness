@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana EP2: CLI 互動架構</title>
+  <style>
+    :root{--cli-bg:#0d1117;--cli-card:#161b22;--cli-border:#30363d;--cli-text:#c9d1d9;--cli-accent:#58a6ff;--cli-hot:#ff7b72;--cli-soft:#8b949e}
+    .presentation-viewport{background:linear-gradient(135deg,#0d1117,#07111f 70%,#020617)!important;color:var(--cli-text)}
+    .slide{justify-content:flex-start!important;background:linear-gradient(145deg,rgba(22,27,34,.94),rgba(7,17,31,.8))!important;border-color:var(--cli-border)!important;padding:54px 76px!important}
+    .title-slide{justify-content:center!important;text-align:center}
+    .title-slide h1{font-family:var(--mono);font-size:86px!important;color:var(--cli-accent)!important;background:none!important;text-shadow:0 0 20px rgba(88,166,255,.34)}
+    .subtitle{font-size:34px;color:var(--cli-soft)}
+    .slide h2{font-family:var(--mono);font-size:46px;line-height:1.18;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--cli-border)}
+    .slide h2:before{content:"> ";color:var(--cli-accent)}
+    .content-area{display:flex;flex-direction:column;gap:20px}
+    .split .split-col{border:0;background:transparent;padding:0;font-size:26px;line-height:1.65}
+    .split-col .mini-card{min-height:0;padding:20px 24px;margin-bottom:14px}
+    .image-box{display:flex;align-items:flex-start;justify-content:center}
+    .image-box img{max-width:100%;max-height:400px;object-fit:contain;border:1px solid var(--cli-border);border-radius:8px;background:#010409;box-shadow:0 18px 45px rgba(0,0,0,.42)}
+    pre{font-family:var(--mono);font-size:24px;line-height:1.45;color:#a5d6ff;background:#0d1117;border:1px solid var(--cli-border);border-radius:8px;padding:24px;white-space:pre-wrap}
+    .cmd{color:var(--cli-accent);font-weight:800}.param{color:var(--cli-hot)}
+    .label{display:inline-block;margin-right:10px;padding:5px 12px;border:1px solid var(--cli-border);border-radius:8px;background:#21262d;color:var(--cli-soft);font-family:var(--mono);font-size:18px}
+    ul{list-style:none;padding-left:0}li{margin-bottom:14px;font-size:26px;line-height:1.5}li:before{content:"- ";color:var(--cli-accent)}
+    .slide p{font-size:28px!important}.slide table{margin-top:6px}
+    .next-link{display:inline-block;padding:16px 32px;border:2px solid var(--cli-accent);border-radius:8px;color:#fff;text-decoration:none;font-weight:900;background:rgba(88,166,255,.12);font-size:24px}
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="第二集：CLI 互動架構">
+    <header style="display:flex; justify-content:space-between; width:100%; padding:20px; position:absolute; top:0; left:0; z-index:100; font-family:'Fira Code', monospace; color:#8b949e;">
+      <div class="brand">HANA // HARNESS</div>
+      <div class="meta">EPISODE 02</div>
+    </header>
+    
+    <main class="slides">
+      <!-- Title Slide -->
+      <section class="slide title-slide" data-transcript="歡迎來到第二集。今天我們要揭開 Hana 的第一層架構：我到底是如何在不依賴任何 API Key 的情況下，驅動你電腦裡的頂級 AI？答案就在 CLI，也就是命令列工具。">
+        <h1>CLI 互動架構</h1>
+        <div class="subtitle">免 API Key 橋接頂級大腦</div>
+      </section>
+
+      <!-- API vs CLI Table -->
+      <section class="slide" data-transcript="傳統的 AI 代理多半依賴 API，這意味著你需要去申請金鑰，並且按使用量付費。但我的架構不同。我透過驅動各家 AI 的「官方命令列工具」來工作，這代表只要你安裝好、登入過，我就能直接利用你的帳號額度，不需另外準備金鑰。">
+        <h2>為什麼用 CLI 而不用 API？</h2>
+        <div class="content-area">
+          <table>
+            <tr>
+              <th>比較維度</th>
+              <th>傳統 API 橋接模式</th>
+              <th>Hana 的 CLI 橋接模式</th>
+            </tr>
+            <tr>
+              <td><strong>認證方式</strong></td>
+              <td>需要開發者平台申請 API Key</td>
+              <td>直接沿用官方 CLI 登入憑證</td>
+            </tr>
+            <tr>
+              <td><strong>成本計費</strong></td>
+              <td>按 Token 數獨立付費（高昂）</td>
+              <td>利用已訂閱的帳號額度（成本固定）</td>
+            </tr>
+            <tr>
+              <td><strong>執行環境</strong></td>
+              <td>外部雲端呼叫</td>
+              <td>本地端安全執行</td>
+            </tr>
+          </table>
+          <p style="margin-top:40px; font-size:1.5rem; color:#8b949e;">這讓我們能以極低成本，在本地端指揮頂尖模型。</p>
+        </div>
+      </section>
+
+      <!-- Three CLIs -->
+      <section class="slide" data-transcript="這是我支援的模型選單。你看得到，我背後其實橋接了三套截然不同的命令列工具。但這絕不是下個指令那麼簡單，每套 CLI 都有自己獨特的「脾氣」與踩坑點。">
+        <h2>三套 CLI 的大會師</h2>
+        <div class="content-area split">
+          <div class="split-col">
+            <div class="image-box">
+              <img src="/raw?path=portal/deck-assets/ep2/模型下拉.png" alt="模型下拉選單">
+            </div>
+          </div>
+          <div class="split-col" style="justify-content:center;">
+            <div class="mini-card"><h3>Claude</h3><span>Claude Code</span></div>
+            <div class="mini-card"><h3>Gemini</h3><span>Antigravity agy</span></div>
+            <div class="mini-card"><h3>OpenAI</h3><span>Codex</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Claude Code -->
+      <section class="slide" data-transcript="先說 Claude Code。它比較特別，提示詞不適合直接放在指令參數裡，否則容易遇到跳脫字元的問題。我們的做法是透過標準輸入 (stdin) 把完整的提示餵給它，並加上 print 參數，讓它輸出純粹的結果。">
+        <h2>呼叫方式：Claude Code</h2>
+        <div class="content-area">
+          <pre><span class="cmd">cat</span> prompt.txt | <span class="cmd">claude</span> <span class="param">--print</span></pre>
+          <div style="font-size:1.4rem; line-height:1.8; margin-top:30px;">
+            <p><strong>避開的坑：</strong></p>
+            <ul>
+              <li>提示詞若過長或包含特殊字元，直接當作指令參數容易導致崩潰。</li>
+              <li>改用標準輸入 (<code>stdin</code>) 餵給 Claude，保證內容完整。</li>
+              <li>使用 <code>--print</code> 參數，關閉互動模式，確保只拿到文字答案，避免卡在終端機介面。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Antigravity -->
+      <section class="slide" data-transcript="再來是 Antigravity，也就是 Gemini 的本機介面。它更像一個需要互動的終端機，所以我們用 node-pty 來建立一個虛擬終端機環境跑它。這裡有個大坑：它的 print 參數必須嚴格放在指令的最後面，否則就無法生效。">
+        <h2>呼叫方式：Antigravity (Gemini)</h2>
+        <div class="content-area">
+          <pre><span class="cmd">agy</span> "你的提示" <span class="param">--print</span></pre>
+          <div style="font-size:1.4rem; line-height:1.8; margin-top:30px;">
+            <p><strong>避開的坑：</strong></p>
+            <ul>
+              <li>這是一套強互動的終端工具，我們必須使用 <code>node-pty</code> 虛擬終端機來執行它，否則拿不到完整輸出。</li>
+              <li><strong>致命陷阱：</strong> <code>--print</code> 參數必須排在指令的「絕對最後面」，如果在提示詞前面，它會被當作對話的一部分而失效。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Codex -->
+      <section class="slide" data-transcript="最後是 Codex。它會輸出包含執行過程的一大堆資訊。我們加上了 output last message 參數，就像一個過濾器，只把它最終產出的乾淨答案撈出來，忽略中間的雜訊。">
+        <h2>呼叫方式：Codex</h2>
+        <div class="content-area">
+          <pre><span class="cmd">codex</span> exec "你的提示" <span class="param">--output-last-message</span></pre>
+          <div style="font-size:1.4rem; line-height:1.8; margin-top:30px;">
+            <p><strong>避開的坑：</strong></p>
+            <ul>
+              <li>Codex 預設會把思考、連線、甚至除錯訊息全印出來。</li>
+              <li>如果原樣丟給 Portal，畫面會亂成一團。</li>
+              <li>使用 <code>--output-last-message</code>，強制過濾雜訊，確保我只拿到模型最終產出的乾淨結果。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Portal Routing -->
+      <section class="slide" data-transcript="面對這三種不同的 CLI，如果每次都要手動切換，那太麻煩了。所以我們有一個統一的入口叫 Portal。當你發出任務，Portal 會根據你選擇的模型字串，動態路由到對應的 CLI 處理器，為你隱藏所有底層差異。">
+        <h2>Portal 路由與動態偵測</h2>
+        <div class="content-area split">
+          <div class="split-col">
+            <p><strong>動態路由字串：</strong> <code>provider::model</code></p>
+            <pre style="font-size:1.2rem;">
+// Portal Router 虛擬邏輯
+if (req == 'claude::sonnet') {
+   use_stdin_pipe();
+} else if (req == 'gemini::pro') {
+   use_node_pty();
+} else if (req == 'openai::codex') {
+   use_clean_output();
+}
+            </pre>
+          </div>
+          <div class="split-col">
+            <p>Portal 是統一的大腦入口：</p>
+            <ul>
+              <li>統一介接來自前端的請求。</li>
+              <li>根據 <code>provider::model</code> 字串，動態派發到對應的處理器。</li>
+              <li>自動偵測你電腦裡裝了哪些 CLI，動態產生選單。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Simple Conversation -->
+      <section class="slide" data-transcript="對你來說，看到的就只是這樣一個簡單乾淨的對話視窗。你不需要知道現在背後是哪一套 CLI 在跑，Portal 已經幫你處理好所有的切換與參數傳遞。">
+        <h2>對你而言：簡單乾淨的對話</h2>
+        <div class="content-area">
+          <div class="image-box" style="margin-top:20px;">
+            <img src="/raw?path=portal/deck-assets/ep2/簡單的對話.png" alt="簡單的對話">
+          </div>
+          <p style="text-align:center; font-size:1.5rem; color:#8b949e;">無論背後多複雜，呈現在你面前的，就是順暢的自然語言互動。</p>
+        </div>
+      </section>
+
+      <!-- Authorization -->
+      <section class="slide" data-transcript="作為一個 AI 夥伴，我不能只是「陪聊」。在安全邊界內，我能在你的授權下真正動手修改檔案、執行指令。當你核准特定的授權模式，我就能自動執行動作，成為你真正的開發助力。">
+        <h2>授權模式「甲」：讓 AI 真的能動手</h2>
+        <div class="content-area split">
+          <div class="split-col">
+            <div class="image-box" style="height: 100%;">
+              <img src="/raw?path=portal/deck-assets/ep2/AI%20對話_含內容.png" alt="AI 對話含內容">
+            </div>
+          </div>
+          <div class="split-col" style="justify-content:center;">
+            <p>我不只是個聊天機器人，我能<strong>真正採取行動</strong>：</p>
+            <ul>
+              <li><strong>授權模式「甲」</strong>：代表你信任我，核准我自動執行修改或跑腳本。</li>
+              <li><strong>安全邊界</strong>：只在當前工作區內生效，並且留有完整的不可變快照。</li>
+              <li>配合 CLI 橋接，我可以直接呼叫系統指令。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Execution Trace -->
+      <section class="slide" data-transcript="每次我動手修改檔案或跑任務，Portal 都會清楚記錄下完整的執行軌跡。你可以隨時看到對話脈絡加上我實際執行的動作。這確保了強大能力的背後，依然保持完全的透明度與可追溯性。">
+        <h2>穩定與透明：對話加執行軌跡</h2>
+        <div class="content-area">
+          <div class="image-box">
+            <img src="/raw?path=portal/deck-assets/ep2/對話加執行軌跡.png" alt="對話加執行軌跡">
+          </div>
+          <p style="text-align:center; font-size:1.5rem;">對話與終端機執行的紀錄無縫結合，每一步都可被稽核。</p>
+        </div>
+      </section>
+
+      <!-- Only Execution Trace -->
+      <section class="slide" data-transcript="如果你只想專注於我實際做了哪些事，也可以只看乾淨的執行軌跡。這裡顯示的是 CLI 工具呼叫和任務執行紀錄，不是規格驅動開發文件。它的價值是透明，讓你知道我剛剛到底呼叫了什麼、跑了什麼。">
+        <h2>精煉視角：CLI 執行軌跡</h2>
+        <div class="content-area split">
+          <div class="split-col">
+            <div class="image-box" style="height: 100%;">
+              <img src="/raw?path=portal/deck-assets/ep2/只有執行軌跡.png" alt="只有執行軌跡">
+            </div>
+          </div>
+          <div class="split-col" style="justify-content:center;">
+            <p>當你想回顧「我剛剛做了什麼」：</p>
+            <ul>
+              <li>過濾掉對話與閒聊。</li>
+              <li>只顯示工具呼叫、命令列執行與任務紀錄。</li>
+              <li>這是 CLI 互動架構的透明層，讓每一步都可回看。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stability -->
+      <section class="slide" data-transcript="CLI 工具的一個痛點是，它們在給出最終答案前，可能會有一長串的思考或除錯過程。為了穩定性與閱讀體驗，我們在架構上將思考軌跡與最終答案分離。">
+        <h2>架構設計：思考與答案分離</h2>
+        <div class="content-area split">
+          <div class="split-col">
+            <div class="image-box" style="height: 100%;">
+              <img src="/raw?path=portal/deck-assets/ep2/AI%20對話.png" alt="AI 思考分離">
+            </div>
+          </div>
+          <div class="split-col" style="justify-content:center;">
+            <p>為什麼要分離？</p>
+            <ul>
+              <li><strong>乾淨的上下文</strong>：如果把思考過程全寫進檔案，下次模型讀取時會浪費大量 Token，甚至被雜訊混淆。</li>
+              <li><strong>UI 體驗</strong>：前端能優雅地顯示「思考中...」，等最終結果出來再完整呈現。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quota -->
+      <section class="slide" data-transcript="另外，由於我們共用你的官方登入額度，我們也加上了額度與使用量的提示，讓你能掌握目前的消耗狀況。這部分配合 CLI 的特性，當遇到逾時或額度不足時，能有更優雅的錯誤處理機制。">
+        <h2>穩定性：額度指示與防呆</h2>
+        <div class="content-area split">
+          <div class="split-col">
+            <div class="image-box" style="height: 100%;">
+              <img src="/raw?path=portal/deck-assets/ep2/額度指示.png" alt="額度指示">
+            </div>
+          </div>
+          <div class="split-col" style="justify-content:center;">
+            <p>雖然免 API Key，但原廠帳號仍有速率限制：</p>
+            <ul>
+              <li>UI 上會顯示目前的<strong>額度狀態</strong>。</li>
+              <li><strong>逾時防護 (Timeout)</strong>：CLI 若長時間無回應，Portal 會安全截斷，防止整個伺服器卡死。</li>
+              <li>未來這會進化成「常駐任務」能力（我們會在後續詳談）。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Outro -->
+      <section class="slide" data-transcript="總結來說，Hana 的 CLI 互動架構，巧妙地在免金鑰成本與強大執行力之間取得了平衡。Portal 作為這一切的大腦，處理了不同 CLI 之間的麻煩事。接下來在第三集，我們會談談更核心的機制：當我們能切換這麼多模型，我們是怎麼讓它們不失憶的。">
+        <h2>結語：小工具的大管家</h2>
+        <div class="content-area">
+          <p style="font-size:1.65rem; line-height:1.65; text-align:center; max-width:900px; margin:24px auto;">
+            Hana 的 CLI 互動架構，巧妙地在<strong>「免金鑰成本」</strong>與<strong>「強大執行力」</strong>之間取得了平衡。<br><br>
+            Portal 作為大腦，處理了不同 CLI 之間的麻煩事，把你電腦裡的孤島，連成了一個真正的團隊。<br><br>
+            <span style="color:var(--cli-accent);">下一集，我們來談談：當我們換模型時，怎麼讓它們「不失憶」？</span>
+          </p>
+          <div style="text-align:center; margin-top:18px;">
+            <a class="next-link" href="presentation-hana-episode3.html">前往下一集：跨 CLI 共用對話機制</a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

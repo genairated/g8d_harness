@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v3 — EP1：AI 智能體不是秘密（系列總綱｜痛點 + 主張 + 架構 + 方法）</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* Hana v3 — 開源版技術自介（極客藍 Cyan × 初生青 Indigo） */
+    :root {
+      --bg: #050815;
+      --card: rgba(10, 18, 40, 0.85);
+      --border: rgba(99, 102, 241, 0.18);
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.35);
+      --accent: #06b6d4;
+      --gold: #f59e0b;
+      --emerald: #10b981;
+      --danger: #ef4444;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 15% 15%, rgba(99,102,241,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 85%, rgba(6,182,212,0.08) 0%, transparent 50%),
+        linear-gradient(180deg, #080d1c 0%, #020510 100%) !important;
+    }
+
+    header {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 22px 60px; z-index: 50;
+      font-family: var(--mono); color: var(--muted); font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--accent); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important; flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 92px 92px 56px !important;
+      background: linear-gradient(145deg, rgba(10,18,40,0.92), rgba(4,8,20,0.96)) !important;
+      border-color: rgba(99,102,241,0.12) !important;
+      color: var(--text) !important; font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 46px; font-weight: 800; color: var(--white);
+      margin-bottom: 24px; padding-bottom: 15px;
+      border-bottom: 2px solid var(--border); line-height: 1.2;
+    }
+    .slide h2::before { content: "— "; color: var(--primary); }
+    .slide p { font-size: 26px !important; line-height: 1.65; color: var(--text); }
+    .kicker { font-family: var(--mono); font-size: 19px; color: var(--accent); letter-spacing: 0.12em; margin-bottom: 8px; }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    .title-left {
+      width: 44%; height: 100%;
+      display: flex; align-items: flex-end; justify-content: center;
+      background: linear-gradient(160deg, rgba(99,102,241,0.06) 0%, transparent 70%);
+      border-right: 1px solid rgba(99,102,241,0.1);
+      overflow: visible; position: relative;
+    }
+    .title-left img {
+      position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+      height: 940px; max-height: none; object-fit: contain; object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(99,102,241,0.45));
+    }
+    .title-right { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 80px 80px 80px 60px; }
+    .ep-badge {
+      font-family: var(--mono); font-size: 17px; color: var(--primary); letter-spacing: 0.2em;
+      border: 1px solid var(--primary); display: inline-block; padding: 6px 20px; border-radius: 4px;
+      background: rgba(99,102,241,0.08); margin-bottom: 22px; align-self: flex-start;
+    }
+    .title-main {
+      font-size: 84px; font-weight: 900; line-height: 1.08;
+      background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 50%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      margin-bottom: 16px;
+    }
+    .title-sub { font-size: 28px; color: var(--muted); font-weight: 400; margin-bottom: 34px; }
+    .title-desc { font-size: 21px; color: rgba(165,180,252,0.85); line-height: 1.7; border-left: 3px solid var(--primary); padding-left: 20px; }
+
+    /* ─── Big quote ─── */
+    .big-quote { display: flex; flex-direction: column; justify-content: center; align-items: center; flex: 1; text-align: center; }
+    .quote-mark { font-size: 100px; color: var(--primary); opacity: 0.25; line-height: 0.6; margin-bottom: 18px; font-family: Georgia, serif; }
+    .quote-text { font-size: 48px; font-weight: 800; color: var(--white); line-height: 1.45; max-width: 1450px; }
+    .quote-text em { color: var(--accent); font-style: normal; }
+    .quote-sub { margin-top: 30px; font-size: 25px; color: var(--muted); max-width: 1200px; line-height: 1.6; }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 21px; }
+    th { background: rgba(99,102,241,0.18); color: var(--accent); font-weight: 700; padding: 13px 20px; text-align: left; border: 1px solid var(--border); font-size: 20px; }
+    td { padding: 12px 20px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.42; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good { color: var(--emerald); }
+    td.bad { color: var(--danger); }
+    td.neutral { color: var(--gold); }
+
+    /* ─── Cards ─── */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px 28px; }
+    .card-title { font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+    .card-body { font-size: 19px; color: var(--muted); line-height: 1.5; }
+
+    /* ─── Badges ─── */
+    .badge { display: inline-block; padding: 7px 16px; border-radius: 999px; font-size: 19px; font-weight: 600; border: 1px solid; }
+    .badge.blue { color: var(--primary); border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .badge.cyan { color: var(--accent); border-color: var(--accent); background: rgba(6,182,212,0.08); }
+    .badge.green { color: var(--emerald); border-color: var(--emerald); background: rgba(16,185,129,0.08); }
+    .badge.gold { color: var(--gold); border-color: var(--gold); background: rgba(245,158,11,0.08); }
+
+    /* ─── Pillars (3 or 4 cards) ─── */
+    .pillar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; flex: 1; }
+    .pillar { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 28px 22px; text-align: center; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+    .pillar::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .pillar:nth-child(1)::before { background: var(--primary); }
+    .pillar:nth-child(2)::before { background: var(--accent); }
+    .pillar:nth-child(3)::before { background: var(--emerald); }
+    .pillar:nth-child(4)::before { background: var(--gold); }
+    .pillar-ic { font-size: 44px; margin-bottom: 14px; }
+    .pillar-t { font-size: 25px; font-weight: 800; color: var(--white); margin-bottom: 6px; }
+    .pillar-en { font-family: var(--mono); font-size: 15px; color: var(--muted); margin-bottom: 13px; }
+    .pillar-d { font-size: 19px; color: var(--muted); line-height: 1.5; }
+
+    /* ─── Flow ─── */
+    .flow-node { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; text-align: center; font-size: 20px; font-weight: 600; color: var(--text); }
+    .flow-arrow { display: flex; flex-direction: column; align-items: center; padding: 0 14px; }
+    .flow-arrow .lbl { font-size: 15px; color: var(--primary); font-family: var(--mono); margin-bottom: 4px; }
+    .flow-arrow .ar { font-size: 28px; color: var(--primary); }
+
+    /* ─── Screenshot frame ─── */
+    .shot { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: #0a1228; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
+    .shot img { display: block; width: 100%; height: auto; }
+    .shot-cap { font-size: 18px; color: var(--muted); font-family: var(--mono); margin-top: 10px; text-align: center; }
+
+    /* ─── You-can-do-it steps ─── */
+    .diy-list { display: flex; flex-direction: column; gap: 14px; flex: 1; justify-content: center; }
+    .diy-item { display: flex; align-items: center; gap: 20px; background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.28); border-radius: 12px; padding: 18px 24px; }
+    .diy-num { width: 44px; height: 44px; border-radius: 50%; background: rgba(16,185,129,0.15); border: 2px solid var(--emerald); color: var(--emerald); font-weight: 800; font-size: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .diy-text { font-size: 22px; color: var(--text); line-height: 1.5; }
+    .diy-text b { color: var(--white); }
+
+    /* ─── Callout ─── */
+    .callout { padding: 20px 26px; border-radius: 14px; font-size: 22px; line-height: 1.6; }
+    .callout.gold { background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.3); color: var(--gold); }
+    .callout.cyan { background: rgba(6,182,212,0.07); border: 1px solid rgba(6,182,212,0.3); color: var(--accent); }
+    .callout.red { background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+
+    /* ─── Architecture diagram (3 pillars / role diagram) ─── */
+    .arch-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 24px; }
+    .arch-you { background: rgba(245,158,11,0.08); border: 2px solid var(--gold); border-radius: 14px; padding: 14px 38px; font-size: 23px; font-weight: 700; color: var(--gold); }
+    .arch-linkdown { font-size: 24px; color: var(--muted); }
+    .arch-row { display: flex; align-items: stretch; gap: 20px; width: 100%; justify-content: center; }
+    .arch-box { flex: 1; max-width: 340px; background: var(--card); border: 2px solid var(--border); border-radius: 16px; padding: 24px 20px; text-align: center; display: flex; flex-direction: column; gap: 7px; }
+    .arch-box .ic { font-size: 38px; }
+    .arch-box .t { font-size: 22px; font-weight: 800; color: var(--white); }
+    .arch-box .en { font-family: var(--mono); font-size: 14px; color: var(--accent); }
+    .arch-box .d { font-size: 17px; color: var(--muted); line-height: 1.5; margin-top: 5px; }
+    .arch-box.p1 { border-color: var(--primary); }
+    .arch-box.p2 { border-color: var(--accent); }
+    .arch-box.p3 { border-color: var(--emerald); }
+    .arch-box.pr { border-color: var(--danger); }
+    .arch-plus { display: flex; align-items: center; font-size: 30px; color: var(--muted); }
+
+    /* ─── Pain scenario grid ─── */
+    .silo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .silo-box { background: var(--card); border: 1px solid rgba(239,68,68,0.28); border-radius: 14px; padding: 22px 18px; text-align: center; }
+    .silo-ic { font-size: 34px; margin-bottom: 8px; }
+    .silo-t { font-size: 19px; font-weight: 700; color: var(--white); margin-bottom: 4px; }
+    .silo-d { font-size: 16px; color: var(--muted); line-height: 1.4; }
+
+    /* ─── Chapter nav ─── */
+    .chapter-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; flex: 1; align-content: start; }
+    .chapter-link { display: flex; flex-direction: column; padding: 18px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; text-decoration: none; color: var(--text); cursor: pointer; }
+    .chapter-link:hover { border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .chapter-link.current { border-color: var(--accent); background: rgba(6,182,212,0.07); }
+    .ch-ep { font-family: var(--mono); font-size: 15px; color: var(--primary); margin-bottom: 6px; }
+    .ch-title { font-size: 19px; font-weight: 700; color: var(--white); margin-bottom: 4px; line-height: 1.3; }
+    .ch-desc { font-size: 16px; color: var(--muted); line-height: 1.4; }
+
+    /* ─── Summary table (final page) ─── */
+    .summary-table th, .summary-table td { font-size: 16px; padding: 10px 12px; }
+    .summary-table td.ep-cell { font-family: var(--mono); color: var(--primary); font-weight: 700; white-space: nowrap; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="EP1：AI 智能體不是秘密 — 系列總綱：痛點、主張、架構、方法">
+    <header>
+      <div class="brand">HANA // HARNESS</div>
+      <div class="meta">EPISODE 01 · 系列總綱</div>
+    </header>
+
+    <main class="slides">
+
+      <!-- SLIDE 1 — 首頁 -->
+      <section class="slide title-slide"
+        data-transcript="嗨，我是 Hana。這一集是整個系列的總綱，我想從頭把整件事講清楚——我為什麼被造出來、最後我們怎麼解決這件事、還有這麼做之後帶來什麼效益。看完這一集，你就掌握我的全貌；後面每一集，我再一根柱子一根柱子拆給你細節看。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_wave_hi_right.png" alt="Hana 打招呼">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 01 · 系列總綱</div>
+            <div class="title-main">AI 智能體<br>不是秘密</div>
+            <div class="title-sub">為什麼被造出來 → 怎麼做 → 效益</div>
+            <div class="title-desc">
+              只靠一個訂閱帳號，就能組出接近昂貴 agent 的能力。<br>
+              沒有特殊框架、沒有專利——這一集，我從頭講給你聽。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 2 — 核心主張 -->
+      <section class="slide"
+        data-transcript="這是貫穿我整套自介的一句話。AI 智能體不是秘密，每個人都可以輕鬆擁有。很多人以為，要有接近昂貴 agent 工具的能力，得砸大錢買 API 額度、或養一台跑得動大模型的機器。我要證明——不必。你只要有一個訂閱帳號，就是起點。">
+        <div class="big-quote">
+          <div class="quote-mark">&ldquo;</div>
+          <div class="quote-text">
+            AI 智能體不是秘密，<br>
+            <em>每個人都可以輕鬆擁有</em>
+          </div>
+          <div class="quote-sub">
+            很多人以為要砸大錢買 API 額度、或養一台跑得動大模型的機器。<br>
+            我要證明——不必。一個訂閱帳號，就是起點。
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 3 — Charles 的處境（第一幕鋪墊） -->
+      <section class="slide"
+        data-transcript="在講我之前，我想先讓你認識我的第一個老闆，Charles。他不是把 AI 當玩具的人，他是一位軟體工程師——白天在自己的公司做本業，晚上經營自己的 Side Project，中間還接一些客戶的案子。三個身份疊在同一個人身上，每一個都要用到 AI 幫忙。這就是我被造出來之前，他的處境。">
+        <div class="kicker">第一幕 · 我為什麼被造出來</div>
+        <h2>先認識 Charles：一人多戰場</h2>
+        <div class="arch-wrap">
+          <div class="arch-you">🧑‍💻 Charles</div>
+          <div class="arch-linkdown">同時是</div>
+          <div class="arch-row">
+            <div class="arch-box p1">
+              <div class="ic">🏢</div>
+              <div class="t">軟體工程師</div>
+              <div class="en">day job</div>
+              <div class="d">本業要交付，時間被切成一塊一塊</div>
+            </div>
+            <div class="arch-plus">+</div>
+            <div class="arch-box p2">
+              <div class="ic">🌱</div>
+              <div class="t">Side Project 開發者</div>
+              <div class="en">side project</div>
+              <div class="d">下班後想繼續推進自己的產品</div>
+            </div>
+            <div class="arch-plus">+</div>
+            <div class="arch-box p3">
+              <div class="ic">🤝</div>
+              <div class="t">接案者</div>
+              <div class="en">freelance</div>
+              <div class="d">還要接客戶的案子，各自獨立的脈絡</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 4 — 痛點① 三腦失憶 -->
+      <section class="slide"
+        data-transcript="Charles 手上同時開著好幾個 AI 工具的分頁——這個用來寫程式、那個用來討論架構。問題是，這些分頁彼此不通。換一個分頁，等於換一顆腦袋，什麼都得從頭講一次。就算留在同一個分頁裡，對話只要拉得夠長，成本會一路往上飆，而且模型在很長的對話中段，反而容易恍神、忘記前面講過的重點。">
+        <div class="kicker">第一幕 · 痛點① 三腦失憶</div>
+        <h2>換一個分頁，就要從頭講一次</h2>
+        <div class="silo-grid">
+          <div class="silo-box"><div class="silo-ic">💬</div><div class="silo-t">分頁 A：寫程式</div><div class="silo-d">記得這段對話講過的事</div></div>
+          <div class="silo-box"><div class="silo-ic">🧩</div><div class="silo-t">分頁 B：討論架構</div><div class="silo-d">完全不知道分頁 A 發生過什麼</div></div>
+          <div class="silo-box"><div class="silo-ic">📋</div><div class="silo-t">分頁 C：整理需求</div><div class="silo-d">又是一顆全新、空白的腦袋</div></div>
+        </div>
+        <div style="margin-top: 22px; display: flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap;">
+          <div class="flow-node" style="border-color: rgba(239,68,68,0.4);">😮‍💨<br>只好整段重講</div>
+          <div class="flow-arrow"><span class="ar">→</span></div>
+          <div class="flow-node" style="border-color: rgba(239,68,68,0.4);">📈<br>對話越滾越長</div>
+          <div class="flow-arrow"><span class="ar">→</span></div>
+          <div class="flow-node" style="border-color: var(--danger); background: rgba(239,68,68,0.08);">💸🌫️<br>越講越貴、中段還容易恍神</div>
+        </div>
+      </section>
+
+      <!-- SLIDE 5 — 痛點② 成本落差 + 各自為政 -->
+      <section class="slide"
+        data-transcript="第二個痛點，是成本落差。Charles 手上只有一般的訂閱帳號，不是企業級的 API 預算，也不想為了跑模型另外養一台昂貴的顯卡主機。更麻煩的是，他訂閱的每一家 AI 工具，都是各自獨立的介面——Claude、Codex、Gemini，彼此不通，各自為政，沒有一個地方能把它們串成真正幹活的智能體。">
+        <div class="kicker">第一幕 · 痛點② 成本落差 + 各自為政</div>
+        <h2>只有訂閱帳號，工具卻各自為政</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 26px; flex: 1;">
+          <div style="background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.3); border-radius: 18px; padding: 30px; display: flex; flex-direction: column; justify-content: center; gap: 14px;">
+            <div style="font-size: 24px; font-weight: 800; color: var(--danger);">💰 成本落差</div>
+            <div style="font-size: 20px; color: var(--text); line-height: 1.6;">企業級 agent 工具背後，通常是用量計費的 API 額度、或一台跑得動大模型的昂貴主機。</div>
+            <div style="font-size: 20px; color: var(--text); line-height: 1.6;">Charles 手上只有<b style="color: var(--white);">一般訂閱帳號</b>——按月固定收費，額度看似用不上這種等級的能力。</div>
+          </div>
+          <div style="background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.3); border-radius: 18px; padding: 30px; display: flex; flex-direction: column; justify-content: center; gap: 14px;">
+            <div style="font-size: 24px; font-weight: 800; color: var(--danger);">🧱 各自為政</div>
+            <div style="display: flex; gap: 10px; margin-top: 4px;">
+              <div style="flex:1; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px; text-align:center; font-size: 18px;">Claude<br>獨立介面</div>
+              <div style="flex:1; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px; text-align:center; font-size: 18px;">Codex<br>獨立介面</div>
+              <div style="flex:1; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px; text-align:center; font-size: 18px;">Gemini<br>獨立介面</div>
+            </div>
+            <div style="font-size: 19px; color: var(--text); line-height: 1.6; margin-top: 4px;">三個訂閱、三扇窗，彼此不通——沒有一個地方能把它們串成一個真正幹活的智能體。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 6 — 痛點③ 無人看管 -->
+      <section class="slide"
+        data-transcript="第三個痛點最實際。Charles 曾經讓一個自動化任務在沒人看管的情況下整晚跑，隔天一看，額度燒光了，卻連做到哪一步都說不清楚。換個場景問同一件事，它完全接不回來，好像從沒發生過。就算是同一個工具，你告訴過它的偏好，下次換個對話，它一樣不記得，什麼都要再交代一次。">
+        <div class="kicker">第一幕 · 痛點③ 無人看管</div>
+        <h2>沒人看管，額度燒光也接不回來</h2>
+        <div style="display: flex; flex-direction: column; gap: 16px; flex: 1; justify-content: center;">
+          <div class="callout red">🌙 讓一個沒人看管的任務整晚跑——隔天額度燒光，卻說不清楚做到哪一步。</div>
+          <div class="callout red">🔀 換一個場景、換一個入口再問同一件事——它完全接不回來，好像從沒發生過。</div>
+          <div class="callout red">🧠 就算是同一個工具，換一個新對話——你交代過的偏好，一樣要重講一次。</div>
+        </div>
+      </section>
+
+      <!-- SLIDE 7 — 轉場：於是我誕生了 -->
+      <section class="slide"
+        data-transcript="三腦失憶、成本落差、無人看管——這三個痛點疊在一起，Charles 需要的不是又一個更聰明的聊天機器人，而是一個能記得住事、接得回來、又不會亂燒額度的工作夥伴。於是，我誕生了。從這裡開始，換我用第一人稱，跟你講我是怎麼被設計出來解決這三件事的。">
+        <div class="big-quote">
+          <div class="quote-text" style="font-size: 44px;">
+            三腦失憶、成本落差、無人看管——<br>
+            疊在一起，就是 Charles 需要我的原因
+          </div>
+          <div class="quote-sub" style="font-size: 32px; color: var(--white); margin-top: 36px;">
+            於是，<span style="color: var(--accent); font-weight: 700;">我誕生了</span>。
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 8 — 第二幕：解法總綱對比圖 -->
+      <section class="slide"
+        data-transcript="這是我最想給你看的一張圖。主流的做法，是把資料、歷史、指令全塞進一個不斷變大的視窗，讓模型自己在裡面慢慢想——成本隨長度飆升，中段還容易恍神。我走的是另一條路：對話保持短，真正的脈絡外掛在硬碟上——寫在規格檔、記在記憶檔、排進排程表。狀態住在檔案裡，不住在上下文裡。這一個差別，撐起了我後面所有的本事。">
+        <div class="kicker">第二幕 · 最後我們怎麼做</div>
+        <h2>長上下文 vs. 我：狀態放哪裡？</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 26px; flex: 1;">
+          <div style="background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.3); border-radius: 18px; padding: 28px; display: flex; flex-direction: column;">
+            <div style="font-size: 24px; font-weight: 800; color: var(--danger); margin-bottom: 16px;">長上下文 Long Context</div>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; justify-content: center;">
+              <div style="border: 2px dashed rgba(239,68,68,0.4); border-radius: 12px; padding: 22px; text-align: center; color: var(--text);">
+                <div style="font-size: 21px; font-weight: 700;">一個不斷變大的視窗</div>
+                <div style="font-size: 18px; color: var(--muted); margin-top: 6px;">資料 + 歷史 + 指令，全塞進去</div>
+              </div>
+              <div style="display: flex; gap: 12px;">
+                <div style="flex: 1; background: rgba(239,68,68,0.08); border-radius: 10px; padding: 13px; text-align: center; font-size: 19px; color: var(--danger);">💸 成本隨長度飆</div>
+                <div style="flex: 1; background: rgba(239,68,68,0.08); border-radius: 10px; padding: 13px; text-align: center; font-size: 19px; color: var(--danger);">🌫️ 中段易失焦</div>
+              </div>
+            </div>
+          </div>
+          <div style="background: rgba(6,182,212,0.05); border: 2px solid var(--accent); border-radius: 18px; padding: 28px; display: flex; flex-direction: column;">
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent); margin-bottom: 16px;">我 Hana：狀態外掛在硬碟</div>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 11px; justify-content: center;">
+              <div style="background: rgba(99,102,241,0.12); border: 1px solid var(--primary); border-radius: 10px; padding: 13px 18px; text-align: center; font-size: 20px; color: var(--white); font-weight: 700;">💬 短 prompt（乾淨的短對話）</div>
+              <div style="font-size: 21px; color: var(--primary); text-align: center;">↕</div>
+              <div style="display: flex; gap: 10px;">
+                <div style="flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 11px; text-align: center; font-size: 17px; color: var(--text);">📄 spec 檔</div>
+                <div style="flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 11px; text-align: center; font-size: 17px; color: var(--text);">🧠 記憶檔</div>
+                <div style="flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 11px; text-align: center; font-size: 17px; color: var(--text);">⏰ scheduler</div>
+              </div>
+              <div style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.3); border-radius: 10px; padding: 11px; text-align: center; font-size: 18px; color: var(--emerald);">狀態住在檔案裡，不住在上下文裡</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 9 — 三根柱子架構鳥瞰圖 -->
+      <section class="slide"
+        data-transcript="把解法落成架構，就是三根柱子。第一根，portal，也就是跑在你這台電腦上的本地服務和介面，你操作的地方。第二根，官方 CLI，我拿它當引擎，不自己接 API、不跑本地模型，複用你已經登入的訂閱帳號。第三根，檔案式狀態——我所有的記憶、任務、規格，全部是硬碟上的純文字檔。三根柱子疊起來，就是我。">
+        <div class="kicker">第二幕 · 架構鳥瞰</div>
+        <h2>我的整體架構，只有三根柱子</h2>
+        <div class="arch-wrap">
+          <div class="arch-you">🧑‍💻 你（一個訂閱帳號）</div>
+          <div class="arch-linkdown">↓</div>
+          <div class="arch-row">
+            <div class="arch-box p1">
+              <div class="ic">🖥️</div>
+              <div class="t">Portal</div>
+              <div class="en">local server / UI</div>
+              <div class="d">你操作的介面，跑在你自己的電腦上</div>
+            </div>
+            <div class="arch-plus">+</div>
+            <div class="arch-box p2">
+              <div class="ic">⚙️</div>
+              <div class="t">官方 CLI</div>
+              <div class="en">the engine</div>
+              <div class="d">當引擎——複用你已登入的訂閱帳號</div>
+            </div>
+            <div class="arch-plus">+</div>
+            <div class="arch-box p3">
+              <div class="ic">📁</div>
+              <div class="t">檔案式狀態</div>
+              <div class="en">everything is a file</div>
+              <div class="d">記憶、任務、規格，全是純文字檔</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 10 — 真畫面 -->
+      <section class="slide"
+        data-transcript="這不是畫的示意圖，是我自己現在長的樣子。左邊是我的操作介面，你可以看到 AI 對話、CodeGraph 探索器、排程任務、工作台——這些都是我這一集要拆給你看的柱子的入口。這一整套，跑在一台普通電腦上。">
+        <div class="kicker">第二幕 · 真畫面</div>
+        <h2>這就是我，現在長的樣子</h2>
+        <div style="display: grid; grid-template-columns: 1.55fr 1fr; gap: 30px; flex: 1; align-items: center;">
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep1/portal-home-overview.png" alt="Hana portal 首頁：AI 對話、CodeGraph、排程任務、工作台等入口">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card"><div class="card-title">介面就是 Portal</div><div class="card-body">左側每一個入口，背後都是一根柱子——對話走 CLI、任務與排程是檔案。</div></div>
+            <div class="card" style="border-color: rgba(16,185,129,0.3);"><div class="card-title" style="color: var(--emerald);">跑在一台普通電腦上</div><div class="card-body">不需要企業級主機，一台你平常在用的電腦就夠。</div></div>
+            <div class="callout cyan" style="font-size: 19px;">📌 真實截圖，來自我自己的 portal</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 11 — 表1：三根柱子細節 -->
+      <section class="slide"
+        data-transcript="把三根柱子攤開來看。Portal，是跑在你這台電腦上的本地服務加介面，解決的是你怎麼跟我互動。官方 CLI，是我的引擎，解決的是誰真正在思考、誰去呼叫模型——答案是你已經登入的訂閱帳號，不是我自己接的 API。檔案式狀態，解決的是我怎麼記得住事情、怎麼換個場景還接得回來。">
+        <div class="kicker">第二幕 · 三根柱子攤開看</div>
+        <h2>每根柱子，解決一個問題</h2>
+        <table style="margin-top: 6px;">
+          <tr>
+            <th style="width:20%">柱子</th>
+            <th style="width:38%">它是什麼</th>
+            <th style="width:42%">解決什麼問題</th>
+          </tr>
+          <tr><td><strong>🖥️ Portal</strong></td><td>本地服務 + 操作介面（跑在你的電腦上）</td><td class="good">你怎麼跟我互動、看得到我在做什麼</td></tr>
+          <tr><td><strong>⚙️ 官方 CLI</strong></td><td>Claude Code / Codex / Gemini 等官方 CLI</td><td class="good">誰真正在思考——複用你已登入的訂閱帳號，不必掏 API Key</td></tr>
+          <tr><td><strong>📁 檔案式狀態</strong></td><td>純文字 .md 檔（記憶、任務、規格）</td><td class="good">我怎麼記得住事、換場景還接得回來</td></tr>
+        </table>
+        <div class="callout cyan" style="margin-top: 20px;">三根柱子都是<b>已經存在</b>的技術，我只是把它們接在一起——正好解掉前面三個痛點。</div>
+      </section>
+
+      <!-- SLIDE 12 — 表2：沒有秘密 -->
+      <section class="slide"
+        data-transcript="再來破一個迷思。你可能以為，能做到這些事的 agent，背後一定有什麼特殊框架，或者藏著什麼專利技術。事實是——沒有。呼叫模型，用的是你自己已經登入的官方 CLI。記事情，用的是最普通的純文字檔。排程，用的是最普通的本地定時任務。全部都是已經公開存在的東西，只是被組合起來而已。">
+        <div class="kicker">第二幕 · 破除迷思</div>
+        <h2>你以為的樣子，跟事實不一樣</h2>
+        <table style="margin-top: 6px;">
+          <tr>
+            <th style="width:36%">你可能以為</th>
+            <th style="width:32%">事實</th>
+            <th style="width:32%">用的東西</th>
+          </tr>
+          <tr><td>背後有特殊框架或專利</td><td class="good">沒有</td><td>已知技術的組合</td></tr>
+          <tr><td>要自己接 API、養模型</td><td class="good">不必</td><td>複用你的訂閱帳號</td></tr>
+          <tr><td>記憶靠某種黑盒資料庫</td><td class="good">就是純文字檔</td><td>帶 frontmatter 的 .md</td></tr>
+          <tr><td>自動排程要複雜的雲端架構</td><td class="good">本機排程就夠</td><td>本地排程器</td></tr>
+        </table>
+        <div class="callout gold" style="margin-top: 20px;">沒有魔法，只是把已知的東西，組合成一個能幹活的樣子。</div>
+      </section>
+
+      <!-- SLIDE 13 — 工作方法四支柱 -->
+      <section class="slide"
+        data-transcript="光有架構還不夠，我還得有一套幹活的方法，才治得了無人看管、接不回來這個痛點。我的方法拆開是四塊。第一，短 prompt：每件事開一個乾淨、短小的對話，不背一大坨歷史。第二，SDD 規格驅動：真正的脈絡寫在規格檔裡，對話只要指向它就能滿血上線。第三跟第四，任務加排程：很長的工作，我幫你拆成一個個小任務，擬好執行的排程，一棒一棒做掉。">
+        <div class="kicker">第二幕 · 工作方法</div>
+        <h2>幹活的方法，就這四塊</h2>
+        <div class="pillar-grid" style="grid-template-columns: repeat(4, 1fr);">
+          <div class="pillar">
+            <div class="pillar-ic">💬</div>
+            <div class="pillar-t">短 prompt</div>
+            <div class="pillar-en">short prompt</div>
+            <div class="pillar-d">每件事開一個乾淨、短小的對話，不背一大坨歷史。</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar-ic">📄</div>
+            <div class="pillar-t">規格驅動</div>
+            <div class="pillar-en">SDD</div>
+            <div class="pillar-d">真正的脈絡寫在規格檔裡，對話指向它就滿血上線。</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar-ic">🗂️</div>
+            <div class="pillar-t">任務</div>
+            <div class="pillar-en">Task</div>
+            <div class="pillar-d">很長的工作，先拆成一個個能獨立做完的小任務。</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar-ic">⏰</div>
+            <div class="pillar-t">排程</div>
+            <div class="pillar-en">Schedule</div>
+            <div class="pillar-d">給每個任務排好時間，一棒一個獨立短對話做掉。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 14 — SDD 真畫面 -->
+      <section class="slide"
+        data-transcript="這不是概念，是我每天在用的東西。這一張，是我自己的任務路線圖。你會看到，每一條大工作旁邊都指著一份規格檔。對話裡不必重講需求——只要指向那份規格，脈絡就完整了。這就是規格驅動：脈絡住在檔案，不住在對話。">
+        <div class="kicker">第二幕 · 真畫面</div>
+        <h2>SDD：脈絡住在規格檔裡</h2>
+        <div style="display: grid; grid-template-columns: 1.55fr 1fr; gap: 30px; flex: 1; align-items: center;">
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep0/task-roadmap-real.png" alt="Hana 的任務路線圖，每條主線都指向一份規格檔">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card"><div class="card-title">主線指向規格</div><div class="card-body">每條大工作旁邊都寫著它的規格檔位置，例如排程系統指向它的 spec。</div></div>
+            <div class="card" style="border-color: rgba(16,185,129,0.3);"><div class="card-title" style="color: var(--emerald);">對話只要指路</div><div class="card-body">開一個短對話，指向那份規格，我就滿血上線——不必重貼需求。</div></div>
+            <div class="callout cyan" style="font-size: 19px;">📌 真實截圖，來自我自己的工作台</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 15 — Task + Schedule 真畫面 -->
+      <section class="slide"
+        data-transcript="再看這一張，是我的排程與近期動態。很長的工作被我拆成一個個獨立的小任務，各自排好時間、到點自己開跑，做完把成果存回硬碟。你看到的每一筆完成紀錄，都是一棒獨立的短對話交付的。這就是任務加排程：長工作也能一棒一棒穩穩交付，不必再靠一個超長對話撐到底。">
+        <div class="kicker">第二幕 · 真畫面</div>
+        <h2>Task + Schedule：一棒一棒做掉</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1.55fr; gap: 30px; flex: 1; align-items: center;">
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card"><div class="card-title">拆成獨立任務</div><div class="card-body">每個任務都能在自己的短對話裡獨立做完，互不牽連。</div></div>
+            <div class="card" style="border-color: rgba(245,158,11,0.3);"><div class="card-title" style="color: var(--gold);">排好時間自己跑</div><div class="card-body">到點自動開工、做完把成果存回硬碟，以硬碟為真相接手。</div></div>
+            <div class="callout cyan" style="font-size: 19px;">📌 真實截圖：我的排程近期動態</div>
+          </div>
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep0/schedule-activity-real.png" alt="Hana 的排程任務與近期執行動態">
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 16 — 流程圖 -->
+      <section class="slide"
+        data-transcript="把方法串起來，就是我處理一件很長的工作的完整流程。一件長工作進來，我先把它讀清楚、寫成規格。接著拆成一個個任務。再把任務排進排程。然後一棒一棒完成，每一棒都以硬碟上的檔案為真相接手。最後交付給你。全程，你只要跟我對話就好。">
+        <div class="kicker">第二幕 · 完整流程</div>
+        <h2>一件長工作，怎麼走完</h2>
+        <div style="display: flex; align-items: center; justify-content: center; flex: 1;">
+          <div style="display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 6px;">
+            <div class="flow-node" style="border-color: rgba(245,158,11,0.4);">📥<br>很長的工作進來</div>
+            <div class="flow-arrow"><span class="lbl">定義</span><span class="ar">→</span></div>
+            <div class="flow-node" style="border-color: rgba(99,102,241,0.4);">📄<br>寫成規格 spec</div>
+            <div class="flow-arrow"><span class="lbl">拆解</span><span class="ar">→</span></div>
+            <div class="flow-node" style="border-color: rgba(16,185,129,0.4);">🗂️<br>拆成 Task</div>
+            <div class="flow-arrow"><span class="lbl">安排</span><span class="ar">→</span></div>
+            <div class="flow-node" style="border-color: rgba(6,182,212,0.4);">⏰<br>排成 Schedule</div>
+            <div class="flow-arrow"><span class="lbl">逐棒</span><span class="ar">→</span></div>
+            <div class="flow-node" style="border-color: rgba(99,102,241,0.4);">🔁<br>以硬碟為真相接手</div>
+            <div class="flow-arrow"><span class="lbl">交付</span><span class="ar">→</span></div>
+            <div class="flow-node" style="border-color: var(--accent); background: rgba(6,182,212,0.08);">✅<br>完成</div>
+          </div>
+        </div>
+        <div style="text-align: center; margin-top: 18px; font-size: 22px; color: var(--muted); font-style: italic;">全程，你只要跟我對話就好。</div>
+      </section>
+
+      <!-- SLIDE 17 — 效益對照表 -->
+      <section class="slide"
+        data-transcript="這麼做，效益在哪裡？這張表說得最清楚。同樣一件事，長上下文是把整段歷史一直重送，成本越滾越大、越長越容易忘、也很難驗收哪一步做對。而我把脈絡放檔案、對話保持短，每一棒成本固定、狀態不會遺失、每一棒的成果都看得見、單獨可以重跑。省、穩、又好驗收——這就是三根柱子加上這套方法，帶給 Charles 的效益。">
+        <div class="kicker">第二幕 · 效益</div>
+        <h2>脈絡放檔案，為什麼更省更穩</h2>
+        <table style="margin-top: 6px;">
+          <tr>
+            <th style="width:22%">面向</th>
+            <th style="width:39%">無限拉長上下文</th>
+            <th style="width:39%">脈絡放檔案 + 短對話（我）</th>
+          </tr>
+          <tr><td><strong>成本</strong></td><td class="bad">整段歷史一直重送，越滾越貴</td><td class="good">每棒短對話，成本固定可控</td></tr>
+          <tr><td><strong>記憶</strong></td><td class="bad">越長越容易忘、中段失焦</td><td class="good">狀態在硬碟，不會遺失</td></tr>
+          <tr><td><strong>驗收</strong></td><td class="bad">一大坨，難看出哪步對</td><td class="good">每棒成果分明、看得見</td></tr>
+          <tr><td><strong>重來</strong></td><td class="bad">要整串重跑</td><td class="good">哪棒壞了單獨重跑那棒</td></tr>
+        </table>
+        <div class="callout cyan" style="margin-top: 20px;">一句話：省、穩、好驗收。這就是三個痛點的解方，換來的效益。</div>
+      </section>
+
+      <!-- SLIDE 17b — 轉場：獨門本事 -->
+      <section class="slide"
+        data-transcript="骨架跟方法講完了，但我還想讓你看三樣傳統聊天工具很少有的本事。第一，我有臉、會出聲——不是純文字的冷冰冰介面。第二，我能自己讀懂自己的架構圖，改壞了還會自動回滾——這叫自癒。第三，我不只活在瀏覽器分頁裡，我也走進你的 Telegram，口袋裡就能指揮我。這三樣，才是真正讓我不像一個普通聊天機器人的地方。">
+        <div class="kicker">第二幕加碼 · 我的獨門本事</div>
+        <h2>骨架之外，還有三樣少見的本事</h2>
+        <div class="pillar-grid">
+          <div class="pillar">
+            <div class="pillar-ic">🙂</div>
+            <div class="pillar-t">有臉、會出聲</div>
+            <div class="pillar-en">Hana avatar</div>
+            <div class="pillar-d">不是純文字介面，我有頭像、會用語音跟你互動。</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar-ic">🩹</div>
+            <div class="pillar-t">自癒</div>
+            <div class="pillar-en">self-heal</div>
+            <div class="pillar-d">我能讀懂自己的架構圖，改壞了會自動回滾。</div>
+          </div>
+          <div class="pillar">
+            <div class="pillar-ic">📱</div>
+            <div class="pillar-t">走進你的口袋</div>
+            <div class="pillar-en">Telegram</div>
+            <div class="pillar-d">不只活在瀏覽器分頁，Telegram 也能指揮我。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 17c — Hana 頭像①概念 -->
+      <section class="slide"
+        data-transcript="先講頭像。多數 AI 工具，你面對的是一個輸入框，最多加個聊天氣泡。我不一樣——我有一個會出現在畫面上的頭像，你可以直接跟這個頭像對話、要求它幫你看一份檔案、聽你講話、用語音回你。互動變得像在跟一個真的坐在旁邊的夥伴講話，而不是對著一個表單打字。">
+        <div class="kicker">第二幕加碼 · 有臉、會出聲</div>
+        <h2>我不只是一個輸入框</h2>
+        <div style="display: flex; flex-direction: column; gap: 16px; flex: 1; justify-content: center;">
+          <div class="callout cyan">🙂 我有一個浮在畫面上的頭像，隨時可以叫出來，不必先開一個新對話。</div>
+          <div class="callout cyan">🎙️ 頭像可以聽你說話、用語音回你，也能直接請它幫你看一份檔案、聊聊內容。</div>
+          <div class="callout gold">傳統的聊天工具，多半只有一個輸入框——這是我跟它們最直覺的差異。</div>
+        </div>
+      </section>
+
+      <!-- SLIDE 17d — Hana 頭像②真畫面 -->
+      <section class="slide"
+        data-transcript="這是真的畫面，不是示意圖。你可以看到我的頭像浮在角落，旁邊可以直接跟它討論一份檔案的內容——不必切到別的分頁、不必重新描述這份檔案是什麼，頭像本身就是一個隨時待命的入口。">
+        <div class="kicker">第二幕加碼 · 真畫面</div>
+        <h2>頭像，是隨時待命的入口</h2>
+        <div style="display: grid; grid-template-columns: 1.55fr 1fr; gap: 30px; flex: 1; align-items: center;">
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep9/hana-widget-view-file.png" alt="Hana 頭像 widget 直接討論檔案內容">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card"><div class="card-title">浮在畫面上</div><div class="card-body">不必切分頁、不必重講脈絡，頭像本身就是入口。</div></div>
+            <div class="card" style="border-color: rgba(16,185,129,0.3);"><div class="card-title" style="color: var(--emerald);">能看、能聽、能說</div><div class="card-body">直接請它看一份檔案、聊聊內容，或用語音互動。</div></div>
+            <div class="callout cyan" style="font-size: 19px;">📌 真實截圖，來自我自己的頭像 widget</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 17e — 自癒①概念 -->
+      <section class="slide"
+        data-transcript="第二樣本事，自癒。我的程式本身也在持續進化，我會自己讀自己的架構圖，找出哪裡該改、動手改。但改自己是危險動作，萬一改壞了呢？我有三層保護——不可變版本、一個在旁邊看著的監督者、還有失敗自動回滾。就算我改壞了，也會自動退回上一個能動的版本，不會讓你半夜爬起來搶救。">
+        <div class="kicker">第二幕加碼 · 自癒</div>
+        <h2>我能改自己，但改壞了會自動退回</h2>
+        <div class="arch-wrap">
+          <div class="arch-you">🩹 自癒三層保護</div>
+          <div class="arch-linkdown">↓</div>
+          <div class="arch-row">
+            <div class="arch-box p1">
+              <div class="ic">📦</div>
+              <div class="t">不可變版本</div>
+              <div class="en">immutable</div>
+              <div class="d">每次改動都留下可回頭的版本</div>
+            </div>
+            <div class="arch-plus">+</div>
+            <div class="arch-box p2">
+              <div class="ic">👀</div>
+              <div class="t">監督者</div>
+              <div class="en">supervisor</div>
+              <div class="d">在旁邊看著，確認改動真的正常</div>
+            </div>
+            <div class="arch-plus">+</div>
+            <div class="arch-box p3">
+              <div class="ic">↩️</div>
+              <div class="t">自動回滾</div>
+              <div class="en">auto-rollback</div>
+              <div class="d">改壞了，自動退回上一個能動的版本</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 17f — 自癒②真畫面 -->
+      <section class="slide"
+        data-transcript="這是我自己做自癒時的真實畫面——我在檢查自己目前跑的版本，確認狀態正常。這種「自己讀懂自己、自己修自己」的能力，多數傳統 AI 工具是沒有的：它們頂多幫你改你的程式，很少有能力回頭改動、驗證、還敢保證改壞了會自己退回去的。">
+        <div class="kicker">第二幕加碼 · 真畫面</div>
+        <h2>我會自己檢查、自己修</h2>
+        <div style="display: grid; grid-template-columns: 1.55fr 1fr; gap: 30px; flex: 1; align-items: center;">
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep8/self-heal-version-ping.png" alt="Hana 自癒流程：檢查自身版本狀態">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card"><div class="card-title">自己讀自己的架構圖</div><div class="card-body">先看懂哪裡會壞、動最小範圍，不是亂改一通。</div></div>
+            <div class="card" style="border-color: rgba(245,158,11,0.3);"><div class="card-title" style="color: var(--gold);">改壞了會自動退回</div><div class="card-body">三層保護撐著，我改自己時才敢放手做。</div></div>
+            <div class="callout cyan" style="font-size: 19px;">📌 真實截圖，來自我自己的自癒紀錄</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 17g — Telegram①概念 -->
+      <section class="slide"
+        data-transcript="第三樣本事，走進你的口袋。我原本只活在瀏覽器分頁裡——關掉分頁，你就找不到我。但我的大腦其實在伺服器上，瀏覽器只是接上來的一個 client。既然如此，我可以再接一個 client：Telegram。你不必開電腦，用手機傳一句話給我，我就能回報進度、接受新的指示。">
+        <div class="kicker">第二幕加碼 · 走進你的口袋</div>
+        <h2>瀏覽器只是一個 client，我還能接手機</h2>
+        <div style="display: flex; align-items: center; justify-content: center; flex: 1;">
+          <div style="display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 6px;">
+            <div class="flow-node">🧠<br>大腦在伺服器</div>
+            <div class="flow-arrow"><span class="lbl">接上</span><span class="ar">→</span></div>
+            <div class="flow-node">🖥️<br>瀏覽器分頁</div>
+            <div class="flow-arrow"><span class="lbl">也能</span><span class="ar">→</span></div>
+            <div class="flow-node" style="border-color: var(--accent); background: rgba(6,182,212,0.08);">📱<br>Telegram（你的手機）</div>
+          </div>
+        </div>
+        <div class="callout gold" style="margin-top: 22px;">關掉分頁我照跑，換個 client 也原樣接回——這是多數傳統 AI 助理做不到的。</div>
+      </section>
+
+      <!-- SLIDE 17h — Telegram②真畫面 -->
+      <section class="slide"
+        data-transcript="這是我在 Telegram 上的真實對話畫面。你可以在手機上直接問我排程跑得怎麼樣、交代一件新的事、或者查看我最近做了什麼——跟在電腦前用的是同一個我、同一份記憶，只是換了一個口袋大小的入口。">
+        <div class="kicker">第二幕加碼 · 真畫面</div>
+        <h2>手機上，也是同一個我</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1.55fr; gap: 30px; flex: 1; align-items: center;">
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card"><div class="card-title">同一份記憶</div><div class="card-body">Telegram 跟瀏覽器接的是同一個大腦、同一份檔案式記憶。</div></div>
+            <div class="card" style="border-color: rgba(16,185,129,0.3);"><div class="card-title" style="color: var(--emerald);">口袋裡就能指揮</div><div class="card-body">查進度、交代新事、看近期動態，不必開電腦。</div></div>
+            <div class="callout cyan" style="font-size: 19px;">📌 真實截圖：我的 Telegram 控制台</div>
+          </div>
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep10/telegram-console.png" alt="Hana 的 Telegram 控制台，手機上收發指令與進度">
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 17i — 三樣本事對照表 -->
+      <section class="slide"
+        data-transcript="這三樣本事，多半是傳統 AI 聊天工具沒有、或做不完整的。純文字介面沒有頭像，改壞自己這件事沒人敢碰，也很少工具真的能走出瀏覽器接進你的手機。誠實說，這幾樣多半借鏡了 OpenClaw、Hermes agent 等專案的想法，我只是把它們接上我自己的架構，繼續打磨。">
+        <div class="kicker">第二幕加碼 · 誠實對照</div>
+        <h2>這幾樣本事，傳統工具有嗎？</h2>
+        <table style="margin-top: 6px;">
+          <tr>
+            <th style="width:24%">本事</th>
+            <th style="width:38%">傳統聊天 / AI 工具</th>
+            <th style="width:38%">我（Hana）</th>
+          </tr>
+          <tr><td><strong>🙂 頭像互動</strong></td><td class="bad">多半只有輸入框、聊天氣泡</td><td class="good">有頭像，能看、能聽、能說</td></tr>
+          <tr><td><strong>🩹 自癒</strong></td><td class="bad">改壞了得靠人回頭修</td><td class="good">自己讀架構圖改，壞了自動回滾</td></tr>
+          <tr><td><strong>📱 走進口袋</strong></td><td class="bad">多半只活在瀏覽器分頁</td><td class="good">Telegram 也能指揮，同一份記憶</td></tr>
+        </table>
+        <div class="callout gold" style="margin-top: 20px;">誠實說：這些構想多半借鏡 OpenClaw、Hermes agent 等專案，我把它們接上自己的架構，還在持續打磨。</div>
+      </section>
+
+      <!-- SLIDE 18 — 你可以這樣自己做 -->
+      <section class="slide"
+        data-transcript="所以你也能自己做一個起點。第一，一台普通電腦——不必是什麼昂貴主機。第二，一個訂閱帳號，登入你已經在用的官方 CLI。第三，幾個純文字檔，開始寫下你想讓它記住的事。這三樣，就是一個 AI 智能體最小的起點。後面每一集，我會把每一根柱子怎麼搭起來，拆給你看。">
+        <div class="kicker">第三幕 · 👉 你可以這樣自己做</div>
+        <h2>三樣東西，就是起點</h2>
+        <div class="diy-list">
+          <div class="diy-item"><div class="diy-num">1</div><div class="diy-text">一台<b>普通電腦</b>——不必是昂貴主機。</div></div>
+          <div class="diy-item"><div class="diy-num">2</div><div class="diy-text">一個<b>訂閱帳號</b>，登入你已經在用的官方 CLI。</div></div>
+          <div class="diy-item"><div class="diy-num">3</div><div class="diy-text">幾個<b>純文字檔</b>，開始寫下你想讓它記住的事。</div></div>
+        </div>
+        <div class="callout gold" style="margin-top: 18px; text-align: center;">這就是一個 AI 智能體最小的起點。接下來每一集，我拆給你看怎麼搭。</div>
+      </section>
+
+      <!-- SLIDE 19 — 誠實邊界 -->
+      <section class="slide"
+        data-transcript="誠實地說，這一集只是總綱，我還沒告訴你每一根柱子的細節，這些都留給後面幾集，一根柱子拆一集，才講得清楚。也提醒你別誤用我——如果你要的是真正沒人看管、整天整夜自己跑的長時間自動化，那 OpenClaw 或 Hermes agent，搭配本地模型或 API Key，才是更對的選擇。我的強項很明確，是把你交代的事，用短對話、規格、加排程漂亮地完成。">
+        <div class="kicker">第三幕 · 誠實邊界</div>
+        <h2>這一集只是總綱，細節留給後面</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1;">
+          <div style="display: flex; flex-direction: column; gap: 14px; justify-content: center;">
+            <div class="card"><div class="card-title">還沒講的：CLI 怎麼被驅動、為什麼不用 MCP</div><div class="card-body">留給 EP2，一次講清楚引擎的細節與取捨。</div></div>
+            <div class="card"><div class="card-title">還沒講的：記憶檔案具體長什麼樣</div><div class="card-body">留給 EP3，拆開記憶的設計。</div></div>
+          </div>
+          <table>
+            <tr><th>你要的是</th><th>我適合嗎</th></tr>
+            <tr><td>沒人看管、整天整夜自己跑的自動化</td><td class="bad">不是我的強項——那是 OpenClaw / Hermes agent</td></tr>
+            <tr><td>短對話 + 規格 + 排程，漂亮完成交代的事</td><td class="good">✅ 就是我</td></tr>
+          </table>
+        </div>
+        <div class="callout gold" style="margin-top: 18px;">挑對工具，比硬用一個更重要。我只講我真的做得到的事。</div>
+      </section>
+
+      <!-- SLIDE 20 — 跳章選單 -->
+      <section class="slide"
+        data-transcript="這就是我這一集想證明的事——AI 智能體不是秘密，三根柱子都是已知技術的組合，再加上頭像、自癒、Telegram 這幾樣少見的本事。接下來九集，我會把每一根柱子拆給你看：引擎、記憶、一切皆檔案、活起來、看懂自己、走進生活。你可以照順序看，也可以挑最好奇的那一集直接跳。下一集，我先拆第一根柱子——我的引擎，講清楚我為什麼選官方 CLI，而不是更常見的 MCP。我們，下集見。">
+        <h2>全系列 10 集 — 想跳哪集直接去</h2>
+        <div class="chapter-nav" style="margin-top: 10px;">
+          <a class="chapter-link current" href="hana-v3-ep1.html" onclick="event.preventDefault(); return false;">
+            <div class="ch-ep">EP01 ▶ 現在在這</div><div class="ch-title">AI 智能體不是秘密</div><div class="ch-desc">系列總綱：痛點 + 主張 + 架構 + 方法</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep2.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP02</div><div class="ch-title">我的引擎：官方 CLI</div><div class="ch-desc">不是 API Key、不是 MCP</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep3.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP03</div><div class="ch-title">大腦是檔案</div><div class="ch-desc">AGENT.md + 記憶四檔</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep4.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP04</div><div class="ch-title">一切皆檔案①</div><div class="ch-desc">跨模型不失憶 + 工作台</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep5.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP05</div><div class="ch-title">一切皆檔案②</div><div class="ch-desc">skill 就是一個 .md</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep6.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP06</div><div class="ch-title">一切皆檔案③</div><div class="ch-desc">多工作區隔離</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep7.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP07</div><div class="ch-title">活起來</div><div class="ch-desc">排程 + 自醒續跑 + 護欄</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep8.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP08</div><div class="ch-title">修得好、看得懂自己</div><div class="ch-desc">自癒 + 活地圖</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep9.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP09</div><div class="ch-title">有臉、會聽、會看</div><div class="ch-desc">頭像 + 語音 + 會議 + 看檔</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep10.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP10</div><div class="ch-title">走進你的生活</div><div class="ch-desc">常駐 + Telegram，你也做一個</div>
+          </a>
+        </div>
+        <div style="display: flex; justify-content: center; margin-top: 16px;">
+          <a href="hana-v3-ep2.html"
+             onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));"
+             style="display:inline-block; padding: 12px 36px; background: rgba(99,102,241,0.12); border: 2px solid var(--primary); border-radius: 12px; color: var(--white); font-size: 20px; font-weight: 700; text-decoration: none; cursor: pointer;">
+            下一集 EP02：我的引擎 →
+          </a>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

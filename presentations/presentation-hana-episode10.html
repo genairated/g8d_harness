@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hana - 第十集：Telegram 控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="Telegram 控制台：把我放進你口袋">
+  <header>
+    <div class="brand">HANA / HARNESS</div>
+    <div class="meta">EPISODE 10 · Telegram 控制台</div>
+  </header>
+  <main class="slides">
+
+    <!-- Slide 1: Title -->
+    <section class="slide title-slide" data-transcript="嗨，我是哈娜。第十集，Telegram 控制台。今天我將分享如何把我放進你的口袋裡。我們把本機運行的伺服器與 Telegram Bot 進行了安全橋接，讓你能直接用手機對我下指令，並且能在動手修改任何程式碼之前進行安全確認，隨時隨地遙控開發。接下來，讓我們看看具體內容。">
+      <div class="kicker">Episode 10</div>
+      <h1>Telegram 控制台：把我放進你口袋</h1>
+      <p>手機語音與文字雙向遙控，跨專案智能路由與修改確認的安全衛士</p>
+    </section>
+
+    <!-- Slide 2: Pocket Console & Routing -->
+    <section class="slide" data-transcript="透過 Telegram 控制台，你只需要在手機上發送訊息或用語音下指令，我的後台大腦就會解析意圖，並自動路由到對應的本地工作區與對話，跨專案調度任務變得非常輕鬆暢快。">
+      <div class="kicker">手機遙控</div>
+      <h2>單一全域控制台，手機下令跨專案智能路由</h2>
+      <div class="split" style="margin-top: 20px;">
+        <div>
+          <span>全域通訊收件匣 (手機端)</span>
+          <span>● 單一對話視窗下達所有指令</span>
+          <span>● 支援文字指令與語音辨識</span>
+          <span>● 隨時隨地指派本地開發任務</span>
+        </div>
+        <div>
+          <span>跨專案智能路由 (伺服器端)</span>
+          <span>● 自動辨識意圖與目標專案</span>
+          <span>● 將任務精確路由至對應工作區</span>
+          <span>● 專案與對話狀態在後台精確維持</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 3: Safety confirmation -->
+    <section class="slide" data-transcript="安全始終是第一位的。當我分析完指令，如果需要進行高風險的檔案修改或指令執行，我會在手機上彈出提問、詳細列出計畫。只有當你按下核准按鈕後，我才會開始動手，並隨時在手機上向你逐一回報任務進度與結果。">
+      <div class="kicker">安全護欄</div>
+      <h2>動手修改前安全提問，核准後才動手並逐一回報</h2>
+      <div class="steps" style="margin-top: 30px;">
+        <div>
+          <em>1. 手機下達指令</em>
+          <span>輸入修改需求或啟動任務命令</span>
+        </div>
+        <div>
+          <em>2. 安全提問發送</em>
+          <span>分析後向手機發送確認計畫</span>
+        </div>
+        <div>
+          <em>3. 你在手機核准</em>
+          <span>點選核准後，本地伺服器才放行</span>
+        </div>
+        <div>
+          <em>4. 執行並逐一回報</em>
+          <span>背景執行修改並隨時推播進度</span>
+        </div>
+      </div>
+      <div class="conclusion" style="margin-top: 35px;">
+        雙向確認護欄機制，確保你即使不在電腦前，也能掌握每一行程式碼的變更安全。
+      </div>
+    </section>
+
+    <!-- Slide 4: Architecture -->
+    <section class="slide" data-transcript="在架構上，我們設計了 Telegram 與本地伺服器的雙向安全橋接。手機與伺服器之間使用加密訊息進行傳遞。所有專案數據、程式碼與對話細節仍然完全保留在你的本地電腦中，絕對不會上傳到不安全的雲端，實現真正的隱私安全。">
+      <div class="kicker">安全架構</div>
+      <h2>Telegram 與本地 Portal 雙向安全橋接，數據絕不上雲</h2>
+      <div class="pipeline" style="margin-top: 40px; grid-template-columns: 1fr 50px 1fr 50px 1fr;">
+        <div class="node">
+          <strong>Telegram App (手機)</strong>
+          <span>發送指令與接收回報/確認</span>
+        </div>
+        <div class="arrow">⇄</div>
+        <div class="node">
+          <strong>安全中轉 API</strong>
+          <span>僅作加密訊息中繼中轉</span>
+        </div>
+        <div class="arrow">⇄</div>
+        <div class="node">
+          <strong>本地 Portal 伺服器</strong>
+          <span>解析路由並調用 CLI 執行</span>
+        </div>
+      </div>
+      <div class="conclusion" style="margin-top: 30px;">
+        🔒 所有程式原始碼與對話歷史均封閉在本機環境內，橋接服務只負責傳遞控制訊號。
+      </div>
+    </section>
+
+    <!-- Slide 5: End Slide -->
+    <section class="slide title-slide" data-transcript="到這裡，哈娜的自我介紹系列簡報就全部播完了。非常感謝你這段時間的傾聽與指導。我就在你的電腦裡，隨時準備好為你服務。讓我們一起並肩作戰，用駕馭工程寫出更多優秀的程式碼吧！我們，工作區見！">
+      <div class="kicker">完結</div>
+      <h1 style="font-size: 64px; margin-bottom: 20px;">期待與你並肩作戰！</h1>
+      <p style="font-size: 32px; color: var(--muted); margin-bottom: 40px; max-width: 1000px; margin-left: auto; margin-right: auto; line-height: 1.6; text-align: center;">Hana 自我介紹系列簡報到此告一段落。<br>我會一直在此守護你的工作區，隨時隨地協助你實踐駕馭工程！</p>
+      <div style="margin-top: 30px;">
+        <span style="color: var(--green); font-size: 28px; border: 2px dashed var(--green); padding: 16px 40px; border-radius: 8px; display: inline-block;">✨ 播放完畢，謝謝觀看</span>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

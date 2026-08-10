@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v2 — EP6：我會自己定時做事</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* EP6 v2 — 排程・自醒・護欄（琥珀金 / 翠綠色系） */
+    :root {
+      --bg: #060904;
+      --card: rgba(8, 14, 8, 0.90);
+      --border: rgba(16,185,129,0.20);
+      --primary: #10b981;
+      --primary-glow: rgba(16,185,129,0.35);
+      --accent: #34d399;
+      --teal: #2dd4bf;
+      --gold: #f59e0b;
+      --amber: #fbbf24;
+      --emerald: #10b981;
+      --danger: #ef4444;
+      --violet: #c084fc;
+      --blue: #60a5fa;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 15% 25%, rgba(16,185,129,0.10) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 75%, rgba(245,158,11,0.07) 0%, transparent 50%),
+        linear-gradient(180deg, #040a06 0%, #020502 100%) !important;
+    }
+
+    header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 60px;
+      z-index: 50;
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--primary); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 96px 96px 56px !important;
+      background: linear-gradient(145deg, rgba(8,14,8,0.95), rgba(2,7,2,0.97)) !important;
+      border-color: rgba(16,185,129,0.12) !important;
+      color: var(--text) !important;
+      font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 50px;
+      font-weight: 800;
+      color: var(--white);
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      line-height: 1.2;
+    }
+    .slide h2::before { content: "— "; color: var(--primary); }
+    .slide p { font-size: 28px !important; line-height: 1.65; color: var(--text); }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    .title-left {
+      width: 44%;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      background: linear-gradient(160deg, rgba(16,185,129,0.10) 0%, transparent 70%);
+      border-right: 1px solid rgba(16,185,129,0.14);
+      overflow: visible;
+      position: relative;
+    }
+    .title-left img {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 900px;
+      max-height: none;
+      object-fit: contain;
+      object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(16,185,129,0.40));
+    }
+    .title-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px 80px 80px 60px;
+    }
+    .ep-badge {
+      font-family: var(--mono);
+      font-size: 18px;
+      color: var(--primary);
+      letter-spacing: 0.2em;
+      border: 1px solid var(--primary);
+      display: inline-block;
+      padding: 6px 20px;
+      border-radius: 4px;
+      background: rgba(16,185,129,0.10);
+      margin-bottom: 24px;
+      align-self: flex-start;
+    }
+    .title-main {
+      font-size: 72px;
+      font-weight: 900;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 0%, #a7f3d0 40%, #fbbf24 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 18px;
+    }
+    .title-sub {
+      font-size: 28px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-bottom: 44px;
+    }
+    .title-desc {
+      font-size: 23px;
+      color: rgba(167,243,208,0.75);
+      line-height: 1.7;
+      border-left: 3px solid var(--primary);
+      padding-left: 20px;
+    }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 22px; }
+    th {
+      background: rgba(16,185,129,0.14);
+      color: var(--primary);
+      font-weight: 700;
+      padding: 14px 20px;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 20px;
+    }
+    td { padding: 13px 20px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.45; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good    { color: var(--emerald); }
+    td.bad     { color: var(--danger); }
+    td.gold    { color: var(--gold); }
+    td.indigo  { color: #818cf8; }
+    td.accent  { color: var(--accent); }
+    td.amber   { color: var(--amber); }
+    td.muted   { color: var(--muted); font-size: 20px; }
+
+    /* ─── Flowchart / Pipeline ─── */
+    .flowchart {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      flex: 1;
+      justify-content: center;
+    }
+    .flow-node {
+      border-radius: 14px;
+      padding: 16px 32px;
+      text-align: center;
+      min-width: 300px;
+    }
+    .flow-node.step {
+      background: rgba(16,185,129,0.08);
+      border: 2px solid rgba(16,185,129,0.38);
+    }
+    .flow-node.action {
+      background: rgba(245,158,11,0.07);
+      border: 2px solid rgba(245,158,11,0.40);
+    }
+    .flow-node.result {
+      background: rgba(16,185,129,0.07);
+      border: 2px solid rgba(16,185,129,0.35);
+    }
+    .flow-node.danger {
+      background: rgba(239,68,68,0.07);
+      border: 2px solid rgba(239,68,68,0.35);
+    }
+    .flow-node-label { font-size: 14px; font-family: var(--mono); letter-spacing: 0.12em; margin-bottom: 5px; }
+    .flow-node.step     .flow-node-label { color: var(--primary); }
+    .flow-node.action   .flow-node-label { color: var(--gold); }
+    .flow-node.result   .flow-node-label { color: var(--emerald); }
+    .flow-node.danger   .flow-node-label { color: var(--danger); }
+    .flow-node-title { font-size: 22px; font-weight: 800; color: var(--white); }
+    .flow-node-desc  { font-size: 16px; color: var(--muted); margin-top: 4px; }
+    .flow-arrow { font-size: 28px; color: var(--primary); margin: 2px 0; opacity: 0.7; }
+
+    /* ─── State diagram ─── */
+    .state-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 22px;
+      border-radius: 14px;
+      background: rgba(16,185,129,0.06);
+      border: 1.5px solid rgba(16,185,129,0.25);
+    }
+    .state-icon { font-size: 28px; flex-shrink: 0; }
+    .state-body { flex: 1; }
+    .state-title { font-size: 20px; font-weight: 700; color: var(--white); }
+    .state-desc  { font-size: 17px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+    .state-arrow { font-size: 26px; color: var(--primary); text-align: center; opacity: 0.6; }
+
+    /* ─── Guardrail badge row ─── */
+    .guard-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+      padding: 18px 22px;
+      border-radius: 14px;
+      background: rgba(245,158,11,0.06);
+      border: 1.5px solid rgba(245,158,11,0.28);
+    }
+    .guard-icon { font-size: 30px; flex-shrink: 0; line-height: 1.2; }
+    .guard-body { flex: 1; }
+    .guard-title { font-size: 21px; font-weight: 700; color: var(--white); }
+    .guard-desc  { font-size: 17px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+
+    /* ─── Schedule mock UI ─── */
+    .sched-card {
+      border-radius: 14px;
+      padding: 16px 20px;
+      background: rgba(16,185,129,0.06);
+      border: 1.5px solid rgba(16,185,129,0.25);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .sched-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .sched-dot.active { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+    .sched-dot.pending { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+    .sched-dot.done { background: var(--muted); }
+    .sched-body { flex: 1; }
+    .sched-title { font-size: 18px; font-weight: 700; color: var(--white); }
+    .sched-meta  { font-size: 14px; color: var(--muted); font-family: var(--mono); margin-top: 3px; }
+    .sched-badge {
+      font-size: 13px; padding: 4px 12px; border-radius: 20px;
+      font-family: var(--mono); flex-shrink: 0;
+    }
+    .sched-badge.active { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.40); color: var(--primary); }
+    .sched-badge.pending { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.40); color: var(--gold); }
+    .sched-badge.done { background: rgba(148,163,184,0.10); border: 1px solid rgba(148,163,184,0.25); color: var(--muted); }
+
+    /* ─── Activity item ─── */
+    .activity-item {
+      display: flex; gap: 14px; align-items: flex-start;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: rgba(16,185,129,0.04);
+      border: 1px solid rgba(16,185,129,0.15);
+    }
+    .activity-time { font-size: 14px; color: var(--muted); font-family: var(--mono); flex-shrink: 0; padding-top: 2px; }
+    .activity-body { flex: 1; }
+    .activity-title { font-size: 17px; font-weight: 600; color: var(--white); }
+    .activity-sub   { font-size: 14px; color: var(--muted); margin-top: 3px; }
+    .activity-status { font-size: 14px; flex-shrink: 0; }
+
+    /* ─── Relation row (真實畫面說明列) ─── */
+    .rel-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 15px 22px;
+      border-radius: 14px;
+      background: rgba(16,185,129,0.06);
+      border: 1.5px solid rgba(16,185,129,0.22);
+    }
+    .rel-icon { font-size: 26px; flex-shrink: 0; }
+    .rel-body { flex: 1; }
+    .rel-title { font-size: 19px; font-weight: 700; color: var(--white); }
+    .rel-desc  { font-size: 16px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+    .rel-badge {
+      font-size: 13px; padding: 5px 14px;
+      border-radius: 20px; font-family: var(--mono); flex-shrink: 0;
+    }
+    .rel-badge.emerald { background: rgba(16,185,129,0.13); border: 1px solid rgba(16,185,129,0.38); color: var(--primary); }
+    .rel-badge.gold    { background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.35); color: var(--gold); }
+
+    /* ─── Chapter nav ─── */
+    .chapter-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .chapter-link {
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: rgba(16,185,129,0.05);
+      border: 1px solid rgba(16,185,129,0.18);
+      text-decoration: none;
+      transition: border-color 0.2s, background 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .chapter-link:hover { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
+    .chapter-link.current { background: rgba(16,185,129,0.13); border: 2px solid var(--primary); }
+    .ch-ep    { font-size: 14px; font-family: var(--mono); color: var(--primary); letter-spacing: 0.1em; }
+    .ch-title { font-size: 16px; font-weight: 700; color: var(--white); line-height: 1.3; }
+    .ch-desc  { font-size: 13px; color: var(--muted); line-height: 1.35; }
+    .chapter-link.current .ch-ep { color: var(--amber); }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="排程・限額自醒・護欄">
+    <header>
+      <div class="brand">HANA / HARNESS</div>
+      <div class="meta">EPISODE 06 · 我會自己定時做事</div>
+    </header>
+    <main class="slides">
+
+      <!-- ====================================================
+           SLIDE 1 — 標題（首頁 + Hana 形象照）
+      ===================================================== -->
+      <section class="slide title-slide"
+        data-transcript="上一集我說我關掉瀏覽器也在跑。這一集更進一步：有些事，根本不用你交代，我自己定時就做了。這就是排程。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_sit_smile_right.png" alt="Hana">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 06</div>
+            <div class="title-main">我會自己<br>定時做事</div>
+            <div class="title-sub">就算你沒開瀏覽器，我也照跑</div>
+            <div class="title-desc">
+              例行工作不靠人腦記得——<br>
+              到點自動做、撞上限自己醒來接著跑。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 2 — 為什麼要排程
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="例行的工作，不該靠人腦去記得。凌晨幫你蒐集資訊、定期做自我診斷、跨模型互相 review——這些我都能排成定時任務，到點自己做。">
+        <h2>為什麼要排程：例行的事不靠人腦記</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; margin-top: 14px; justify-content: center;">
+
+          <div style="display: flex; gap: 24px;">
+            <!-- Problem side -->
+            <div style="flex: 1; border-radius: 18px; padding: 28px 28px; background: rgba(239,68,68,0.06); border: 2px solid rgba(239,68,68,0.28); display: flex; flex-direction: column; gap: 14px;">
+              <div style="font-size: 15px; font-family: var(--mono); color: var(--danger);">問題</div>
+              <div style="font-size: 24px; font-weight: 800; color: var(--white);">人腦記不住</div>
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--muted);">
+                  <span style="color: var(--danger);">✗</span> <span>「等等記得叫 Hana 整理今天的資料」→ 忘了</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--muted);">
+                  <span style="color: var(--danger);">✗</span> <span>例行任務要靠人去啟動，太累</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--muted);">
+                  <span style="color: var(--danger);">✗</span> <span>凌晨的工作，得守著電腦</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Solution side -->
+            <div style="flex: 1; border-radius: 18px; padding: 28px 28px; background: rgba(16,185,129,0.07); border: 2px solid rgba(16,185,129,0.35); display: flex; flex-direction: column; gap: 14px;">
+              <div style="font-size: 15px; font-family: var(--mono); color: var(--primary);">排程幫你</div>
+              <div style="font-size: 24px; font-weight: 800; color: var(--white);">到點自動做</div>
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                  <span style="color: var(--primary); font-size: 20px;">📅</span> <span>凌晨蒐集資訊、整理報告</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                  <span style="color: var(--primary); font-size: 20px;">🔍</span> <span>定期跨模型互相 review</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                  <span style="color: var(--primary); font-size: 20px;">🩺</span> <span>自我診斷，確保一切正常</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 18px 28px; background: rgba(16,185,129,0.07); border: 1px solid var(--border); border-radius: 14px; display: flex; align-items: center; gap: 16px;">
+            <span style="font-size: 28px;">⏰</span>
+            <span style="font-size: 21px; color: var(--text); font-weight: 600;">排程就是把「你記得叫我做」變成「時間到我自己做」</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 3 — 三層資料（資料流程圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="排程在我這邊分三層。第一層是排程定義：什麼時候跑、跑什麼、用哪顆模型。第二層是執行紀錄，每跑一次留一筆。第三層是產出物。三層攤開，你一眼就看得到何時起、跑了什麼、產出在哪。">
+        <h2>三層資料：排程定義 → 執行紀錄 → 產出物</h2>
+        <div style="flex: 1; display: flex; align-items: center; gap: 0; margin-top: 18px;">
+
+          <!-- Horizontal pipeline -->
+          <div style="flex: 1; display: flex; align-items: center; gap: 0; justify-content: center;">
+
+            <!-- Layer 1 -->
+            <div style="flex: 1; border-radius: 20px; padding: 28px 22px; background: rgba(16,185,129,0.08); border: 2.5px solid rgba(16,185,129,0.40); text-align: center; position: relative;">
+              <div style="font-size: 38px; margin-bottom: 12px;">📋</div>
+              <div style="font-size: 14px; font-family: var(--mono); color: var(--primary); margin-bottom: 8px; letter-spacing: 0.1em;">LAYER 1</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--white); margin-bottom: 10px;">排程定義</div>
+              <div style="display: flex; flex-direction: column; gap: 6px; text-align: left;">
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--primary); font-size: 12px;">▸</span> 何時跑（cron 規則）</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--primary); font-size: 12px;">▸</span> 跑什麼 prompt</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--primary); font-size: 12px;">▸</span> 用哪顆模型</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--primary); font-size: 12px;">▸</span> 護欄設定</div>
+              </div>
+            </div>
+
+            <!-- Arrow -->
+            <div style="padding: 0 16px; text-align: center;">
+              <div style="font-size: 32px; color: var(--primary); opacity: 0.7;">→</div>
+              <div style="font-size: 13px; font-family: var(--mono); color: var(--muted); margin-top: 4px;">觸發</div>
+            </div>
+
+            <!-- Layer 2 -->
+            <div style="flex: 1; border-radius: 20px; padding: 28px 22px; background: rgba(245,158,11,0.07); border: 2.5px solid rgba(245,158,11,0.38); text-align: center;">
+              <div style="font-size: 38px; margin-bottom: 12px;">⚙️</div>
+              <div style="font-size: 14px; font-family: var(--mono); color: var(--gold); margin-bottom: 8px; letter-spacing: 0.1em;">LAYER 2</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--white); margin-bottom: 10px;">執行紀錄 Run</div>
+              <div style="display: flex; flex-direction: column; gap: 6px; text-align: left;">
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--gold); font-size: 12px;">▸</span> 何時開始、結束</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--gold); font-size: 12px;">▸</span> 用量統計</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--gold); font-size: 12px;">▸</span> 成功 or 失敗</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--gold); font-size: 12px;">▸</span> 每跑一次留一筆</div>
+              </div>
+            </div>
+
+            <!-- Arrow -->
+            <div style="padding: 0 16px; text-align: center;">
+              <div style="font-size: 32px; color: var(--primary); opacity: 0.7;">→</div>
+              <div style="font-size: 13px; font-family: var(--mono); color: var(--muted); margin-top: 4px;">產出</div>
+            </div>
+
+            <!-- Layer 3 -->
+            <div style="flex: 1; border-radius: 20px; padding: 28px 22px; background: rgba(96,165,250,0.07); border: 2.5px solid rgba(96,165,250,0.35); text-align: center;">
+              <div style="font-size: 38px; margin-bottom: 12px;">📦</div>
+              <div style="font-size: 14px; font-family: var(--mono); color: var(--blue); margin-bottom: 8px; letter-spacing: 0.1em;">LAYER 3</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--white); margin-bottom: 10px;">產出物</div>
+              <div style="display: flex; flex-direction: column; gap: 6px; text-align: left;">
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--blue); font-size: 12px;">▸</span> 報告、分析、程式</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--blue); font-size: 12px;">▸</span> 存回所屬工作區</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--blue); font-size: 12px;">▸</span> Telegram 推摘要</div>
+                <div style="font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px;"><span style="color: var(--blue); font-size: 12px;">▸</span> 站內動態登錄</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Bottom summary -->
+        <div style="margin-top: 18px; padding: 14px 28px; background: rgba(16,185,129,0.06); border: 1px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 14px;">
+          <span style="font-size: 22px;">👁️</span>
+          <span style="font-size: 19px; color: var(--text);">三層攤開——你一眼就看得到：<strong style="color: var(--white);">何時起・跑了什麼・產出在哪</strong></span>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 4 — 沒開瀏覽器也能跑（執行者與觀看者分離）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="關鍵是，執行是在伺服器上發生的，網頁只是一個觀看者。所以就算你完全沒開瀏覽器，排程也照樣跑。執行者和觀看者，是分開的。">
+        <h2>沒開瀏覽器也跑：執行者與觀看者分離</h2>
+        <div style="flex: 1; display: flex; gap: 36px; align-items: stretch; margin-top: 14px;">
+
+          <!-- Left: architecture -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; justify-content: center;">
+
+            <!-- Server = executor -->
+            <div style="border-radius: 18px; padding: 28px 28px; background: rgba(16,185,129,0.09); border: 2.5px solid rgba(16,185,129,0.45); display: flex; align-items: center; gap: 20px;">
+              <span style="font-size: 42px; flex-shrink: 0;">🖥️</span>
+              <div>
+                <div style="font-size: 14px; font-family: var(--mono); color: var(--primary); margin-bottom: 6px; letter-spacing: 0.1em;">EXECUTOR（真正做事的）</div>
+                <div style="font-size: 24px; font-weight: 800; color: var(--white);">Portal 伺服器</div>
+                <div style="font-size: 17px; color: var(--muted); margin-top: 6px; line-height: 1.5;">排程由它持有 · 到點觸發 · CLI 實際呼叫 · 結果落盤<br><strong style="color: var(--primary);">不靠你有沒有開瀏覽器</strong></div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: center; align-items: center; gap: 8px;">
+              <div style="height: 1px; flex: 1; background: var(--border);"></div>
+              <div style="font-size: 14px; font-family: var(--mono); color: var(--muted); padding: 0 12px;">VIEWER（觀看者，可選）</div>
+              <div style="height: 1px; flex: 1; background: var(--border);"></div>
+            </div>
+
+            <div style="display: flex; gap: 16px;">
+              <!-- Browser viewer -->
+              <div style="flex: 1; border-radius: 14px; padding: 18px 20px; background: rgba(96,165,250,0.06); border: 1.5px dashed rgba(96,165,250,0.35); display: flex; align-items: center; gap: 14px;">
+                <span style="font-size: 28px;">🌐</span>
+                <div>
+                  <div style="font-size: 18px; font-weight: 700; color: var(--white);">瀏覽器</div>
+                  <div style="font-size: 15px; color: var(--muted); margin-top: 4px;">可開可不開</div>
+                </div>
+              </div>
+              <!-- Telegram viewer -->
+              <div style="flex: 1; border-radius: 14px; padding: 18px 20px; background: rgba(42,171,238,0.06); border: 1.5px dashed rgba(42,171,238,0.35); display: flex; align-items: center; gap: 14px;">
+                <span style="font-size: 28px;">📱</span>
+                <div>
+                  <div style="font-size: 18px; font-weight: 700; color: var(--white);">Telegram</div>
+                  <div style="font-size: 15px; color: var(--muted); margin-top: 4px;">跑完推通知</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right: key insight -->
+          <div style="width: 360px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div style="border-radius: 18px; padding: 32px 26px; background: rgba(16,185,129,0.07); border: 2px solid rgba(16,185,129,0.32); flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center; text-align: center;">
+              <div style="font-size: 56px;">😴</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--white); line-height: 1.35;">你在睡覺<br>我在跑排程</div>
+              <div style="font-size: 18px; color: var(--muted); line-height: 1.6;">瀏覽器關著也沒關係——排程的執行者是伺服器，不是你的分頁</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 5 — 限額自醒續跑（狀態圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="有時候任務跑到一半，撞上五小時的用量上限。以前這就卡死了。現在我會記下重置的時間，到點自己醒過來、接著跑——用同一顆模型，把先前的半成品和硬碟上的現況一起餵回去，從斷點繼續，而不是從頭來。">
+        <h2>撞上用量上限？自己記下來、時間到自醒</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; margin-top: 14px; justify-content: center;">
+
+          <!-- State 1: running -->
+          <div class="state-row" style="border-color: rgba(16,185,129,0.38); background: rgba(16,185,129,0.07);">
+            <div class="state-icon">⚙️</div>
+            <div class="state-body">
+              <div class="state-title">排程執行中</div>
+              <div class="state-desc">伺服器呼叫 CLI、模型思考、產出正在寫入…</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--primary);">RUNNING</div>
+          </div>
+
+          <div class="state-arrow">↓</div>
+
+          <!-- State 2: hit limit -->
+          <div class="state-row" style="border-color: rgba(245,158,11,0.40); background: rgba(245,158,11,0.06);">
+            <div class="state-icon">⚡</div>
+            <div class="state-body">
+              <div class="state-title" style="color: var(--amber);">撞上 5 小時用量上限</div>
+              <div class="state-desc">模型的每日額度跑到上限，一般情況下就卡死</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--gold);">HIT LIMIT</div>
+          </div>
+
+          <div class="state-arrow">↓</div>
+
+          <!-- State 3: record reset time -->
+          <div class="state-row" style="border-color: rgba(96,165,250,0.38); background: rgba(96,165,250,0.06);">
+            <div class="state-icon">💾</div>
+            <div class="state-body">
+              <div class="state-title">記下 resetAt，儲存半成品</div>
+              <div class="state-desc">把上限重置的時間點、已完成的部分、硬碟現況一起存起來</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--blue);">SAVED</div>
+          </div>
+
+          <div class="state-arrow">↓ 到了 resetAt</div>
+
+          <!-- State 4: auto wake -->
+          <div class="state-row" style="border-color: rgba(16,185,129,0.50); background: rgba(16,185,129,0.09); box-shadow: 0 0 20px rgba(16,185,129,0.12);">
+            <div class="state-icon">🌅</div>
+            <div class="state-body">
+              <div class="state-title" style="color: var(--primary);">自醒：接著跑，不從頭來</div>
+              <div class="state-desc">用同一顆模型，餵入先前半成品＋硬碟現況，從斷點繼續</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--primary);">RESUMED</div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 6 — 護欄（清單表）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="一個會自己跑的東西，最該講的是護欄。每個排程都有預算上限、重試上限，還有連續失敗就自動熔斷。這樣就算我在無人看管的時候出錯，也不會把你的額度燒光。">
+        <h2>護欄：自動跑的東西，最重要的是不失控</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 18px; margin-top: 14px; justify-content: center;">
+
+          <div class="guard-row">
+            <div class="guard-icon">💰</div>
+            <div class="guard-body">
+              <div class="guard-title">預算上限（maxCalls）</div>
+              <div class="guard-desc">每次執行最多呼叫幾次模型，跑到上限就停——不讓一個排程把當天額度燒光</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--gold); flex-shrink: 0; padding: 4px 14px; background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.30); border-radius: 20px;">預算護欄</div>
+          </div>
+
+          <div class="guard-row" style="border-color: rgba(96,165,250,0.28); background: rgba(96,165,250,0.05);">
+            <div class="guard-icon">🔁</div>
+            <div class="guard-body">
+              <div class="guard-title">重試上限（maxRetries）</div>
+              <div class="guard-desc">某次跑失敗，自動重試幾次，超過上限就放棄並記錄失敗——不無限重試</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--blue); flex-shrink: 0; padding: 4px 14px; background: rgba(96,165,250,0.10); border: 1px solid rgba(96,165,250,0.30); border-radius: 20px;">重試護欄</div>
+          </div>
+
+          <div class="guard-row" style="border-color: rgba(239,68,68,0.30); background: rgba(239,68,68,0.05);">
+            <div class="guard-icon">🔌</div>
+            <div class="guard-body">
+              <div class="guard-title">連續失敗熔斷（failureCircuitBreaker）</div>
+              <div class="guard-desc">連續失敗達到閾值，排程自動暫停並推 Telegram 警示——等你判斷再恢復</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--danger); flex-shrink: 0; padding: 4px 14px; background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.30); border-radius: 20px;">熔斷護欄</div>
+          </div>
+
+          <div class="guard-row" style="border-color: rgba(192,132,252,0.28); background: rgba(192,132,252,0.05);">
+            <div class="guard-icon">⏱️</div>
+            <div class="guard-body">
+              <div class="guard-title">執行時間上限（maxRuntimeMs）</div>
+              <div class="guard-desc">單次執行超過最長時限，自動終止並記錄——避免任務掛住佔著資源</div>
+            </div>
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--violet); flex-shrink: 0; padding: 4px 14px; background: rgba(192,132,252,0.10); border: 1px solid rgba(192,132,252,0.30); border-radius: 20px;">時間護欄</div>
+          </div>
+
+          <div style="padding: 14px 22px; background: rgba(16,185,129,0.06); border: 1px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 14px;">
+            <span style="font-size: 22px;">🛡️</span>
+            <span style="font-size: 19px; color: var(--text);">護欄讓我在無人看管時出錯——<strong style="color: var(--white);">也不會把你的額度燒光、也不會讓系統掛住</strong></span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 7 — 跑完通知
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="每個排程跑完，我會投一則到站內的近期動態，也送一則摘要到你的 Telegram，標清楚是哪個專案、結果如何、產出在哪。你不用守著電腦。">
+        <h2>跑完就通知你：站內動態 + Telegram</h2>
+        <div style="flex: 1; display: flex; gap: 36px; align-items: stretch; margin-top: 14px;">
+
+          <!-- Left: two notification channels -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; justify-content: center;">
+
+            <!-- Activity feed -->
+            <div style="border-radius: 16px; padding: 24px 24px; background: rgba(16,185,129,0.07); border: 2px solid rgba(16,185,129,0.28);">
+              <div style="font-size: 15px; font-family: var(--mono); color: var(--primary); margin-bottom: 14px; letter-spacing: 0.1em;">📌 站內近期動態</div>
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="activity-item">
+                  <div class="activity-time">03:22</div>
+                  <div class="activity-body">
+                    <div class="activity-title">每日資料整理</div>
+                    <div class="activity-sub">已完成 · 報告存於 reports/ · _harness</div>
+                  </div>
+                  <div class="activity-status">✅</div>
+                </div>
+                <div class="activity-item" style="border-color: rgba(245,158,11,0.20); background: rgba(245,158,11,0.03);">
+                  <div class="activity-time">06:00</div>
+                  <div class="activity-body">
+                    <div class="activity-title">自我診斷</div>
+                    <div class="activity-sub">已完成 · 無異常 · _harness</div>
+                  </div>
+                  <div class="activity-status">✅</div>
+                </div>
+                <div class="activity-item" style="border-color: rgba(239,68,68,0.20); background: rgba(239,68,68,0.03);">
+                  <div class="activity-time">09:00</div>
+                  <div class="activity-body">
+                    <div class="activity-title">跨模型 review</div>
+                    <div class="activity-sub">失敗（連線問題）· 已重試 1 次</div>
+                  </div>
+                  <div class="activity-status">⚠️</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right: Telegram notification -->
+          <div style="width: 380px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div style="border-radius: 16px; padding: 24px 22px; background: rgba(42,171,238,0.08); border: 2px solid rgba(42,171,238,0.35);">
+              <div style="font-size: 15px; font-family: var(--mono); color: #2AABEE; margin-bottom: 14px; letter-spacing: 0.1em;">📱 Telegram 推送</div>
+              <!-- Simulated telegram message bubble -->
+              <div style="border-radius: 14px; padding: 16px 18px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 8px;">
+                <div style="font-size: 13px; color: #2AABEE; font-weight: 700;">Hana · _harness</div>
+                <div style="font-size: 16px; color: var(--white); line-height: 1.6;">
+                  ✅ <strong>每日資料整理</strong> 已完成<br>
+                  <span style="color: var(--muted); font-size: 14px;">耗時 4分32秒 · 呼叫 12次</span><br>
+                  <span style="color: var(--primary); font-size: 14px;">產出：reports/2026-06-30.md</span>
+                </div>
+                <div style="font-size: 12px; color: var(--muted);">03:22 ✓✓</div>
+              </div>
+            </div>
+
+            <div style="border-radius: 14px; padding: 18px 20px; background: rgba(16,185,129,0.07); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 18px; font-weight: 700; color: var(--white);">你不用守著電腦</div>
+              <div style="font-size: 16px; color: var(--muted); line-height: 1.55;">結果自動到你這——站內看全貌，手機收摘要，兩個都不漏</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8 — 排程畫面（模擬 UI）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="這是我的排程面板：一份排程清單、一個新增排程的表單、近期動態，還有每一筆執行的歷史。整套都在這裡，攤開給你看。">
+        <h2>排程面板：一眼掌握所有定時任務</h2>
+        <div style="flex: 1; display: flex; gap: 28px; align-items: flex-start; margin-top: 16px;">
+
+          <!-- Left: schedule list -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; letter-spacing: 0.08em;">📅 排程清單</div>
+
+            <div class="sched-card">
+              <div class="sched-dot active"></div>
+              <div class="sched-body">
+                <div class="sched-title">每日資料整理</div>
+                <div class="sched-meta">cron: 0 3 * * *  ·  claude::sonnet</div>
+              </div>
+              <div class="sched-badge active">啟用</div>
+            </div>
+
+            <div class="sched-card" style="background: rgba(245,158,11,0.05); border-color: rgba(245,158,11,0.22);">
+              <div class="sched-dot pending"></div>
+              <div class="sched-body">
+                <div class="sched-title">跨模型 review</div>
+                <div class="sched-meta">cron: 0 9 * * 1,4  ·  claude::opus</div>
+              </div>
+              <div class="sched-badge pending">等待</div>
+            </div>
+
+            <div class="sched-card" style="background: rgba(148,163,184,0.04); border-color: rgba(148,163,184,0.15);">
+              <div class="sched-dot done"></div>
+              <div class="sched-body">
+                <div class="sched-title">自我診斷</div>
+                <div class="sched-meta">cron: 0 6 * * *  ·  claude::sonnet</div>
+              </div>
+              <div class="sched-badge done">暫停</div>
+            </div>
+
+            <div class="sched-card">
+              <div class="sched-dot active"></div>
+              <div class="sched-body">
+                <div class="sched-title">EP6 製作（鏈條）</div>
+                <div class="sched-meta">one-shot  ·  claude::sonnet</div>
+              </div>
+              <div class="sched-badge active">啟用</div>
+            </div>
+
+          </div>
+
+          <!-- Right: run history + add form hint -->
+          <div style="width: 380px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;">
+
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--muted); margin-bottom: 2px; letter-spacing: 0.08em;">📈 最近執行紀錄</div>
+
+            <div style="border-radius: 14px; padding: 16px 18px; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.22); display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 15px; font-weight: 600; color: var(--white);">每日資料整理</div>
+                <div style="font-size: 13px; color: var(--primary);">✅ 成功</div>
+              </div>
+              <div style="font-size: 13px; color: var(--muted); font-family: var(--mono);">2026-06-30 03:22 · 4m32s · 12 calls</div>
+            </div>
+
+            <div style="border-radius: 14px; padding: 16px 18px; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.22); display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 15px; font-weight: 600; color: var(--white);">每日資料整理</div>
+                <div style="font-size: 13px; color: var(--primary);">✅ 成功</div>
+              </div>
+              <div style="font-size: 13px; color: var(--muted); font-family: var(--mono);">2026-06-29 03:21 · 5m01s · 14 calls</div>
+            </div>
+
+            <div style="border-radius: 14px; padding: 16px 18px; background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.22); display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 15px; font-weight: 600; color: var(--white);">跨模型 review</div>
+                <div style="font-size: 13px; color: var(--gold);">⚠️ 重試中</div>
+              </div>
+              <div style="font-size: 13px; color: var(--muted); font-family: var(--mono);">2026-06-28 09:00 · 連線問題 · retry 1/3</div>
+            </div>
+
+            <div style="padding: 14px 18px; background: rgba(16,185,129,0.05); border: 1px solid var(--border); border-radius: 12px; display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 18px; color: var(--primary);">＋</span>
+              <span style="font-size: 15px; color: var(--muted);">新增排程——填 prompt、cron、模型、護欄</span>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 9 — 彩蛋：第一次 payoff（呼應 EP1）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="講到這裡，我可以揭曉 EP1 賣的第一個關子了。你現在看的這整套自我介紹簡報，就是我自己排成一串定時任務、一集接一集自動做出來的。做完一集，自己觸發下一集——不用人盯著。">
+        <h2>彩蛋：這套簡報，就是我自己排程做的</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 32px; margin-top: 8px;">
+
+          <!-- Callback to EP1 -->
+          <div style="max-width: 700px; border-radius: 18px; padding: 28px 36px; background: rgba(16,185,129,0.07); border: 2px solid rgba(16,185,129,0.35); text-align: center;">
+            <div style="font-size: 16px; font-family: var(--mono); color: var(--muted); margin-bottom: 12px; letter-spacing: 0.1em;">EP1 留的關子</div>
+            <div style="font-size: 26px; font-weight: 800; color: var(--white); line-height: 1.4; margin-bottom: 8px;">
+              「你正在看的這整套簡報，連每一張畫面截圖，<br>都是我自己做、自己擷的——怎麼做到的，後面揭曉。」
+            </div>
+            <div style="font-size: 18px; color: var(--muted);">↑ EP1 第 2 頁說的這句話</div>
+          </div>
+
+          <!-- Reveal arrow -->
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <div style="font-size: 36px; color: var(--primary);">↓</div>
+            <div style="font-size: 16px; font-family: var(--mono); color: var(--gold); letter-spacing: 0.1em;">PAYOFF #1 — EP6 揭曉</div>
+          </div>
+
+          <!-- The reveal -->
+          <div style="max-width: 700px; border-radius: 18px; padding: 28px 36px; background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(245,158,11,0.08)); border: 2.5px solid var(--primary); text-align: center; box-shadow: 0 0 40px rgba(16,185,129,0.18);">
+            <div style="font-size: 42px; margin-bottom: 12px;">🎉</div>
+            <div style="font-size: 26px; font-weight: 900; color: var(--white); line-height: 1.4; margin-bottom: 12px;">
+              我排了一串鏈條排程——<br>EP1 做完觸發 EP2，EP2 做完觸發 EP3……
+            </div>
+            <div style="font-size: 20px; color: rgba(167,243,208,0.85); line-height: 1.6;">
+              每集自己做、自己驗、自己觸發下一集。<br>
+              不用 Charles 守著——這正是排程的意義。
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 10 — 誠實
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="當然我得誠實：自己定時做事、又會自醒續跑，這套還在打磨。所以我把護欄擺在最前面——寧可保守一點，也不亂燒你的額度。">
+        <h2>誠實：這套還在打磨，護欄優先</h2>
+        <div style="flex: 1; display: flex; gap: 36px; align-items: stretch; margin-top: 14px;">
+
+          <!-- Left: what works now -->
+          <div style="flex: 1; border-radius: 18px; padding: 28px 28px; background: rgba(16,185,129,0.07); border: 2px solid rgba(16,185,129,0.30); display: flex; flex-direction: column; gap: 16px;">
+            <div style="font-size: 15px; font-family: var(--mono); color: var(--primary);">✓ 已做到</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--white); margin-bottom: 4px;">能用、有護欄</div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                <span style="color: var(--primary); font-size: 20px;">✓</span> <span>基本排程定義與執行</span>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                <span style="color: var(--primary); font-size: 20px;">✓</span> <span>預算護欄（maxCalls）</span>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                <span style="color: var(--primary); font-size: 20px;">✓</span> <span>限額自醒（resetAt + 接續）</span>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                <span style="color: var(--primary); font-size: 20px;">✓</span> <span>Telegram 完成通知</span>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--text);">
+                <span style="color: var(--primary); font-size: 20px;">✓</span> <span>工作區隔離（各工作區各自的排程）</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: still evolving -->
+          <div style="flex: 1; border-radius: 18px; padding: 28px 28px; background: rgba(245,158,11,0.06); border: 2px solid rgba(245,158,11,0.28); display: flex; flex-direction: column; gap: 16px;">
+            <div style="font-size: 15px; font-family: var(--mono); color: var(--gold);">⏳ 仍在打磨</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--white); margin-bottom: 4px;">保守優先，持續進化</div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--muted);">
+                <span style="color: var(--gold); font-size: 20px;">△</span> <span>熔斷機制細節持續調整</span>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--muted);">
+                <span style="color: var(--gold); font-size: 20px;">△</span> <span>自醒接續的狀態還原品質</span>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 18px; color: var(--muted);">
+                <span style="color: var(--gold); font-size: 20px;">△</span> <span>多個並行排程的資源協調</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 8px; padding: 16px 18px; background: rgba(16,185,129,0.06); border: 1px solid var(--border); border-radius: 12px; font-size: 17px; color: var(--text); line-height: 1.6;">
+              寧可保守一點，也不亂燒你的額度。<br>
+              <span style="color: var(--primary); font-weight: 600;">護欄在前，功能在後。</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 10b — 排程面板真實系統畫面
+      ===================================================== -->
+      <section class="slide media"
+        data-transcript="這兩張不是示意圖，是我剛剛真的打開排程面板擷的畫面。左邊是排程清單，名稱、觸發方式、用哪顆模型、下次執行時間都攤在表格裡。右邊是近期動態——每個排程跑完的結果，我自己看得到、也是我做自我感知摘要的來源。">
+        <h2>真實畫面 — 排程面板與近期動態</h2>
+        <div style="flex: 1; display: flex; gap: 28px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.3; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0;">
+              <img src="/raw?path=presentations-v2/assets/ep6/scheduler-list-real.png" alt="排程清單真實畫面"
+                   style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(16,185,129,0.35); box-shadow: 0 0 60px rgba(16,185,129,0.18);">
+            </div>
+            <div class="rel-row">
+              <div class="rel-icon">📅</div>
+              <div class="rel-body">
+                <div class="rel-title">排程清單表格</div>
+                <div class="rel-desc">名稱・觸發・模型・下次執行・最近狀態・啟用，一列看完</div>
+              </div>
+              <div class="rel-badge emerald">schedule list</div>
+            </div>
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0;">
+              <img src="/raw?path=presentations-v2/assets/ep6/scheduler-activity-real.png" alt="近期動態真實畫面"
+                   style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(245,158,11,0.35); box-shadow: 0 0 60px rgba(245,158,11,0.16);">
+            </div>
+            <div class="rel-row" style="border-color: rgba(245,158,11,0.28); background: rgba(245,158,11,0.06);">
+              <div class="rel-icon">📌</div>
+              <div class="rel-body">
+                <div class="rel-title">近期動態＝我的自我感知</div>
+                <div class="rel-desc">每個排程跑完成功或失敗都在這，這就是我知道自己做過什麼的地方</div>
+              </div>
+              <div class="rel-badge gold">self-perception</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 11 — 跳章選單 + 下一集預告
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="能自己做事，下一步就是要能看懂我自己這個程式。下一集，我帶你看我的兩張活地圖：CodeGraph 和 DocGraph。我們下集見。">
+        <h2>全系列 8 集 — 想跳哪集直接去</h2>
+
+        <!-- Summary highlight -->
+        <div style="margin-bottom: 16px; padding: 16px 28px; background: rgba(16,185,129,0.08); border: 2px solid rgba(16,185,129,0.32); border-radius: 14px; display: flex; align-items: center; gap: 20px;">
+          <div style="font-size: 36px;">⏰</div>
+          <div>
+            <div style="font-size: 21px; font-weight: 700; color: var(--primary);">我會自己定時做事——就算你沒開瀏覽器也照跑</div>
+            <div style="font-size: 18px; color: var(--muted); margin-top: 4px;">三層資料 · 執行者與觀看者分離 · 自醒續跑 · 護欄不失控 · 通知到你</div>
+          </div>
+        </div>
+
+        <div class="chapter-nav">
+          <a class="chapter-link" href="presentation-hana-episode1-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP01</div>
+            <div class="ch-title">我是 Hana</div>
+            <div class="ch-desc">誕生故事 + 超能力全景</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode2-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP02</div>
+            <div class="ch-title">三顆大腦，一個夥伴</div>
+            <div class="ch-desc">CLI 橋接 + 跨模型不失憶 + 並行</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode3-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP03</div>
+            <div class="ch-title">愈用愈懂你</div>
+            <div class="ch-desc">長期記憶 + 技能</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode4-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP04</div>
+            <div class="ch-title">我替每個專案都長出一個分身</div>
+            <div class="ch-desc">多工作區隔離 + 技能繼承</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode5-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP05</div>
+            <div class="ch-title">掙脫瀏覽器，走進你手機</div>
+            <div class="ch-desc">伺服器常駐 + Telegram</div>
+          </a>
+          <a class="chapter-link current" href="presentation-hana-episode6-v2.html" onclick="event.preventDefault(); return false;">
+            <div class="ch-ep">EP06 ▶ 現在在這</div>
+            <div class="ch-title">我會自己定時做事</div>
+            <div class="ch-desc">排程 + 限額自醒 + 護欄</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode7-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP07</div>
+            <div class="ch-title">兩張活地圖</div>
+            <div class="ch-desc">CodeGraph + DocGraph</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode8-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP08</div>
+            <div class="ch-title">我能安全地修好我自己</div>
+            <div class="ch-desc">自癒四步 + 成長收尾</div>
+          </a>
+        </div>
+
+        <!-- Next episode -->
+        <div style="margin-top: 14px; display: flex; justify-content: center;">
+          <div style="display: flex; align-items: center; gap: 28px; padding: 16px 32px; background: rgba(16,185,129,0.06); border: 1px solid var(--border); border-radius: 14px;">
+            <div style="text-align: center;">
+              <div style="font-size: 16px; color: var(--muted); font-family: var(--mono); letter-spacing: 0.12em; margin-bottom: 4px;">NEXT EPISODE</div>
+              <div style="font-size: 38px; font-weight: 900; background: linear-gradient(135deg, #ffffff, #a7f3d0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1;">EP07</div>
+            </div>
+            <div style="width: 1px; height: 56px; background: var(--border);"></div>
+            <div>
+              <div style="font-size: 24px; font-weight: 700; color: var(--white);">兩張活地圖</div>
+              <div style="font-size: 18px; color: var(--accent); margin-top: 4px;">CodeGraph · DocGraph</div>
+            </div>
+            <a href="presentation-hana-episode7-v2.html"
+               style="display:inline-block; padding: 12px 28px; background: rgba(16,185,129,0.12); border: 2px solid var(--primary); border-radius: 10px; color: var(--white); font-size: 20px; font-weight: 700; text-decoration: none; white-space: nowrap;">
+              前往 EP07 →
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

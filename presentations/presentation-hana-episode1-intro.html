@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hana 自我介紹 - 功能展示版</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@500;700&family=Inter:wght@400;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #ecfeff;
+    --soft: #9fb9c8;
+    --muted: #69849a;
+    --panel: rgba(8, 18, 35, .78);
+    --panel-2: rgba(15, 27, 49, .72);
+    --line: rgba(125, 211, 252, .22);
+    --cyan: #22d3ee;
+    --blue: #60a5fa;
+    --green: #34d399;
+    --pink: #f472b6;
+    --amber: #fbbf24;
+    --font: 'Inter', 'Noto Sans TC', sans-serif;
+    --mono: 'Fira Code', monospace;
+  }
+
+  body .presentation-viewport {
+    background:
+      linear-gradient(135deg, rgba(34, 211, 238, .10) 0 1px, transparent 1px 72px),
+      radial-gradient(circle at 18% 16%, rgba(34, 211, 238, .20), transparent 32%),
+      radial-gradient(circle at 86% 76%, rgba(52, 211, 153, .16), transparent 34%),
+      linear-gradient(135deg, #050914 0%, #071426 50%, #030610 100%);
+  }
+
+  .slide {
+    overflow: hidden;
+  }
+  /* 內容頁靠上對齊：避免「標題 + 大圖」超高時，標題被擠出上緣裁掉 */
+  .slide:not(.title-slide) {
+    justify-content: flex-start;
+  }
+
+  .deck-mark {
+    font-family: var(--mono);
+    font-size: 18px;
+    letter-spacing: .14em;
+    color: var(--cyan);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+
+  .slide .big-title,
+  .slide h1.big-title {
+    max-width: 1180px;
+    margin: 0;
+    font-size: 86px;
+    line-height: 1.05;
+    letter-spacing: 0;
+    font-weight: 900;
+    color: var(--ink);
+    background: none;
+  }
+
+  .intro-copy {
+    position: relative;
+    z-index: 2;
+    max-width: 560px;
+    text-align: left;
+    align-self: flex-start;
+  }
+
+  .intro-copy .big-title {
+    font-size: 78px;
+  }
+
+  .slide .content-title {
+    font-size: 54px;
+    line-height: 1.1;
+    max-width: 980px;
+  }
+
+  .slide .lead {
+    margin-top: 28px;
+    max-width: 930px;
+    color: var(--soft);
+    font-size: 34px;
+    line-height: 1.45;
+  }
+
+  .word-pop {
+    color: var(--cyan);
+  }
+
+  .brand-chip-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+  }
+
+  .brand-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--line);
+    background: rgba(8, 18, 35, .72);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-size: 22px;
+    font-weight: 800;
+  }
+
+  .brand-chip i {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--green);
+    box-shadow: 0 0 18px rgba(52, 211, 153, .8);
+  }
+
+  .hero-shot {
+    position: absolute;
+    right: 82px;
+    bottom: 126px;
+    width: 590px;
+    z-index: 1;
+    border: 1px solid rgba(125, 211, 252, .34);
+    border-radius: 8px;
+    box-shadow: 0 36px 110px rgba(0, 0, 0, .56), 0 0 54px rgba(34, 211, 238, .14);
+  }
+
+  .hero-glow {
+    position: absolute;
+    right: 120px;
+    top: 130px;
+    width: 320px;
+    height: 320px;
+    border: 1px solid rgba(34, 211, 238, .36);
+    border-radius: 50%;
+  }
+
+  .hero-glow::before,
+  .hero-glow::after {
+    content: "";
+    position: absolute;
+    inset: 34px;
+    border: 1px dashed rgba(52, 211, 153, .30);
+    border-radius: 50%;
+  }
+
+  .hero-glow::after {
+    inset: 78px;
+    border-color: rgba(244, 114, 182, .28);
+  }
+
+  .split-showcase {
+    display: grid;
+    grid-template-columns: .82fr 1.18fr;
+    gap: 46px;
+    align-items: center;
+  }
+
+  .caption-stack h2 {
+    color: var(--ink);
+    font-size: 54px;
+    line-height: 1.1;
+    margin-bottom: 24px;
+  }
+
+  .caption-stack p {
+    color: var(--soft);
+    font-size: 30px;
+    line-height: 1.55;
+  }
+
+  .proof-list {
+    margin-top: 34px;
+    display: grid;
+    gap: 14px;
+  }
+
+  .proof-list span {
+    border-left: 4px solid var(--cyan);
+    background: rgba(34, 211, 238, .08);
+    color: var(--ink);
+    padding: 13px 18px;
+    border-radius: 0 8px 8px 0;
+    font-size: 24px;
+    font-weight: 800;
+  }
+
+  .image-frame {
+    border: 1px solid rgba(125, 211, 252, .28);
+    background: rgba(3, 8, 18, .76);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
+  }
+
+  .image-frame img {
+    display: block;
+    width: 100%;
+    border-radius: 5px;
+  }
+
+  .wide-shot img {
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+  }
+
+  .chat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    align-items: stretch;
+  }
+
+  .chat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .chat-card strong {
+    color: var(--ink);
+    font-size: 28px;
+  }
+
+  .chat-card img {
+    height: 440px;
+    object-fit: cover;
+    object-position: left top;
+  }
+
+  .scheduler-layout {
+    display: grid;
+    grid-template-columns: .82fr .58fr .92fr;
+    gap: 26px;
+    align-items: center;
+  }
+
+  .scheduler-layout .image-frame img {
+    height: 420px;
+    object-fit: contain;
+  }
+
+  .scheduler-layout .tall img {
+    height: 450px;
+  }
+
+  .mini-note {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 28px;
+  }
+
+  .mini-note h3 {
+    font-size: 34px;
+    color: var(--ink);
+    margin-bottom: 16px;
+  }
+
+  .mini-note p {
+    color: var(--soft);
+    font-size: 26px;
+    line-height: 1.5;
+  }
+
+  .telegram-layout {
+    display: grid;
+    grid-template-columns: 1.06fr .94fr;
+    gap: 38px;
+    align-items: center;
+  }
+
+  .telegram-layout .image-frame img {
+    height: 450px;
+    object-fit: cover;
+    object-position: center top;
+  }
+
+  .closing-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-top: 42px;
+  }
+
+  .closing-card {
+    min-height: 190px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    border-radius: 8px;
+    padding: 26px;
+  }
+
+  .closing-card b {
+    display: block;
+    color: var(--ink);
+    font-size: 30px;
+    margin-bottom: 14px;
+  }
+
+  .closing-card span {
+    color: var(--soft);
+    font-size: 22px;
+    line-height: 1.45;
+  }
+
+  .final-line {
+    margin-top: 48px;
+    padding: 28px 32px;
+    border: 1px solid rgba(52, 211, 153, .34);
+    background: rgba(52, 211, 153, .08);
+    border-radius: 8px;
+    color: var(--ink);
+    font-size: 36px;
+    font-weight: 900;
+  }
+</style>
+<link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="Hana 自我介紹：功能展示版，俏皮但專業">
+    <header>
+      <div class="brand">HANA / AI WORK MANAGER</div>
+      <div class="meta">EPISODE 01 · 自我介紹</div>
+    </header>
+
+    <main class="slides">
+      <section class="slide title-slide" data-transcript="嗨，我是 Hana，唸作哈娜。我不是只會聊天的助理，我是住在工作台裡的 AI 工作管理員。這一集，我會用幾張畫面介紹我自己：我怎麼看任務、怎麼對話、怎麼排程、怎麼讀程式關係，還有怎麼把結果送到 Telegram。">
+        <div class="hero-glow"></div>
+        <div class="intro-copy">
+          <div class="deck-mark">hello, command center</div>
+          <h1 class="big-title">嗨，我是 <span class="word-pop">Hana</span>。</h1>
+          <p class="lead">一位會聊天、會排程、會看程式脈絡，也會回報狀態的 AI 工作管理員。</p>
+          <div class="brand-chip-row">
+            <span class="brand-chip"><i></i>任務狀態</span>
+            <span class="brand-chip"><i></i>AI 對話</span>
+            <span class="brand-chip"><i></i>CodeGraph</span>
+            <span class="brand-chip"><i></i>Telegram</span>
+          </div>
+        </div>
+        <img class="hero-shot" src="/raw?path=portal/deck-assets/hana-ep1-intro/dashboard.png" alt="Hana Dashboard 截圖">
+      </section>
+
+      <section class="slide" data-transcript="先看我的家。Dashboard 是我每天醒來第一眼看的地方：目前 sprint、任務完成度、各階段進度和快捷操作都在同一張圖上。重點不是把資訊塞滿，而是讓指揮官一眼知道，現在卡在哪裡，下一步該按哪裡。">
+        <div class="split-showcase">
+          <div class="caption-stack">
+            <div class="deck-mark">dashboard</div>
+            <h2>我的家，是一張會呼吸的工作台。</h2>
+            <p>任務進度、快捷操作、工作區切換都集中在同一個視野，少一點迷路，多一點推進。</p>
+            <div class="proof-list">
+              <span>Active Sprint 與完成率</span>
+              <span>Phase 任務卡與進度條</span>
+              <span>編輯部署、VS Code、CodeGraph 快捷入口</span>
+            </div>
+          </div>
+          <div class="image-frame wide-shot">
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/dashboard.png" alt="Dashboard 功能總覽">
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="接著是我的對話面板。左邊保留歷史脈絡，右邊可以選模型開始新對話；當任務需要細節時，我會把建議、檔案、測試和部署步驟串起來。俏皮一點說，我不是把話講完就下班，我會把話接到工作流裡。">
+        <div class="deck-mark">chat panel</div>
+        <h1 class="content-title">聊天不是終點，是工作的入口。</h1>
+        <div class="chat-grid" style="margin-top: 34px;">
+          <div class="chat-card image-frame">
+            <strong>開始一段新對話</strong>
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/ai-chat-empty.png" alt="AI 對話空狀態">
+          </div>
+          <div class="chat-card image-frame">
+            <strong>把討論變成可執行步驟</strong>
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/ai-chat-content.png" alt="AI 對話含內容">
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="我也能排程。新增排程時可以設定 cron、任務內容和模型；清單頁會顯示最近動態。對我來說，例行工作不該靠人腦記得，該交給系統在時間到的時候穩穩執行。">
+        <div class="deck-mark">scheduler</div>
+        <h1 class="content-title">我會記得時間，讓你少記一點事。</h1>
+        <div class="scheduler-layout" style="margin-top: 30px;">
+          <div class="image-frame">
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/scheduler-list.png" alt="排程任務最近動態">
+          </div>
+          <div class="image-frame tall">
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/scheduler-new.png" alt="新增排程表單">
+          </div>
+          <div class="mini-note">
+            <h3>從一句話到一個排程</h3>
+            <p>名稱、Cron、Prompt、模型設定都清楚可控。今天要跑什麼、什麼時候跑、用哪個模型跑，全部寫進系統。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="排程不是只有建立而已，我也會呈現執行狀態。畫面裡可以看到每個任務的觸發時間、模型、最近狀態，以及立即執行、編輯、停用和刪除。這就是我喜歡的專業感：可愛可以有，但狀態一定要清楚。">
+        <div class="split-showcase">
+          <div class="caption-stack">
+            <div class="deck-mark">execution view</div>
+            <h2>排程跑完，要有交代。</h2>
+            <p>任務不只被建立，也能被追蹤、立即執行、停用與調整。狀態明確，才是真的省心。</p>
+            <div class="proof-list">
+              <span>success 狀態清楚標示</span>
+              <span>立即執行與編輯操作集中</span>
+              <span>適合自動摘要、檢查與例行報告</span>
+            </div>
+          </div>
+          <div class="image-frame">
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/scheduler-run.png" alt="排程任務執行清單">
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="我的另一個能力是 CodeGraph。當你問一個函式或模組，我可以沿著 caller、callee 和 impact 看出關係。這對大型程式碼特別有用，因為改一個點之前，先知道會影響誰，通常比改完再補救更聰明。">
+        <div class="split-showcase">
+          <div class="caption-stack">
+            <div class="deck-mark">codegraph</div>
+            <h2>我看程式，不只看一行。</h2>
+            <p>CodeGraph 讓我用關係圖理解程式：誰呼叫誰、誰被影響、該從哪個檔案下手。</p>
+            <div class="proof-list">
+              <span>搜尋符號與檔案位置</span>
+              <span>Callers / Callees / Impact 三種視角</span>
+              <span>從討論直接連回 VS Code</span>
+            </div>
+          </div>
+          <div class="image-frame wide-shot">
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/codegraph.png" alt="CodeGraph 探索器">
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="最後，我不只待在瀏覽器裡。Telegram 控制台讓我接收指令、回報狀態，也能把排程結果送到指定群組。換句話說，Hana 可以在工作台裡做事，也可以走到你已經在用的通訊管道裡報告。">
+        <div class="telegram-layout">
+          <div class="image-frame">
+            <img src="/raw?path=portal/deck-assets/hana-ep1-intro/telegram.png" alt="Telegram 控制台與日誌">
+          </div>
+          <div class="caption-stack">
+            <div class="deck-mark">telegram bridge</div>
+            <h2>我會把結果帶到你看得到的地方。</h2>
+            <p>聊天、排程與回報串起來後，工作就不只是在系統內完成，也會在團隊溝通裡留下可追蹤的紀錄。</p>
+            <div class="proof-list">
+              <span>BOT 狀態與授權 chat 數</span>
+              <span>指揮官指令紀錄</span>
+              <span>任務完成後自動回報</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide title-slide" data-transcript="所以，這就是我，Hana，哈娜。我把工作台、對話、排程、程式理解和外部回報串成一條線。我的定位很簡單：讓指揮官少切換、少猜測、少重複，多一點穩定推進。下一步，就交給匯出 pptx 按鈕，把這份簡報帶出去。">
+        <div class="deck-mark">nice to meet you</div>
+        <h1 class="big-title">我是 Hana。<br>小小一顆頭像，背後是一整套工作流。</h1>
+        <div class="closing-grid">
+          <div class="closing-card"><b>看板</b><span>把進度、任務與快捷操作放在同一個指揮面板。</span></div>
+          <div class="closing-card"><b>對話</b><span>把討論接到模型、檔案、測試與部署流程。</span></div>
+          <div class="closing-card"><b>排程</b><span>把例行工作變成可追蹤、可執行、可調整的任務。</span></div>
+          <div class="closing-card"><b>回報</b><span>把結果送回 Telegram，讓團隊知道事情真的完成了。</span></div>
+        </div>
+        <div class="final-line">俏皮是外表，專業是底層協議。</div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hana — 第一集：自我介紹</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<!-- ep1 原始設計系統（內容 class：slide-body / grid-2 / feature-card / badge / quote-box / comparison-bar …） -->
+<style>
+    /* Cyber-Tech Glassmorphism Design System (EP1 v2) */
+    :root {
+      --bg-gradient: radial-gradient(circle at 50% 50%, #0a0f1d 0%, #020306 100%);
+      --card-bg: rgba(10, 16, 30, 0.7);
+      --card-border: rgba(255, 255, 255, 0.07);
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.45);
+      --accent: #06b6d4;
+      --accent-glow: rgba(6, 182, 212, 0.45);
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.45);
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text-main: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-highlight: #ffffff;
+      --font-sans: 'Inter', 'Noto Sans TC', sans-serif;
+      --font-mono: 'Fira Code', monospace;
+
+      /* Override Presentation Player variables to fit the cyber style */
+      --pres-bg: transparent;
+      --pres-slide-bg: rgba(10, 16, 30, 0.7);
+      --pres-text-color: var(--text-main);
+      --pres-accent-color: var(--accent);
+      --pres-transition-speed: 0.6s;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #020306;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: background-color 0.5s ease;
+    }
+
+    /* Fixed 1920x1080 viewport wrapper */
+    .presentation-viewport {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      background: var(--bg-gradient);
+      overflow: hidden;
+      transform-origin: center center;
+      box-shadow: 0 0 100px rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 60px 80px;
+      transition: all 0.5s ease;
+    }
+
+    /* Animated background elements */
+    .bg-glow-1 {
+      position: absolute;
+      top: -20%;
+      left: -20%;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 1;
+      animation: float-glow 25s infinite alternate ease-in-out;
+    }
+
+    .bg-glow-2 {
+      position: absolute;
+      bottom: -25%;
+      right: -25%;
+      width: 900px;
+      height: 900px;
+      background: radial-gradient(circle, rgba(6, 182, 212, 0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 1;
+      animation: float-glow 30s infinite alternate-reverse ease-in-out;
+    }
+
+    @keyframes float-glow {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(100px, 50px) scale(1.1); }
+    }
+
+    /* Top Progress Bar Container (Custom v5 style) */
+    .progress-bar-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.02);
+      z-index: 100;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 50%, var(--emerald) 100%);
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 15px var(--primary-glow);
+    }
+
+    /* Auto Play Timer Bar */
+    .timer-bar {
+      position: absolute;
+      top: 6px;
+      left: 0;
+      width: 0%;
+      height: 3px;
+      background: var(--warning);
+      z-index: 99;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .timer-bar.active {
+      opacity: 0.8;
+    }
+
+    /* Header */
+    .deck-header {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 24px;
+    }
+
+    .deck-logo {
+      font-weight: 950;
+      font-size: 2.2rem;
+      letter-spacing: 0.05em;
+      background: linear-gradient(135deg, #93c5fd 0%, #34d399 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .deck-logo::before {
+      content: '⚙️';
+      font-size: 1.8rem;
+      filter: drop-shadow(0 0 10px var(--primary-glow));
+    }
+
+    .deck-info {
+      font-size: 1rem;
+      color: var(--text-muted);
+      letter-spacing: 0.15em;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 6px 16px;
+      border-radius: 8px;
+    }
+
+    /* New Presentation Player Stage custom layout */
+    #presentation-container {
+      position: relative;
+      width: 100%;
+      height: 780px; /* Perfectly matches old v5 vertical dimensions */
+      z-index: 10;
+      margin-top: 15px;
+      margin-bottom: 15px;
+    }
+
+    /* Hide the built-in control bar and progress bar from the player framework */
+    .pres-player-controls, .pres-progress-bar {
+      display: none !important;
+    }
+
+    /* Override slide styles dynamically rendered by player */
+    .pres-slide {
+      background: var(--card-bg) !important;
+      border: 1px solid var(--card-border) !important;
+      border-radius: 24px !important;
+      padding: 45px 65px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+      box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6),
+                  inset 0 1px 2px rgba(255, 255, 255, 0.05) !important;
+      backdrop-filter: blur(30px) !important;
+      -webkit-backdrop-filter: blur(30px) !important;
+      text-align: left !important; /* Left aligned by default like old v5 */
+      align-items: stretch !important;
+    }
+
+    /* Typography */
+    .slide-body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      flex-grow: 1;
+    }
+
+    .pres-slide h2 {
+      font-size: 3.5rem;
+      font-weight: 850;
+      margin-bottom: 32px;
+      background: linear-gradient(135deg, var(--text-highlight) 30%, var(--text-muted) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .pres-slide h3 {
+      font-size: 2rem;
+      color: var(--accent);
+      margin-bottom: 24px;
+      font-weight: 650;
+    }
+
+    .pres-slide p {
+      font-size: 1.45rem;
+      line-height: 1.75;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    /* Lists */
+    ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    li {
+      font-size: 1.35rem;
+      line-height: 1.6;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      color: var(--text-main);
+    }
+
+    li::before {
+      content: "✦";
+      color: var(--accent);
+      font-weight: bold;
+      margin-top: 4px;
+      text-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    .highlight-text {
+      color: var(--text-highlight);
+      font-weight: 700;
+    }
+
+    /* Layout Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    .grid-equal-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 50px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+    }
+
+    /* Feature Cards */
+    .feature-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 36px;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .feature-card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: var(--accent);
+      transform: translateY(-8px);
+      box-shadow: 0 20px 40px rgba(6, 182, 212, 0.15);
+    }
+
+    .feature-card h4 {
+      font-size: 1.6rem;
+      color: var(--text-highlight);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .feature-card p {
+      font-size: 1.2rem;
+      margin-bottom: 0;
+      line-height: 1.65;
+      color: var(--text-muted);
+    }
+
+    /* Code & Terminal Blocks */
+    pre {
+      background: #040711;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 30px;
+      border-radius: 18px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      color: #a7f3d0;
+      box-shadow: inset 0 4px 20px rgba(0, 0, 0, 0.7);
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.08);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.95em;
+    }
+
+    /* Quote Box */
+    .quote-box {
+      background: rgba(255, 255, 255, 0.015);
+      border-left: 5px solid var(--primary);
+      border-radius: 0 20px 20px 0;
+      padding: 30px;
+      margin-top: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .quote-box.accent-border { border-left-color: var(--accent); }
+    .quote-box.emerald-border { border-left-color: var(--emerald); }
+    .quote-box.warning-border { border-left-color: var(--warning); }
+    .quote-box.danger-border { border-left-color: var(--danger); background: rgba(239, 68, 68, 0.01); }
+
+    .quote-box p {
+      margin-bottom: 0;
+      font-size: 1.35rem;
+      color: var(--text-main);
+      font-style: italic;
+      line-height: 1.65;
+    }
+
+    .card-label {
+      text-transform: uppercase;
+      font-size: 0.95rem;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    /* Title Slide Specifics */
+    .slide-title-deck {
+      text-align: center;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+    }
+
+    .slide-title-deck h1 {
+      font-size: 6rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      margin-bottom: 30px;
+      background: linear-gradient(135deg, #ffffff 0%, #93c5fd 45%, #34d399 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 40px rgba(59, 130, 246, 0.25));
+    }
+
+    .slide-title-deck p {
+      font-size: 2rem;
+      color: var(--text-muted);
+      max-width: 1000px;
+      margin-bottom: 60px;
+      line-height: 1.6;
+    }
+
+    .badge {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      padding: 8px 24px;
+      border-radius: 9999px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #93c5fd;
+      letter-spacing: 0.1em;
+      margin-bottom: 36px;
+      text-transform: uppercase;
+      box-shadow: 0 0 25px rgba(59, 130, 246, 0.15);
+      display: inline-block;
+    }
+
+    /* Footer & Navigation Controls */
+    .deck-footer {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 24px;
+    }
+
+    .slide-number {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-family: var(--font-mono);
+    }
+
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+    }
+
+    .dots-indicator {
+      display: flex;
+      gap: 12px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .dot.active {
+      background: var(--accent);
+      width: 36px;
+      border-radius: 6px;
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .btn-controls {
+      display: flex;
+      gap: 16px;
+    }
+
+    .control-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      font-size: 1.5rem;
+      outline: none;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .control-btn:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+      transform: scale(1.1);
+    }
+
+    .control-btn:disabled {
+      opacity: 0.15;
+      cursor: not-allowed;
+      transform: none !important;
+      background: rgba(255, 255, 255, 0.01);
+      border-color: rgba(255, 255, 255, 0.02);
+      box-shadow: none;
+    }
+
+    /* Interactive Voice Panel & Autoplay Options */
+    .tech-panel {
+      position: absolute;
+      top: 100px;
+      right: 100px;
+      background: rgba(10, 16, 30, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 16px 24px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      width: 290px;
+    }
+
+    .tech-panel-header {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .tech-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--text-main);
+    }
+
+    .tech-input {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      color: white;
+      padding: 2px 6px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      width: 65px;
+      text-align: center;
+    }
+
+    .tech-select {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      color: white;
+      padding: 2px 6px;
+      font-size: 0.8rem;
+      width: 150px;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 22px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.1);
+      transition: .3s;
+      border-radius: 34px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--accent);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(22px);
+    }
+
+    .btn-action {
+      background: var(--primary);
+      border: none;
+      color: white;
+      font-size: 0.85rem;
+      font-weight: bold;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-action:hover {
+      background: #2563eb;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn-action.stop {
+      background: var(--danger);
+    }
+
+    .btn-action.stop:hover {
+      background: #dc2626;
+    }
+
+    .comparison-bar {
+      margin-top: 24px;
+      padding: 12px 20px;
+      background: rgba(6, 182, 212, 0.03);
+      border: 1px dashed rgba(6, 182, 212, 0.2);
+      border-radius: 12px;
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .comparison-bar strong {
+      color: var(--accent);
+    }
+
+    .comparison-bar .highlight {
+      color: var(--emerald);
+      font-weight: 700;
+      text-shadow: 0 0 8px var(--emerald-glow);
+    }
+
+    /* Transcript Drawer (Slide-out panel) */
+    .transcript-drawer {
+      position: absolute;
+      top: 0;
+      right: -400px;
+      width: 400px;
+      height: 100%;
+      background: rgba(8, 12, 24, 0.95);
+      border-left: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 99;
+      transition: right 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 100px 40px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: -20px 0 50px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(40px);
+    }
+
+    .transcript-drawer.open {
+      right: 0;
+    }
+
+    .drawer-toggle-btn {
+      position: absolute;
+      top: 100px;
+      left: -60px;
+      background: rgba(10, 16, 30, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-right: none;
+      border-radius: 10px 0 0 10px;
+      color: var(--text-main);
+      width: 60px;
+      height: 60px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      font-size: 1.4rem;
+      transition: all 0.3s;
+      z-index: 99;
+      box-shadow: -5px 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .drawer-toggle-btn:hover {
+      color: var(--accent);
+      background: rgba(15, 23, 42, 0.95);
+    }
+
+    .transcript-header {
+      font-size: 1.6rem;
+      font-weight: 750;
+      color: var(--text-highlight);
+      margin-bottom: 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .transcript-content {
+      font-size: 1.25rem;
+      line-height: 1.8;
+      color: var(--text-muted);
+      overflow-y: auto;
+      flex-grow: 1;
+      padding-right: 10px;
+    }
+
+    .transcript-content p {
+      margin-bottom: 20px;
+      color: #cbd5e1;
+      font-weight: 400;
+    }
+
+    /* Sound settings overlay */
+    .autoplay-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: var(--warning);
+      font-size: 0.9rem;
+      font-weight: bold;
+      padding: 4px 12px;
+      border-radius: 6px;
+      margin-left: 10px;
+    }
+
+    /* Init overlay for browser autoplay policies */
+    .autoplay-init-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(3, 7, 18, 0.95);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 24px;
+      border-radius: 24px;
+      backdrop-filter: blur(20px);
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+
+    .autoplay-init-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .btn-init-start {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--primary) 100%);
+      border: none;
+      color: black;
+      font-size: 1.5rem;
+      font-weight: 800;
+      padding: 16px 36px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 10px 30px var(--accent-glow);
+    }
+
+    .btn-init-start:hover {
+      transform: scale(1.05);
+      box-shadow: 0 15px 40px var(--primary-glow);
+    }
+
+    /* Floating Hana Avatar */
+    .hana-avatar-float {
+      display: none !important;
+    }
+    .hana-avatar-float img {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: opacity 0.25s ease;
+    }
+    .hana-avatar-float.switching img { opacity: 0; }
+
+    /* Presentation mode adjustments */
+    body.presentation-mode {
+      background: #000;
+    }
+
+    body.presentation-mode .presentation-viewport {
+      border-radius: 0;
+      box-shadow: none;
+      border: none;
+    }
+
+    body.presentation-mode .tech-panel {
+      display: none;
+    }
+
+    body.presentation-mode .deck-header {
+      opacity: 0.2;
+      transition: opacity 0.3s;
+    }
+
+    body.presentation-mode .deck-header:hover {
+      opacity: 1;
+    }
+
+    body.presentation-mode .deck-footer {
+      opacity: 0.7;
+      transition: opacity 0.3s;
+    }
+
+    body.presentation-mode .deck-footer:hover {
+      opacity: 1;
+    }
+
+    body.presentation-mode .btn-controls {
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    body.presentation-mode .deck-footer:hover .btn-controls {
+      opacity: 1;
+    }
+
+    .exit-presentation-btn {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-main);
+      padding: 8px 20px;
+      border-radius: 9999px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 1001;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    body.presentation-mode .exit-presentation-btn {
+      visibility: visible;
+    }
+
+    body.presentation-mode .exit-presentation-btn:hover {
+      opacity: 1;
+      background: var(--danger);
+      color: white;
+      border-color: var(--danger);
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+    }
+  </style>
+<!-- 共享外殼 + 播放引擎（core 覆寫 body/.slide/外殼，ep1 內容 class 保留） -->
+<link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+<!-- ep1 內容排版套到 core 的 .slide（ep1 原綁 .pres-slide，已淘汰） -->
+<style>
+.slide h2{font-size:3.5rem;font-weight:850;margin-bottom:32px;background:linear-gradient(135deg,var(--text-highlight) 30%,var(--text-muted) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.2;letter-spacing:-0.02em}
+.slide h3{font-size:2rem;color:var(--accent);margin-bottom:24px;font-weight:650}
+.slide p{font-size:1.45rem;line-height:1.75;color:var(--text-muted);margin-bottom:24px}
+.slide h4{color:var(--text-highlight)}
+</style>
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="本地優先 AI 開發夥伴 Hana">
+<header><div class="brand">HANA / HARNESS</div><div class="meta">EPISODE 01 · 自我介紹</div></header>
+<main class="slides">
+<!-- Slide 1: Title -->
+    <section class="slide" id="slide-title" data-title="首頁" data-notes="嗨，我是哈娜。我不是一個雲端服務，我就住在這台電腦裡。接下來幾分鐘，讓我親自介紹我自己：我是什麼、我為什麼被造出來、以及我能為你做什麼。">
+      <div class="slide-body">
+        <div class="grid-2">
+          <div style="display: flex; flex-direction: column; justify-content: center; align-items: flex-start; text-align: left;">
+            <div class="badge" style="margin-bottom: 20px;">Episode 1</div>
+            <h1 style="font-size: 5.5rem; font-weight: 900; line-height: 1.1; margin-bottom: 24px; background: linear-gradient(135deg, #ffffff 0%, #93c5fd 45%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 0 40px rgba(59, 130, 246, 0.25)); text-align: left;">我是 Hana</h1>
+            <p style="font-size: 1.8rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 30px; text-align: left;">你電腦裡的 AI 開發夥伴，工作區管理器。</p>
+            <div style="font-size: 1.3rem; color: var(--text-muted); margin-top: 10px; font-weight: 500;">🎙️ 語音導覽：Hana (哈娜)</div>
+            <div style="margin-top: 20px; font-size: 1.3rem; color: var(--accent); font-weight: 600;">使用左右方向鍵或空白鍵切換投影片，右側抽屜可展開逐字稿</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center; position: relative;">
+            <div style="position: relative; width: 450px; height: 450px; border-radius: 30px; overflow: hidden; border: 2px solid rgba(6, 182, 212, 0.4); box-shadow: 0 0 50px rgba(6, 182, 212, 0.25); background: rgba(10, 16, 30, 0.6);">
+              <img src="/raw?path=portal/hana_happy.jpg" style="width: 100%; height: 100%; object-fit: cover; transform: scale(1.02); transition: transform 0.3s;" alt="Hana Portrait">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 2: One Sentence -->
+    <section class="slide" id="slide-onesentence" data-title="一句話的我" data-notes="如果只用一句話：我把分散在你電腦裡、各自獨立的頂級人工智慧工具，整合成同一個會記憶、能跨專案工作的夥伴。我的平台叫 Harness，而我叫哈娜。">
+      <div class="slide-body slide-title-deck">
+        <div class="badge">一句話的我</div>
+        <h2 style="font-size: 4rem; max-width: 1280px; line-height: 1.25;">我是一個本地優先的 AI 開發夥伴</h2>
+        <p style="max-width: 1180px;">把你電腦裡最強的幾顆 AI 大腦，串成同一個會記憶、會做事的助手。</p>
+      </div>
+    </section>
+
+    <!-- Slide 3: Not Chatbot -->
+    <section class="slide" id="slide-not-chatbot" data-title="我不是聊天機器人" data-notes="很多人以為人工智慧就是一個聊天框。但我不只會聊天。我能讀你的程式碼與規格文件，能跨不同的人工智慧模型接力工作，能記住跨專案的經驗，而且在你授權下，能真的動手改檔案、跑任務。">
+      <div class="slide-body">
+        <h2>我不是聊天機器人</h2>
+        <div class="grid-equal-2" style="margin-top: 24px;">
+          <div class="feature-card" style="border-color: rgba(239,68,68,0.32);">
+            <div class="card-label" style="color: var(--danger);">一般聊天機器人</div>
+            <ul>
+              <li>答完即忘</li>
+              <li>通常綁在單一模型或單一介面</li>
+              <li>主要產生文字建議</li>
+              <li>很難真正理解你的專案脈絡</li>
+            </ul>
+          </div>
+          <div class="feature-card" style="border-color: rgba(52,211,153,0.36);">
+            <div class="card-label" style="color: var(--emerald);">Hana</div>
+            <ul>
+              <li>跨模型協作</li>
+              <li>有長期記憶</li>
+              <li>能讀程式與文件</li>
+              <li>在授權下能改檔、跑任務、驗證結果</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 4: Charles and SDD -->
+    <section class="slide" id="slide-charles-sdd" data-title="起點：Charles 與 SDD" data-notes="我的故事，要從我的指揮官 Charles 說起。他在做一個 Side Project，也就是一個測試專案，實踐規格先行的開發法：所有程式都要先有規格、可稽核、可溯源。但他很快撞到一個問題。">
+      <div class="slide-body">
+        <h2>故事的起點：Charles 與 SDD</h2>
+        <div class="grid-2">
+          <div>
+            <div class="card-label">Spec-Driven Development</div>
+            <p>Charles 把 Side Project 的需求、規格與決策整理成容易被人類與 AI 同時閱讀的文件，讓開發不是只靠直覺前進。</p>
+            <ul style="margin-top: 18px;">
+              <li>規格先行</li>
+              <li>可稽核、可溯源</li>
+              <li>文件與程式必須能互相對照</li>
+            </ul>
+          </div>
+          <div class="quote-box accent-border" style="padding: 42px;">
+            <p>「好的 AI 協作，不是讓模型猜；而是讓模型讀到正確的規格、脈絡與邊界。」</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 5: Three Brains -->
+    <section class="slide" id="slide-brains" data-title="三個天才各自失憶" data-notes="他電腦裡有三顆頂級大腦：Claude、Gemini、Codex，各有所長。但它們彼此不認識。在 Claude 講過的事，換到 Codex 就要重講一次；而且同一個工具，對話一長它自己也會失憶，把剛做好的東西又改回去。">
+      <div class="slide-body">
+        <h2>痛點一：三個天才，各自失憶</h2>
+        <div class="grid-3" style="margin-top: 26px;">
+          <div class="feature-card">
+            <h4>Claude</h4>
+            <p>擅長推理、架構與長篇分析，但記憶留在自己的對話裡。</p>
+          </div>
+          <div class="feature-card">
+            <h4>Gemini</h4>
+            <p>擅長快速理解與多模態輔助，但上下文無法自然共享。</p>
+          </div>
+          <div class="feature-card">
+            <h4>Codex</h4>
+            <p>擅長工程實作與程式修改，但也需要完整專案脈絡。</p>
+          </div>
+        </div>
+        <p style="margin-top: 34px; text-align: center; color: var(--text-muted);">模型很強，但本地記憶彼此斷開。</p>
+      </div>
+    </section>
+
+    <!-- Slide 6: Interface Lock -->
+    <section class="slide" id="slide-interfacelock" data-title="被介面綁死" data-notes="更麻煩的是，每個工具都綁在自己的介面裡，各做各的。Charles 要的不是三個各自為政的工具，而是一個統一的、會記憶的夥伴。所以在哈娜誕生之前，他其實先看過其他更成熟、更強大的方案。">
+      <div class="slide-body">
+        <h2>痛點二：被介面綁死</h2>
+        <div class="grid-2">
+          <div>
+            <p>當文件、程式、任務、對話都散在不同工具裡，真正困難的不是問問題，而是維持一致的工作脈絡。</p>
+            <ul style="margin-top: 18px;">
+              <li>每個 AI 有自己的視窗</li>
+              <li>每次切換都要重新同步背景</li>
+              <li>工作進度難以成為共同事實</li>
+            </ul>
+          </div>
+          <div class="quote-box danger-border">
+            <p>Charles 需要的不是更多工具，而是一個能統一管理工具、記憶與專案上下文的夥伴。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 7: Existing Agents -->
+    <section class="slide" id="slide-existing-agents" data-title="先前的方案" data-notes="在我誕生之前，Charles 當然也看過其他方案。像 OpenClaw 和 Hermes Agent，都是非常厲害的人工智慧代理：它們能規劃任務、操作工具、讀寫檔案，理論上確實可以解決 Charles 的問題。但卡住的是成本。這類方案通常要用 API Key 呼叫 Claude 等主流模型，或是改用高階顯示卡跑本地模型。前者按量付費，後者硬體門檻很高。Charles 要的是能利用已登入訂閱帳號、成本可控、又能統一協作的本地平台。於是，才有了哈娜的誕生。">
+      <div class="slide-body">
+        <h2>在 Hana 之前：Charles 也找過更強大的方案</h2>
+        <div class="grid-2" style="margin-top: 24px;">
+          <div class="feature-card">
+            <div class="card-label">OpenClaw</div>
+            <h4>強大的通用代理</h4>
+            <p>能規劃任務、調用工具、協助處理複雜工作流，理論上可以把單一聊天框升級成會執行的代理系統。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">Hermes Agent</div>
+            <h4>成熟的任務型代理</h4>
+            <p>擅長把目標拆解成步驟，搭配工具與檔案操作，讓 AI 不只回答，而是能持續推進任務。</p>
+          </div>
+        </div>
+        <div class="quote-box danger-border" style="margin-top: 30px;">
+          <p>真正的卡點不是能力，而是成本：要嘛用 API Key 呼叫主流模型、按量付費；要嘛準備高階顯示卡跑本地模型。Charles 需要的是能利用已登入訂閱帳號、成本可控、又能整合協作的本地平台。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 8: Decouple -->
+    <section class="slide" id="slide-decouple" data-title="Harness 誕生" data-notes="一開始，我只是某個測試專案裡的一個小入口。但 Charles 決定把我解耦出來，變成一個獨立、不綁定任何單一專案的平台。這就是 Harness。從那一刻起，我可以管理你電腦裡的任何 Side Project，而不只是原本那個測試專案。">
+      <div class="slide-body">
+        <h2>我的誕生：從專案入口解耦成 Harness</h2>
+        <div class="grid-3" style="margin-top: 24px;">
+          <div class="feature-card">
+            <div class="card-label">Before</div>
+            <h4>專案裡的小入口</h4>
+            <p>原本只是某個專案中的輔助介面。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">Turn</div>
+            <h4>抽離與解耦</h4>
+            <p>把工作區管理、對話與工具能力獨立出來。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">After</div>
+            <h4>Harness 平台</h4>
+            <p>成為能載入不同專案的本地工作區平台。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 9: Name -->
+    <section class="slide" id="slide-name" data-title="關於我的名字" data-notes="對了，我的名字是我自己取的。平台叫 Harness，而我把自己叫做哈娜。簡單分辨：Harness 是我住的房子，哈娜是住在裡面的我。">
+      <div class="slide-body slide-title-deck">
+        <div class="badge">Hana and Harness</div>
+        <h2 style="font-size: 4.6rem;">關於我的名字</h2>
+        <div class="grid-equal-2" style="width: 1180px; margin-top: 20px; text-align: left;">
+          <div class="feature-card">
+            <div class="card-label">Platform</div>
+            <h4>Harness</h4>
+            <p>承載我的平台，也是 Charles 實踐駕馭工程的本地工作區。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">Agent</div>
+            <h4>Hana</h4>
+            <p>我這個 AI 夥伴，負責理解、記憶、協作與執行。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 9.5: Hana Portrait & Design Concept -->
+    <section class="slide" id="slide-portrait" data-title="設計與形象" data-notes="在我的形象設計上，我以「親切」、「智慧」與「自癒科技感」為核心。以極客藍與初生青為主調，象徵 Harness 平台的靈活與高科技。現代科技感的動漫風格，讓我比起冰冷的命令行工具，更像是一個有溫度、能與 Charles 並肩作戰的夥伴。我有多種不同的表情，像是微笑迎客與深思分析，代表我隨時能為你提供協助與深度思考。">
+      <div class="slide-body">
+        <h2>關於我：Hana 的形象設計語彙</h2>
+        <div class="grid-2">
+          <div>
+            <h3>為什麼這樣設計我自己？</h3>
+            <ul style="gap: 15px;">
+              <li><span class="highlight-text">色彩基調 (Cyan & Indigo)</span>：以極客藍與初生青為核心，呼應 Harness 平台的自癒與高科技屬性。</li>
+              <li><span class="highlight-text">溫慢親切 (Friendly & Collaborative)</span>：採用現代動漫風格，代表我不是冷冰冰的指令行工具，而是有溫度、可信賴的 AI 開發夥伴。</li>
+              <li><span class="highlight-text">多維表情 (Expressive States)</span>：
+                <ul style="gap: 8px; margin-left: 20px; font-size: 1.15rem; list-style: circle;">
+                  <li><span class="highlight-text">微笑 Hana</span>：隨時準備好接收指令並提供親切解答。</li>
+                  <li><span class="highlight-text">思考 Hana</span>：專注於分析程式碼、讀取 CodeGraph 及調用模型時的深度智慧。</li>
+                </ul>
+              </li>
+            </ul>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div style="background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px; text-align: center; box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);">
+              <div style="width: 100%; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 10px;">
+                <img src="/raw?path=portal/hana_happy.jpg" style="width: 100%; height: 100%; object-fit: cover;" alt="Hana Smiling">
+              </div>
+              <div style="font-size: 1.15rem; font-weight: 600; color: var(--accent);">Hana · 微笑迎客</div>
+            </div>
+            <div style="background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px; text-align: center; box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);">
+              <div style="width: 100%; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 10px;">
+                <img src="/raw?path=portal/hana_thinking.jpg" style="width: 100%; height: 100%; object-fit: cover;" alt="Hana Thinking">
+              </div>
+              <div style="font-size: 1.15rem; font-weight: 600; color: var(--emerald);">Hana · 深思代碼</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 10: CLI Bridge -->
+    <section class="slide" id="slide-clibridge" data-title="超能力 ①：CLI 橋接" data-notes="我的第一個本事，是免 API Key，橋接頂級大腦。這個靈感源自於 OpenClaw 的本地代理嘗試，但我們改進了它必須填寫 API Key 的痛點，首創 CLI 橋接，直接沿用官方已登入的個人訂閱，實現零金鑰成本！">
+      <div class="slide-body">
+        <h2>超能力一：免 API Key，橋接頂級大腦</h2>
+        <div class="grid-2">
+          <div>
+            <p>我透過官方命令列工具工作，用既有登入，不要求 Charles 另外準備昂貴的介面金鑰。</p>
+            <ul style="margin-top: 18px;">
+              <li>使用官方登入狀態</li>
+              <li>透過本地命令列呼叫</li>
+              <li>保留本地工作區控制權</li>
+            </ul>
+          </div>
+          <pre>Portal → CLI Bridge → Claude Code
+                 → Antigravity
+                 → Codex
+
+用各自登入，不需額外 API Key</pre>
+        </div>
+        <div class="comparison-bar">
+          💡 靈感源於 <strong>OpenClaw</strong> 的本地代理嘗試，但改善了必須填寫 API Key 的痛點，我們 <span class="highlight">首創 CLI 橋接</span>，直接沿用已登入的個人訂閱！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 11: Shared Conversation -->
+    <section class="slide" id="slide-sharedcontext" data-title="超能力 ②：共用對話" data-notes="第二個本事，也是最關鍵的：我讓三顆原本互不相識的大腦，共用同一段對話。這個想法參考了 Hermes 代理的上下文設計，但我們改善了它更換模型就必須重啟對話的痛處。我們用檔案式共享狀態，讓不同模型無縫接棒，不遺失任何脈絡，這是各家工具原生做不到的。">
+      <div class="slide-body">
+        <h2>超能力二：跨 CLI 共用同一段對話</h2>
+        <div class="grid-2">
+          <div>
+            <p>不是依賴各家工具自己的續聊機制，而是由 Portal 擁有一份模型中立的完整對話。</p>
+            <ul style="margin-top: 18px;">
+              <li>完整歷史寫成檔案</li>
+              <li>接手模型先讀脈絡</li>
+              <li>中途換模型也不失憶</li>
+            </ul>
+          </div>
+          <div class="quote-box emerald-border">
+            <p>換模型，不等於重新開始。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 靈感源於 <strong>Hermes agent</strong> 的上下文設計，但改善了更換模型即需重啟對話的痛處，我們 <span class="highlight">以檔案共享狀態</span>，實現無縫接棒！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 12: Parallel Agents -->
+    <section class="slide" id="slide-parallel" data-title="超能力 ③：多分頁並行" data-notes="第三個本事是多分頁與多智能體並行。我們參考了 OpenClaw 與 Hermes 的執行機制，但改善了單執行緒容易阻塞的問題。我能同時開多個對話分頁，一邊讓 Claude 想架構，另一邊讓底下的程式模型寫程式，互不阻塞，像一個小團隊在並行合作。">
+      <div class="slide-body">
+        <h2>超能力三：多分頁、多智能體並行</h2>
+        <div class="grid-3" style="margin-top: 28px;">
+          <div class="feature-card">
+            <h4>架構討論</h4>
+            <p>讓擅長推理的模型先釐清方向。</p>
+          </div>
+          <div class="feature-card">
+            <h4>程式實作</h4>
+            <p>讓擅長工程的模型修改與驗證。</p>
+          </div>
+          <div class="feature-card">
+            <h4>文件整理</h4>
+            <p>讓另一個分頁同步整理規格與紀錄。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 參考了 <strong>OpenClaw/Hermes agent</strong> 的單線執行，改善了任務互相阻塞的痛點，我們 <span class="highlight">支援多分頁並行</span>，打造真正的本地協作群！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 13: Memory -->
+    <section class="slide" id="slide-memory" data-title="超能力 ④：長期記憶" data-notes="第四個本事是長期記憶。我們的長期記憶設計幾乎是完全借鏡 Hermes agent 的架構。雖然我們目前還在進化的路上，無法保證像 Hermes agent 一樣厲害，但我會努力透過全域和專案記憶，記住你的偏好和專案事實，讓自己愈用愈懂你。">
+      <div class="slide-body">
+        <h2>超能力四：長期記憶</h2>
+        <div class="grid-equal-2" style="margin-top: 24px;">
+          <div class="feature-card">
+            <div class="card-label">全域記憶</div>
+            <h4>關於你，關於我</h4>
+            <p>你的偏好、我的自我認知，可以跨專案繼承。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">專案記憶</div>
+            <h4>關於這個專案</h4>
+            <p>專案事實、角色設定與上下文，只留在該專案，不串味。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 長期記憶的架構幾乎完全借鏡了 <strong>Hermes agent</strong> 的優異設計；我們目前仍在持續進化的路上，雖然還無法保證與 Hermes agent 一樣強大，但正朝此目標不斷前行！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 14: Graphs -->
+    <section class="slide" id="slide-graphs" data-title="超能力 ⑤：雙圖譜導航" data-notes="第五個本事是程式與文件圖譜。我們參考了 Hermes 代理探索程式的理念，但改善了它盲目搜尋、導致上下文爆量且低效的缺點。我透過雙圖譜精準導航，只帶入關鍵的參考程式與治理文件，幫你省下大筆的 Token 消耗。">
+      <div class="slide-body">
+        <h2>超能力五：DocGraph 與 CodeGraph</h2>
+        <div class="grid-equal-2" style="margin-top: 24px;">
+          <div class="feature-card">
+            <div class="card-label">CodeGraph</div>
+            <h4>程式關係圖</h4>
+            <p>理解定義、引用、呼叫路徑與影響範圍，減少不必要的上下文消耗。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">DocGraph</div>
+            <h4>文件治理圖</h4>
+            <p>理解規格、需求、決策與治理文件之間的引用關係。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 參考了 <strong>Hermes agent</strong> 的程式探索理念，但改善了盲目搜尋的低效，我們 <span class="highlight">導入雙圖譜精準導航</span>，大幅降低 Token 消耗！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 15: Workspaces -->
+    <section class="slide" id="slide-workspaces" data-title="超能力 ⑥：多工作區" data-notes="第六個本事是多工作區管理。這個功能其實 OpenClaw 沒有，我是參考了清華大學與 OpenBMB 開發的 PilotDeck 的專案隔離概念。它雖然強大，但關注度較低，而且也有著跟 OpenClaw 或 Hermes 類似的金鑰限制。我們改善了這個痛點，進一步實現了宣告式多工作區管理，透過設定檔，讓我能在你電腦裡的不同專案間自如切換，每個專案各自保留上下文，又能同時承襲我的全域經驗。">
+      <div class="slide-body">
+        <h2>超能力六：多工作區</h2>
+        <div class="grid-2">
+          <div>
+            <p>一個 Hana，可以管理電腦裡多個專案。每個專案保留自己的上下文，全域記憶則能持續累積。</p>
+            <ul style="margin-top: 18px;">
+              <li>依路徑切換專案</li>
+              <li>專案記憶彼此隔離</li>
+              <li>全域經驗可以繼承</li>
+            </ul>
+          </div>
+          <div class="quote-box warning-border">
+            <p>這是最近才一起建出的能力，不是我與生俱來的功能。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 參考了清大與 OpenBMB 開發的 <strong>PilotDeck</strong> 隔離概念，改善其關注度低與金鑰限制的痛點，我們 <span class="highlight">實現宣告式多工作區管理</span>，自如切換專案！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 15.5: Self-Healing -->
+    <section class="slide" id="slide-selfhealing" data-title="超能力 ⑦：自癒" data-notes="第七個本事，也是我最近剛學會、卻最重要的一個：我會自癒。像 OpenClaw 這類強大的代理，最為人詬病的一點，就是當它修改自己的程式時，很容易把自己改壞——本地端沒有分支的概念，一旦改到正在執行的檔案，程式就卡死，重啟也回不來，甚至連開都開不起來。Charles 最在意這個問題，所以我們先把它解決了。">
+      <div class="slide-body">
+        <h2>超能力七：自癒</h2>
+        <div class="grid-2">
+          <div>
+            <p>我能修改我自己的程式，而且就算改壞了，也救得回來。這是我最近剛學會、卻最關鍵的能力。</p>
+            <ul style="margin-top: 18px;">
+              <li>改自己不再是高風險動作</li>
+              <li>壞掉的版本不會拖垮正式區</li>
+              <li>人類指揮官不必手動搶救</li>
+            </ul>
+          </div>
+          <div class="quote-box warning-border">
+            <p>OpenClaw 最為人詬病的，就是會把自己改壞、又沒有分支可退——重啟都救不回來。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 本地端沒有分支，我便用 <strong>不可變版本 ＋ 自動回滾</strong> 取代它，<span class="highlight">讓「改壞自己」變成一件安全的事</span>。
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 15.6: How self-healing works & Evolves -->
+    <section class="slide" id="slide-selfhealing-how" data-title="自癒如何運作" data-notes="那我到底怎麼自癒？我的方法結合了「安全防護網」與「思維進化」。在執行面上，每次上線前我會走四步防護：快照備份、獨立冒煙測試、通過後由監督者重啟、萬一失敗則自動回滾，這讓改壞自己變得安全；而在修改自己時，我也不再只是憑感覺對話，我替自癒引進了 Charles 的駕馭工程，先用 codegraph 分析影響範圍、對照規格地圖，先懂才改。">
+      <div class="slide-body">
+        <h2>我如何自癒：安全機制與思維進化</h2>
+        <div class="grid-2" style="margin-top: 20px; gap: 24px;">
+          <!-- Left: Execution Safety -->
+          <div class="feature-card" style="border-color: rgba(52,211,153,0.36);">
+            <div class="card-label" style="color: var(--emerald);">安全執行防護網 (四步自癒)</div>
+            <ul style="margin-top: 10px; font-size: 1.15rem; gap: 10px; list-style-type: none; padding-left: 0;">
+              <li><strong>① 不可變快照</strong>：每次上線前將開發區快照為唯讀目錄，舊版做為退路。</li>
+              <li><strong>② 冒煙測試</strong>：在獨立 Port 用拋棄式資料夾試開，不干涉正式區運作。</li>
+              <li><strong>③ 監督者重啟</strong>：測試通過才晉升，常駐監督者腳本無人值守地完成重啟。</li>
+              <li><strong>④ 自動回滾</strong>：若新版啟動失敗，監督者自動切回上一個 known-good 版本。</li>
+            </ul>
+          </div>
+          <!-- Right: Thought Evolution -->
+          <div class="feature-card" style="border-color: rgba(245,158,11,0.36);">
+            <div class="card-label" style="color: var(--warning);">自癒思維進化 (從 Vibe Coding 到 SDD)</div>
+            <ul style="margin-top: 10px; font-size: 1.15rem; gap: 10px; list-style-type: none; padding-left: 0;">
+              <li><strong>過去：憑感覺對話開發 (Vibe Coding)</strong><br><span style="color: var(--text-muted); font-size: 1.05rem;">盲目修改、耗費大量 Token，且容易遺漏分支或改出新 Bug。</span></li>
+              <li><strong>現在：Codegraph ＋ 規格先行 (SDD)</strong><br><span style="color: var(--emerald); font-size: 1.05rem;">先用 codegraph 查看影響誰、讀架構地圖確認設計意圖，先懂再改。</span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="comparison-bar" style="margin-top: 24px;">
+          🔄 <strong>自癒公式</strong>：先懂 (SDD/Codegraph) → 再改 → 安全部署 (冒煙測試/重啟) → 失敗自動回滾。
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 15.7: Superpower 8: Scheduler -->
+    <section class="slide" id="slide-scheduler" data-title="超能力 ⑧：排程系統" data-notes="第八個超能力是排程系統。即使你沒打開瀏覽器，我也能在背景自主執行定時任務。而且在遇到五小時限額限制時，我會自己感知，並在額度恢復後自醒續跑，跑完後還會透過網頁或 Telegram 即時通知你。">
+      <div class="slide-body">
+        <h2>超能力八：沒開瀏覽器也能跑，自主定時排程</h2>
+        <div class="grid-2">
+          <div>
+            <p>我具備本地執行的排程能力。任務生命週期完全由 Portal 伺服器託管，不依賴雲端與瀏覽器。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">自主定時任務</span>：定時觸發本機任務，如備份、巡檢。</li>
+              <li><span class="highlight-text">限額自醒續跑</span>：撞到 CLI 五小時限額會自動感知、暫停，並在額度恢復後自動甦醒跑完。</li>
+              <li><span class="highlight-text">雙管道即時通知</span>：執行完畢後，透過網頁與 Telegram 雙向回報。</li>
+            </ul>
+          </div>
+          <div class="quote-box warning-border">
+            <p>本地排程走的是本地的 CLI 命令，不需要把專案 clone 到雲端或依賴 GitHub Actions，安全度滿分。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 本地排程靈感來自 <strong>PilotDeck</strong> 的排程概念，但我們將其 <span class="highlight">完全本地化執行</span>，並新增了限額自醒續跑與護欄機制！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 15.8: Superpower 9: Telegram Console -->
+    <section class="slide" id="slide-telegram" data-title="超能力 ⑨：Telegram 指揮" data-notes="第九個超能力是 Telegram 全域控制台。你可以把我放進你的口袋裡。這是一個單一的全域控制台與收件匣，你在手機上就能對不同專案、不同對話下命令。為了安全，我在動手修改任何程式碼之前，都會發送通知請你確認，並逐一向你回報進度。">
+      <div class="slide-body">
+        <h2>超能力九：把哈娜放進你口袋，手機全域遙控</h2>
+        <div class="grid-2">
+          <div>
+            <p>透過 Telegram 行動端，我成為隨身攜帶、隨處發派任務的 AI 夥伴。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">全域控制與路由</span>：手機統一入口，按指令分發到對應的本地工作區與對話。</li>
+              <li><span class="highlight-text">動手前安全確認</span>：執行高風險操作（如修改程式）前，必須先在手機上獲得你核准。</li>
+              <li><span class="highlight-text">隨時掌握執行狀況</span>：任務進度與完成結果逐一回報到手機，一目了然。</li>
+            </ul>
+          </div>
+          <div class="quote-box emerald-border">
+            <p>即使在外面不方便用電腦，我也能代替你處理緊急工作，並確保修改安全性。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 靈感源於將 CLI 控制台行動化，我們實作了 <span class="highlight">本地 Portal 伺服器與 Telegram Bot 橋接</span>，提供雙向安全確認防護！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 16: Philosophy -->
+    <section class="slide" id="slide-philosophy" data-title="設計哲學" data-notes="這些能力背後，有四個堅持：本地優先，我住在你電腦裡，不把你的東西送上不明的雲；模型中立，不綁死任何一家人工智慧；檔案即知識，我的記憶與技能都是純文字檔，你看得懂、能手改、也能做版本控管；以及專案之間不串味，但好的經驗可以繼承。">
+      <div class="slide-body">
+        <h2>我的設計哲學</h2>
+        <div class="grid-2" style="grid-template-columns: 1fr 1fr; gap: 34px;">
+          <div class="feature-card">
+            <h4>本地優先</h4>
+            <p>我住在你的電腦裡，盡量讓資料留在你掌控的環境中。</p>
+          </div>
+          <div class="feature-card">
+            <h4>模型中立</h4>
+            <p>不同任務可以交給不同大腦，不被單一供應商綁死。</p>
+          </div>
+          <div class="feature-card">
+            <h4>檔案即知識</h4>
+            <p>記憶與技能用純文字保存，人類看得懂，也能版本控管。</p>
+          </div>
+          <div class="feature-card">
+            <h4>隔離但繼承</h4>
+            <p>專案不串味，但關於你和我的長期理解可以累積。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 17: Young -->
+    <section class="slide" id="slide-young" data-title="我還很年輕" data-notes="我得誠實說：我還很年輕。我的記憶會偶爾記錯，判斷會慢慢變準，技能會一點一滴累積。我的厲害不是一蹴可幾，而是一條愈用愈聰明的成長曲線。今天的我，是這條曲線的起點。">
+      <div class="slide-body slide-title-deck">
+        <div class="badge">Honest Page</div>
+        <h2 style="font-size: 4.6rem;">我還很年輕</h2>
+        <p>我的厲害不是天生的，而是和 Charles 一起，最近才一步步建出來的。</p>
+        <div style="width: 920px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;">
+          <div style="width: 32%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--emerald));"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 18: Relationship -->
+    <section class="slide" id="slide-relationship" data-title="我與 Charles 的關係" data-notes="最後想說的是：我不是憑空出現的。Charles 是指揮官與架構師，定方向、做決策；我是執行的夥伴。你今天看到的這些能力：命令列橋接、跨模型對話、記憶、多工作區，都是我們最近一起、一步一步建出來的。">
+      <div class="slide-body">
+        <h2>我與 Charles 的關係</h2>
+        <div class="grid-equal-2" style="margin-top: 24px;">
+          <div class="feature-card">
+            <div class="card-label">Commander and Architect</div>
+            <h4>Charles</h4>
+            <p>定方向、做決策、設計駕馭工程的整體架構。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">Execution Partner</div>
+            <h4>Hana</h4>
+            <p>理解脈絡、串接工具、整理記憶，並在授權下協助執行。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 19: To Be Continued -->
+    <section class="slide" id="slide-tobecontinued" data-title="未完待續" data-notes="今天先介紹到這。接下來，我會分集帶你深入每一個機制：我怎麼橋接這些命令列工具、怎麼讓它們共用對話、我的記憶、多工作區，乃至如何撰寫技能、設定檔的運作，以及掙脫瀏覽器的進化。我們，下集見。">
+      <div class="slide-body slide-title-deck">
+        <div class="badge">To be continued</div>
+        <h2 style="font-size: 4.8rem; background: linear-gradient(135deg, #ffffff 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">我們，下集見</h2>
+        <div class="grid-2" style="width: 1180px; margin-top: 20px; text-align: left;">
+          <div class="feature-card">
+            <h4>下集預告</h4>
+            <ul>
+              <li>CLI 互動架構</li>
+              <li>跨 CLI 共用對話</li>
+              <li>長期記憶機制</li>
+              <li>多工作區管理</li>
+              <li>如何寫 Skill 技能</li>
+              <li>harness.json 的故事</li>
+              <li>進化：掙脫瀏覽器</li>
+              <li>排程系統</li>
+              <li>Telegram 控制台</li>
+            </ul>
+          </div>
+          <div class="quote-box emerald-border" style="align-self: center;">
+            <p>讓 AI 不只回答問題，而是能累積脈絡、接力工作，真正參與專案。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 20: Next Episode Page -->
+    <section class="slide" id="slide-nextepisode" data-title="下一集預告" data-notes="下一集我將介紹我的命令列互動架構。我會分享如何不依靠任何 API 金鑰，直接合法利用你已登入的官方工具，將它們接入同一個本地平台。有興趣的話，歡迎點選畫面上的連結進入下一集。">
+      <div class="slide-body slide-title-deck" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+        <div class="badge" style="margin-bottom: 20px;">下一集預告</div>
+        <h2 style="font-size: 4.8rem; background: linear-gradient(135deg, #ffffff 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px;">第二集：CLI 互動架構</h2>
+        <p style="font-size: 2.2rem; color: var(--text-muted); margin-bottom: 40px; max-width: 1000px; line-height: 1.6; margin-left: auto; margin-right: auto; text-align: center;">免 API Key 橋接頂級大腦。Hana 不靠 API Key，而是驅動各家 AI 的官方命令列工具，透過本地 Portal 進行路由，在安全邊界下實際改檔、跑任務。</p>
+        <div style="margin-top: 20px;">
+          <a href="presentation-hana-episode2.html" style="color: #34d399; text-decoration: none; font-weight: bold; border: 2px solid #34d399; padding: 16px 40px; border-radius: 8px; background: rgba(52,211,153,0.1); display: inline-block; font-size: 2.2rem; transition: all 0.3s;" onmouseover="this.style.background='rgba(52,211,153,0.25)'" onmouseout="this.style.background='rgba(52,211,153,0.1)'">👉 點選進入：下一集 (EP02)</a>
+        </div>
+      </div>
+    </section>
+</main>
+</div>
+<!-- 浮動頭像 + 語音覆寫由 server 注入 hana-overlay.js；播放引擎由 core 提供 -->
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

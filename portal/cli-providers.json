@@ -1,0 +1,63 @@
+{
+  "_comment": "Chat model providers. Each maps to a local CLI. The dropdown is built from this file + live detection (only installed CLIs are shown). Gemini's model list is pulled live from `agy models`; edit the claude/codex lists here as new models appear.",
+  "providers": [
+    {
+      "id": "claude",
+      "label": "Claude Code",
+      "icon": "sparkles",
+      "models": [
+        { "value": "fable", "label": "Claude Fable (旗艦推理)" },
+        { "value": "opus", "label": "Claude Opus (最強推理)" },
+        { "value": "sonnet", "label": "Claude Sonnet (平衡)" },
+        { "value": "haiku", "label": "Claude Haiku (快速)" }
+      ],
+      "efforts": [
+        { "value": "default", "label": "預設" }
+      ]
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "icon": "terminal",
+      "models": [
+        { "value": "gpt-5.6-terra", "label": "GPT-5.6 Terra (預設·日常均衡)" },
+        { "value": "gpt-5.6-luna", "label": "GPT-5.6 Luna (快·省)" },
+        { "value": "gpt-5.5", "label": "GPT-5.5 (複雜編碼旗艦)" },
+        { "value": "gpt-5.4-mini", "label": "GPT-5.4 Mini (小·快·省)" }
+      ],
+      "efforts": [
+        { "value": "none", "label": "不推理 (最快)" },
+        { "value": "minimal", "label": "極簡" },
+        { "value": "low", "label": "低 (快·預設)" },
+        { "value": "medium", "label": "中 (均衡)" },
+        { "value": "high", "label": "高 (深入)" },
+        { "value": "xhigh", "label": "極高" },
+        { "value": "max", "label": "最高 (最慢)" }
+      ]
+    },
+    {
+      "id": "gemini",
+      "label": "Antigravity (Gemini)",
+      "icon": "gem",
+      "dynamic": "agy",
+      "efforts": [
+        { "value": "low", "label": "低" },
+        { "value": "medium", "label": "中" },
+        { "value": "high", "label": "高" }
+      ]
+    },
+    {
+      "id": "grok",
+      "label": "Grok",
+      "icon": "bot",
+      "models": [
+        { "value": "grok-4.5", "label": "Grok 4.5" }
+      ],
+      "efforts": [
+        { "value": "low", "label": "低" },
+        { "value": "medium", "label": "中（預設）" },
+        { "value": "high", "label": "高" }
+      ]
+    }
+  ]
+}

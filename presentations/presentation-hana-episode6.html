@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hana EP6: 我怎麼學會新技能</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--ep-bg:#060b10;--ep-card:#111b22;--ep-line:#2d4650;--ep-text:#dce9ea;--ep-muted:#89a3a7;--ep-cyan:#55d7e6;--ep-green:#65dda3;--ep-amber:#f0bd55;--ep-red:#f47b7b;--ep-violet:#b9a2ff}
+    .presentation-viewport{background:radial-gradient(circle at 84% 12%,rgba(101,221,163,.15),transparent 30%),radial-gradient(circle at 14% 18%,rgba(85,215,230,.14),transparent 34%),linear-gradient(135deg,#060b10,#0d1720 58%,#07080d)!important;color:var(--ep-text)}
+    .slide{justify-content:flex-start!important;background:linear-gradient(145deg,rgba(17,27,34,.95),rgba(6,11,16,.9))!important;border-color:var(--ep-line)!important;padding:54px 74px!important}
+    .title-slide{justify-content:center!important;text-align:center}.title-slide h1{font-size:78px!important;color:#fff!important;background:none!important}.subtitle{font-size:34px;color:var(--ep-muted);line-height:1.45}
+    header{position:absolute;top:0;left:0;width:100%;padding:20px 34px;display:flex;justify-content:space-between;color:var(--ep-muted);font-family:var(--mono);z-index:5}.brand{color:var(--ep-cyan);font-weight:800}
+    .slide h2{font-size:48px;line-height:1.18;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--ep-line)}.kicker{color:var(--ep-cyan);font-family:var(--mono);font-weight:800;letter-spacing:.08em;margin-bottom:14px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center}.thirds{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}.quad{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.stack{display:flex;flex-direction:column;gap:14px}.stack .mini-card{padding:18px 22px;min-height:auto}.stack .mini-card h3{font-size:27px}.stack .mini-card span{font-size:20px}
+    .mini-card,.node,.step,.file-card{border:1px solid var(--ep-line);border-radius:8px;background:rgba(255,255,255,.035);padding:24px}.mini-card h3,.node strong,.file-card strong{font-size:30px;color:#fff;margin:0 0 10px;display:block}.mini-card span,.node span,.step span,.file-card span{font-size:22px;line-height:1.45;color:var(--ep-muted)}
+    .danger{border-color:rgba(244,123,123,.58)}.good{border-color:rgba(101,221,163,.58)}.warn{border-color:rgba(240,189,85,.6)}.violet{border-color:rgba(185,162,255,.56)}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;align-items:stretch}.step{position:relative;min-height:150px}.step b{display:block;color:var(--ep-cyan);font-size:24px;margin-bottom:12px}.step:not(:last-child):after{content:"";position:absolute;right:-15px;top:50%;width:24px;height:2px;background:var(--ep-cyan)}
+    .memory-map{display:grid;grid-template-columns:1fr 1fr;gap:30px}.layer{border:1px solid var(--ep-line);border-radius:10px;padding:26px;background:rgba(255,255,255,.03)}.layer h3{font-size:34px;margin:0 0 18px;color:#fff}.files{display:grid;grid-template-columns:1fr 1fr;gap:16px}.file-card{min-height:150px}.file-card strong{font-family:var(--mono);color:var(--ep-cyan)}
+    .image-box{display:flex;justify-content:center;align-items:flex-start}.image-box img{max-width:100%;max-height:440px;object-fit:contain;border:1px solid var(--ep-line);border-radius:8px;background:#050709;box-shadow:0 20px 50px rgba(0,0,0,.36)}
+    table{width:100%;border-collapse:collapse;font-size:24px}th,td{border:1px solid var(--ep-line);padding:18px 20px;text-align:left;vertical-align:top}th{color:#fff;background:rgba(85,215,230,.08)}td:first-child{color:var(--ep-cyan);font-weight:800}
+    .quote{border-left:5px solid var(--ep-green);padding:20px 26px;background:rgba(101,221,163,.06);font-size:30px;line-height:1.5;color:#fff}.policy-box{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:stretch}.policy-box .mini-card{min-height:260px}.next-link{display:inline-block;padding:16px 36px;border:2px solid var(--ep-amber);border-radius:8px;color:#fff;text-decoration:none;font-weight:900;background:rgba(240,189,85,.1);font-size:28px}
+    .compact-list{border:1px solid var(--ep-line);border-radius:8px;background:rgba(255,255,255,.035);padding:22px 26px}.compact-list div{border-bottom:1px solid rgba(45,70,80,.7);padding:16px 0}.compact-list div:last-child{border-bottom:0}.compact-list b{display:block;color:#fff;font-size:28px;margin-bottom:6px}.compact-list span{display:block;color:var(--ep-muted);font-size:21px;line-height:1.4}
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="第六集：我怎麼學會新技能">
+  <header><div class="brand">HANA // HARNESS</div><div>EPISODE 06</div></header>
+  <main class="slides">
+    
+    <section class="slide title-slide" data-transcript="這一集，我要講哈娜怎麼學會新技能。記憶讓我記得發生過什麼；技能讓我知道下次遇到同類任務該怎麼做。">
+      <div class="kicker">核心問題</div><h1>記憶讓我記得，技能讓我會做</h1>
+      <p class="subtitle" style="margin-top: 15px;">把反覆流程沉澱成可重用指令</p>
+    </section>
+    
+    <section class="slide" data-transcript="記憶和技能不一樣。記憶比較像事實與教訓，技能比較像做事流程。當同一種經驗反覆出現，我就可以把它從記憶升級成技能。">
+      <div class="kicker">記憶 vs 技能</div><h2>一個記事實，一個記流程</h2>
+      <div class="thirds">
+        <div class="mini-card good"><h3>記憶</h3><span>陳述性</span><br><span>偏好 / 教訓 / 背景</span><br><span>回答時參考</span></div>
+        <div class="mini-card danger"><h3>技能</h3><span>程序性</span><br><span>步驟 / 規則 / 工具</span><br><span>做事前載入</span></div>
+        <div class="mini-card violet"><h3>沉澱</h3><span>反覆出現的教訓</span><br><span>整理成流程</span><br><span>變成可重用能力</span></div>
+      </div>
+      <div class="quote" style="margin-top: 30px;">當同一種經驗重複出現，我就把它從記憶升級成技能。</div>
+    </section>
+    
+    <section class="slide" data-transcript="我的技能不是黑盒子，而是一份可讀的 Markdown。上面描述何時使用，下面寫行為規則。Portal 在送給模型前先載入技能，所以不同模型可以使用同一套做事方法。">
+      <div class="kicker">技能格式</div><h2>技能就是可讀的 Markdown</h2>
+      <div class="split">
+        <div class="stack">
+          <div class="mini-card good"><h3>SKILL.md</h3><span>包含 frontmatter 的純文字檔</span></div>
+          <div class="mini-card violet"><h3>指令說明</h3><span>定義何時該使用此技能</span></div>
+          <div class="mini-card danger"><h3>行為規則</h3><span>定義具體的步驟與作法</span></div>
+        </div>
+        <div class="image-box"><img src="/raw?path=portal/deck-assets/ep6/skill_deck.png" alt="技能內容"></div>
+      </div>
+    </section>
+    
+    <section class="slide" data-transcript="技能大致有兩種。builtin 像斜線 memory，背後會呼叫程式；prompt 技能則是純文字規則，例如簡報通則。專案技能還可以把全域規則和專案需求組合起來。">
+      <div class="kicker">兩型技能</div><h2>有些是程式入口，有些是純文字流程</h2>
+      <div class="split">
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <table>
+            <thead><tr><th>類型</th><th>代表</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td>builtin</td><td>/memory</td><td>由程式執行實際寫檔</td></tr>
+              <tr><td>prompt</td><td>/presentation-rules</td><td>用文字規則約束產出</td></tr>
+              <tr><td>project skill</td><td>deck 技能</td><td>把全域通則加上專案需求</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="image-box"><img src="/raw?path=portal/deck-assets/ep6/slash指令.png" alt="斜線指令"></div>
+      </div>
+    </section>
+    
+    <section class="slide" data-transcript="技能來源分成出貨、全域、專案三層。越靠近專案，優先權越高。這讓我保有通用能力，也能讓每個專案覆蓋自己的規則。">
+      <div class="kicker">三層來源</div><h2>出貨、全域、專案，越近越優先</h2>
+      <div class="split">
+        <div class="stack">
+          <div class="mini-card good"><h3>1. 出貨 (portal/commands)</h3><span>內建預設能力</span></div>
+          <div class="mini-card violet"><h3>2. 全域 (global-knowledge)</h3><span>跨專案可用技能</span></div>
+          <div class="mini-card danger"><h3>3. 專案 (.harness/commands)</h3><span>專案專屬與覆蓋，同名優先</span></div>
+        </div>
+        <div class="image-box"><img src="/raw?path=portal/deck-assets/ep6/skill_menu.png" alt="技能三層來源"></div>
+      </div>
+    </section>
+    
+    <section class="slide" data-transcript="做簡報就是很好的例子。全域有簡報通則，專案技能只要宣告繼承，Portal 就會把通則和專案需求組合起來，我再照合併後的規則工作。">
+      <div class="kicker">繼承機制</div><h2>專案技能可以繼承全域通則</h2>
+      <div class="flow">
+        <div class="step good"><b>全域通則</b><span>定義共通的規範與要求</span></div>
+        <div class="step violet"><b>專案技能</b><span>宣告 extends 並加上需求</span></div>
+        <div class="step warn"><b>Portal</b><span>自動組合兩者的內容</span></div>
+        <div class="step danger"><b>Hana</b><span>依照合併後的規則工作</span></div>
+      </div>
+    </section>
+    
+    <section class="slide" data-transcript="所以哈娜不只記得事情，也能把做事方法沉澱成技能。做過一次的好流程，下次可以用指令直接重用，而且人也看得懂、改得動。">
+      <div class="kicker">本集結論</div><h2>做過一次的好流程，下次可以重用</h2>
+      <div class="quad">
+        <div class="mini-card good"><h3>可讀</h3><span>純文字易懂</span></div>
+        <div class="mini-card danger"><h3>可改</h3><span>直接編輯修改</span></div>
+        <div class="mini-card violet"><h3>可繼承</h3><span>組合跨專案規則</span></div>
+        <div class="mini-card warn"><h3>可累積</h3><span>不斷進化的流程</span></div>
+      </div>
+    </section>
+    
+    <section class="slide title-slide" data-transcript="下一集我將介紹設定檔 harness.json 的故事。我會說明如何用一個設定檔客製化你的工作區介面，無須修改任何程式核心。點選連結即可進入下一集。">
+      <div class="kicker">NEXT EPISODE</div>
+      <h1 style="font-size: 64px;">第七集：harness.json 的故事</h1>
+      <p class="subtitle" style="max-width: 1120px; margin: 20px auto 38px;">介面即資料。介紹如何透過單一 harness.json 配置側邊欄區塊、簡報掛載與工具開關，免改程式核心，重新整理頁面即時生效。</p>
+      <a class="next-link" href="presentation-hana-episode7.html">👉 點選進入：下一集 EP07</a>
+    </section>
+    
+  </main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

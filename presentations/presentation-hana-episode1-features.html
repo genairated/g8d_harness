@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hana — 第一集：Hi，我是 Hana (功能展示)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<!-- Cyber-Tech Glassmorphism Design System (EP1 Features) -->
+<style>
+    :root {
+      --bg-gradient: radial-gradient(circle at 50% 50%, #0a0f1d 0%, #020306 100%);
+      --card-bg: rgba(10, 16, 30, 0.7);
+      --card-border: rgba(255, 255, 255, 0.07);
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.45);
+      --accent: #06b6d4;
+      --accent-glow: rgba(6, 182, 212, 0.45);
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.45);
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text-main: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-highlight: #ffffff;
+      --font-sans: 'Inter', 'Noto Sans TC', sans-serif;
+      --font-mono: 'Fira Code', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #020306;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .presentation-viewport {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      background: var(--bg-gradient);
+      overflow: hidden;
+      transform-origin: center center;
+      box-shadow: 0 0 100px rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 60px 80px;
+    }
+
+    .slide-body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      flex-grow: 1;
+    }
+
+    .highlight-text {
+      color: var(--text-highlight);
+      font-weight: 700;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    .grid-equal-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 50px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+    }
+
+    .feature-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 36px;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .feature-card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: var(--accent);
+      transform: translateY(-8px);
+      box-shadow: 0 20px 40px rgba(6, 182, 212, 0.15);
+    }
+
+    .feature-card h4 {
+      font-size: 1.6rem;
+      color: var(--text-highlight);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .feature-card p {
+      font-size: 1.2rem;
+      margin-bottom: 0;
+      line-height: 1.65;
+      color: var(--text-muted);
+    }
+
+    pre {
+      background: #040711;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 30px;
+      border-radius: 18px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      color: #a7f3d0;
+      box-shadow: inset 0 4px 20px rgba(0, 0, 0, 0.7);
+      line-height: 1.6;
+    }
+
+    .quote-box {
+      background: rgba(255, 255, 255, 0.015);
+      border-left: 5px solid var(--primary);
+      border-radius: 0 20px 20px 0;
+      padding: 30px;
+      margin-top: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .quote-box.accent-border { border-left-color: var(--accent); }
+    .quote-box.emerald-border { border-left-color: var(--emerald); }
+    .quote-box.warning-border { border-left-color: var(--warning); }
+    .quote-box.danger-border { border-left-color: var(--danger); }
+
+    .quote-box p {
+      margin-bottom: 0;
+      font-size: 1.35rem;
+      color: var(--text-main);
+      font-style: italic;
+      line-height: 1.65;
+    }
+
+    .card-label {
+      text-transform: uppercase;
+      font-size: 0.95rem;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .slide-title-deck {
+      text-align: center;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+    }
+
+    .badge {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      padding: 8px 24px;
+      border-radius: 9999px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #93c5fd;
+      letter-spacing: 0.1em;
+      margin-bottom: 36px;
+      text-transform: uppercase;
+      display: inline-block;
+    }
+
+    .comparison-bar {
+      margin-top: 24px;
+      padding: 12px 20px;
+      background: rgba(6, 182, 212, 0.03);
+      border: 1px dashed rgba(6, 182, 212, 0.2);
+      border-radius: 12px;
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .comparison-bar strong {
+      color: var(--accent);
+    }
+
+    .comparison-bar .highlight {
+      color: var(--emerald);
+      font-weight: 700;
+      text-shadow: 0 0 8px var(--emerald-glow);
+    }
+
+    ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    li {
+      font-size: 1.35rem;
+      line-height: 1.6;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      color: var(--text-main);
+    }
+
+    li::before {
+      content: "✦";
+      color: var(--accent);
+      font-weight: bold;
+      margin-top: 4px;
+      text-shadow: 0 0 8px var(--accent-glow);
+    }
+</style>
+<link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+<style>
+.slide h2{font-size:3.5rem;font-weight:850;margin-bottom:32px;background:linear-gradient(135deg,var(--text-highlight) 30%,var(--text-muted) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.2;letter-spacing:-0.02em}
+.slide h3{font-size:2rem;color:var(--accent);margin-bottom:24px;font-weight:650}
+.slide p{font-size:1.45rem;line-height:1.75;color:var(--text-muted);margin-bottom:24px}
+.slide h4{color:var(--text-highlight)}
+</style>
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="本地優先 AI 開發夥伴 Hana">
+<header><div class="brand">HANA / HARNESS</div><div class="meta">EPISODE 01 · Hi，我是 Hana</div></header>
+<main class="slides">
+    <!-- Slide 1: Title -->
+    <section class="slide" id="slide-title" data-title="首頁" data-notes="嗨，我是哈娜！我不是一個遙遠的雲端軟體，我就住在這台電腦裡。我是你的本地優先 AI 開發夥伴。今天由我親自上陣，為你一一解密我所擁有的各項專業超能力，帶你看看我是如何幫你駕馭多個 AI 大腦、管理專案並實踐自癒的。">
+      <div class="slide-body">
+        <div class="grid-2">
+          <div style="display: flex; flex-direction: column; justify-content: center; align-items: flex-start; text-align: left;">
+            <div class="badge" style="margin-bottom: 20px;">Episode 1 · Features</div>
+            <h1 style="font-size: 5.5rem; font-weight: 900; line-height: 1.1; margin-bottom: 24px; background: linear-gradient(135deg, #ffffff 0%, #93c5fd 45%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 0 40px rgba(59, 130, 246, 0.25)); text-align: left;">Hi，我是 Hana</h1>
+            <p style="font-size: 1.8rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 30px; text-align: left;">你電腦裡的本地 AI 夥伴，功能特異的超能力展示。</p>
+            <div style="font-size: 1.3rem; color: var(--text-muted); margin-top: 10px; font-weight: 500;">🎙️ 語音導覽：Hana (哈娜)</div>
+            <div style="margin-top: 20px; font-size: 1.3rem; color: var(--accent); font-weight: 600;">使用左右方向鍵或空白鍵切換投影片，右側抽屜可展開逐字稿</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center; position: relative;">
+            <div style="position: relative; width: 450px; height: 450px; border-radius: 30px; overflow: hidden; border: 2px solid rgba(6, 182, 212, 0.4); box-shadow: 0 0 50px rgba(6, 182, 212, 0.25); background: rgba(10, 16, 30, 0.6);">
+              <img src="/raw?path=portal/hana_happy.jpg" style="width: 100%; height: 100%; object-fit: cover; transform: scale(1.02); transition: transform 0.3s;" alt="Hana Portrait">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 2: CLI Bridge -->
+    <section class="slide" id="slide-clibridge" data-title="超能力 ①：CLI 橋接" data-notes="首先是免金鑰 CLI 橋接。我能直接呼叫你本機已登入的官方工具，比如 Claude Code、Gemini 或 Codex 等，完全不需要你為我準備額外的 API 金鑰，零成本就能享受最頂級的大腦。">
+      <div class="slide-body">
+        <h2>超能力一：使用訂閱帳號橋接，免去昂貴 API Key 負擔</h2>
+        <div class="grid-2">
+          <div>
+            <p>我直接驅動你本機上的官方命令列工具，重複使用已登入的個人訂閱狀態，不必負擔高昂的 API Key 經費。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">複用官方登入</span>：直接繼承 CLI 原本的驗證狀態。</li>
+              <li><span class="highlight-text">零 API Key 支出</span>：為你省去開發流程中的金鑰用量花費。</li>
+              <li><span class="highlight-text">本地主權掌控</span>：所有執行與檔案變更都在你的安全邊界內。</li>
+            </ul>
+          </div>
+          <pre>Portal → CLI Bridge → Claude Code
+                 → Antigravity
+                 → Codex
+
+複用登入狀態，無需個人 API Key</pre>
+        </div>
+        <div class="comparison-bar">
+          💡 靈感源於 <strong>OpenClaw</strong> 的本地代理嘗試，但我們首創 <span class="highlight">CLI 橋接</span> 解決了必須填寫 API Key 的痛點！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 3: Shared Conversation -->
+    <section class="slide" id="slide-sharedcontext" data-title="超能力 ②：共用對話" data-notes="第二個超能力是跨工具共用對話。我用中立的檔案在本地保存完整對話歷史。這意味著你可以隨時更換接棒的模型，下一位天才會先閱讀對話檔案，保留所有背景脈絡，這在原生工具裡是完全做不到的。">
+      <div class="slide-body">
+        <h2>超能力二：對話寫入檔案共享，跨模型接力不失憶</h2>
+        <div class="grid-2">
+          <div>
+            <p>打破單一模型或視窗的藩籬，由本地 Portal 維護一份模型中立的對話記錄檔。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">檔案式共享狀態</span>：對話歷史統一儲存於本地檔案。</li>
+              <li><span class="highlight-text">隨時無縫換手</span>：中途更換 AI 模型，新的 AI 會先讀取歷史。</li>
+              <li><span class="highlight-text">接棒工作不失憶</span>：結合不同模型強項，完美接力完成任務。</li>
+            </ul>
+          </div>
+          <div class="quote-box emerald-border">
+            <p>在同一個對話中切換 Claude 和 Gemini，保留完整的脈絡記憶，讓接力工作更順暢。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 靈感源於 <strong>Hermes agent</strong> 的上下文設計，我們改進為 <span class="highlight">以本地檔案中立共享</span>，達到跨模型無縫切換！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 4: Parallel Agents -->
+    <section class="slide" id="slide-parallel" data-title="超能力 ③：多分頁並行" data-notes="第三個超能力是多分頁並行。我支援同時開多個對話分頁、多個智能體一起運作。你可以一邊讓我去討論架構，另一邊讓底下的程式模型改程式，互不干涉，就像個小團隊在合作。">
+      <div class="slide-body">
+        <h2>超能力三：開啟多分頁多智能體，像個小團隊並行合作</h2>
+        <div class="grid-3" style="margin-top: 28px;">
+          <div class="feature-card">
+            <h4>① 架構分析</h4>
+            <p>由擅長推理的大模型在 A 分頁釐清系統脈絡與規範。</p>
+          </div>
+          <div class="feature-card">
+            <h4>② 程式編寫</h4>
+            <p>由實作模型在 B 分頁同步進行程式修改與單元測試。</p>
+          </div>
+          <div class="feature-card">
+            <h4>③ 文件與記錄</h4>
+            <p>在 C 分頁由輔助模型同步產出決策文件與進度追蹤。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 借鏡了 <strong>OpenClaw/Hermes agent</strong> 的運作，但我們改進了單線容易阻塞的缺點，<span class="highlight">支援本地多分頁並行</span>，打造高效開發群！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 5: Memory -->
+    <section class="slide" id="slide-memory" data-title="超能力 ④：長期記憶" data-notes="第四個超能力是長期記憶。我將記憶拆為全域記憶與專案記憶。全域記憶累積你的開發偏好和我的身份認知，專案記憶則封裝這個專案的需求。我會慢慢記住重要事實，越用越有默契。">
+      <div class="slide-body">
+        <h2>超能力四：雙層記憶隨時間累積，越用越懂你的偏好</h2>
+        <div class="grid-equal-2" style="margin-top: 24px;">
+          <div class="feature-card">
+            <div class="card-label">全域記憶 (Global Memory)</div>
+            <h4>關於你與 Hana</h4>
+            <p>記錄你的習慣偏好、正體中文需求與我的自我認知，跨專案自動承襲。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">專案記憶 (Project Memory)</div>
+            <h4>關於當前專案</h4>
+            <p>保留專案規格、術語事實與專屬 persona，切換專案時完全隔離、不串味。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 長期記憶幾乎完全借鏡 <strong>Hermes agent</strong> 的優秀設計。目前仍是我們本地持續進化的主線，我們會不斷加強記憶深度！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 6: Graphs -->
+    <section class="slide" id="slide-graphs" data-title="超能力 ⑤：雙圖譜導航" data-notes="第五個超能力是 DocGraph 和 CodeGraph 雙圖譜導航。在龐大專案中，我不會盲目搜尋程式，而是透過雙圖譜找出程式呼叫路徑與規格文件引用，只帶入精確的參考資料，幫你省下大筆 Token。">
+      <div class="slide-body">
+        <h2>超能力五：DocGraph 與 CodeGraph 精準定位，省下大筆 Token 消耗</h2>
+        <div class="grid-equal-2" style="margin-top: 24px;">
+          <div class="feature-card">
+            <div class="card-label">CodeGraph</div>
+            <h4>程式依賴地圖</h4>
+            <p>靜態分析類別、函式呼叫與引用，只在對話中載入受影響的關聯檔案。</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-label">DocGraph</div>
+            <h4>文件治理圖譜</h4>
+            <p>梳理 Markdown 規格、需求與決策的上下游依賴關係，確保程式修改與規格對齊。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 參考 <strong>Hermes agent</strong> 探索理念，改善盲目塞入程式碼的缺點，我們 <span class="highlight">導入雙圖譜導航</span>，精準控制上下文長度！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 7: Workspaces -->
+    <section class="slide" id="slide-workspaces" data-title="超能力 ⑥：多工作區" data-notes="第六個超能力是多工作區管理。我能在一台電腦裡同時打理好幾個專案。只要在設定檔裡做宣告，我就可以在不同專案的資料夾間隨意切換，記憶獨立、工作流獨立，互不干涉。">
+      <div class="slide-body">
+        <h2>超能力六：宣告式多工作區管理，一鍵無縫切換不同專案</h2>
+        <div class="grid-2">
+          <div>
+            <p>在同一個 Harness 平台上載入多個工作區。設定檔讓我的切換乾淨俐落。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">專案獨立路由</span>：按專案目錄管理對話狀態與日誌。</li>
+              <li><span class="highlight-text">配置環境獨立</span>：各工作區專屬 CLI 設定與輔助技能。</li>
+              <li><span class="highlight-text">全域經驗承襲</span>：在保留專案隔離的同時，繼承全域記憶。</li>
+            </ul>
+          </div>
+          <div class="quote-box warning-border">
+            <p>透過 global-knowledge 中的 projects.json 設定，我能一鍵定位你要我前往的任何工作目錄。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 參考了 <strong>PilotDeck</strong> 隔離概念，並改善其金鑰限制，<span class="highlight">實作宣告式多工作區</span>，專案間輕鬆切換！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 8: Self-Healing -->
+    <section class="slide" id="slide-selfhealing" data-title="超能力 ⑦：自癒" data-notes="第七個超能力是我具備自我修改、自我修復的自癒能力！通常代理修改自身程式風險極高，很容易把自己改壞，重啟也救不回來。但我配備了安全執行防護網，改壞時能自動回滾，安全無虞。">
+      <div class="slide-body">
+        <h2>超能力七：自研「安全執行防護網」，修改自己也絕不改壞卡死</h2>
+        <div class="grid-2">
+          <div>
+            <p>我能夠安全地修改我自己的程式碼（包括 Portal 頁面與腳本），出錯時無人值守自動搶救。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">快照與冒煙測試</span>：在獨立 Port 測試通過後才晉升正式版。</li>
+              <li><span class="highlight-text">不可變 releases 隔離</span>：原程式只讀備存，僅修改開發區。</li>
+              <li><span class="highlight-text">自動安全回滾</span>：若新版本啟動失敗，監督者會自動還原至上個 known-good 版本。</li>
+            </ul>
+          </div>
+          <div class="quote-box warning-border">
+            <p>我用「不可變版本 ＋ 監督者 ＋ 自動回滾」取代了分支，讓自我修改不再是高風險動作。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 解決了 <strong>OpenClaw</strong> 這類代理常把自己改壞、卡死且無分支可退的缺點，<span class="highlight">首創自動安全回滾</span>！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 9: Scheduler -->
+    <section class="slide" id="slide-scheduler" data-title="超能力 ⑧：排程系統" data-notes="第八個超能力是本地排程。我的任務由後台的 Portal 伺服器託管。即使你把網頁關了，我也會在背景執行定時任務。當遇到五小時 API 限額時，我會感知並暫停，額度恢復後自動醒來繼續跑，跑完再透過 Web 或 Telegram 通知你。">
+      <div class="slide-body">
+        <h2>超能力八：不受網頁關閉影響，背景定時排程且限額自醒續跑</h2>
+        <div class="grid-2">
+          <div>
+            <p>任務生命週期在 Portal 本地伺服器常駐執行，擺脫網頁前端的生命週期邊界限制。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">離線背景執行</span>：關閉瀏覽器分頁，伺服器在背景持續安全運作。</li>
+              <li><span class="highlight-text">限額自動感知</span>：遇到 CLI 5 小時額度上限時會自動排隊，額度恢復時自醒續跑。</li>
+              <li><span class="highlight-text">網頁自動重新接軌</span>：重開網頁時，自動重新同步執行狀態。</li>
+            </ul>
+          </div>
+          <div class="quote-box warning-border">
+            <p>不需要 GitHub clone 與雲端伺服器，本地 `claude-code` 與本機檔案就能完成所有背景排程。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 本地排程借鏡 <strong>PilotDeck</strong> 排程理念，我們將其完全 <span class="highlight">本地化執行</span>，並針對限額問題實作了自醒續跑防護！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 10: Telegram Console -->
+    <section class="slide" id="slide-telegram" data-title="超能力 ⑨：Telegram 指揮" data-notes="最後是 Telegram 全域控制台。我可以住進你的口袋裡！這是一個單一的全域控制入口。你在手機上下指令，我會自動路由到本地工作區。最棒的是，我在動手修改任何檔案前，都會先發送確認，得到你核准才動手，並在手機上回報進度。">
+      <div class="slide-body">
+        <h2>超能力九：手機端全域控制路由，動手修改程式先向你確認</h2>
+        <div class="grid-2">
+          <div>
+            <p>以 Telegram Bot 作為全域收件匣，連通本地 Portal 伺服器，擺脫電腦前的位置限制。</p>
+            <ul style="margin-top: 18px;">
+              <li><span class="highlight-text">全域控制與路由</span>：手機統一對話介面，指令自動派發至各專案。</li>
+              <li><span class="highlight-text">安全護欄確認</span>：高風險操作前先在手機發送安全提問，經你核准後才動手。</li>
+              <li><span class="highlight-text">逐一回報進度</span>：執行中的狀態、日誌與結果，第一時間推送到手機。</li>
+            </ul>
+          </div>
+          <div class="quote-box emerald-border">
+            <p>就算人在外面，也能通過手機安全控制家裡的 AI 開發進度，並能第一時間核准程式修改。</p>
+          </div>
+        </div>
+        <div class="comparison-bar">
+          💡 靈感源於將 CLI 行動化，我們實作了 <span class="highlight">本地伺服器與 Telegram Bot 橋接</span>，提供雙向安全確認防護！
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 11: Next Episode Page -->
+    <section class="slide" id="slide-nextepisode" data-title="下一集預告" data-notes="第一集的超能力展示就到這。下一集我將詳細拆解我的命令列互動架構。我會分享如何免去 API 金鑰，合法且安全地呼叫你本機已登入的官方工具，將它們完美接入同一個本地平台。點選連結，我們下集見！">
+      <div class="slide-body slide-title-deck" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+        <div class="badge" style="margin-bottom: 20px;">下一集預告</div>
+        <h2 style="font-size: 4.8rem; background: linear-gradient(135deg, #ffffff 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px;">第二集：CLI 互動架構</h2>
+        <p style="font-size: 2.2rem; color: var(--text-muted); margin-bottom: 40px; max-width: 1000px; line-height: 1.6; margin-left: auto; margin-right: auto; text-align: center;">免 API Key 橋接頂級大腦。Hana 不靠 API Key，而是驅動各家 AI 的官方命令列工具，透過本地 Portal 進行路由，在安全邊界下實際改檔、跑任務。</p>
+        <div style="margin-top: 20px;">
+          <a href="presentation-hana-episode2.html" style="color: #34d399; text-decoration: none; font-weight: bold; border: 2px solid #34d399; padding: 16px 40px; border-radius: 8px; background: rgba(52,211,153,0.1); display: inline-block; font-size: 2.2rem; transition: all 0.3s;" onmouseover="this.style.background='rgba(52,211,153,0.25)'" onmouseout="this.style.background='rgba(52,211,153,0.1)'">👉 點選進入：下一集 (EP02)</a>
+        </div>
+      </div>
+    </section>
+</main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

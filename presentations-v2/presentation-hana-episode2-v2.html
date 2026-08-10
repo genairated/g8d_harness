@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v2 — EP2：三顆大腦，一個夥伴</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* EP2 v2 — 橋接主題（承 EP1 星空色系） */
+    :root {
+      --bg: #050815;
+      --card: rgba(10, 18, 40, 0.85);
+      --border: rgba(99, 102, 241, 0.18);
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.35);
+      --accent: #06b6d4;
+      --gold: #f59e0b;
+      --emerald: #10b981;
+      --danger: #ef4444;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(6,182,212,0.10) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(99,102,241,0.08) 0%, transparent 50%),
+        linear-gradient(180deg, #070d1e 0%, #020510 100%) !important;
+    }
+
+    header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 60px;
+      z-index: 50;
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--accent); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 96px 96px 56px !important;
+      background: linear-gradient(145deg, rgba(10,18,40,0.92), rgba(4,8,20,0.96)) !important;
+      border-color: rgba(99,102,241,0.12) !important;
+      color: var(--text) !important;
+      font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 50px;
+      font-weight: 800;
+      color: var(--white);
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      line-height: 1.2;
+    }
+    .slide h2::before { content: "— "; color: var(--accent); }
+    .slide p { font-size: 28px !important; line-height: 1.65; color: var(--text); }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    .title-left {
+      width: 44%;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      background: linear-gradient(160deg, rgba(6,182,212,0.06) 0%, transparent 70%);
+      border-right: 1px solid rgba(6,182,212,0.1);
+      overflow: visible;
+      position: relative;
+    }
+    .title-left img {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 900px;
+      max-height: none;
+      object-fit: contain;
+      object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(6,182,212,0.40));
+    }
+    .title-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px 80px 80px 60px;
+    }
+    .ep-badge {
+      font-family: var(--mono);
+      font-size: 18px;
+      color: var(--accent);
+      letter-spacing: 0.2em;
+      border: 1px solid var(--accent);
+      display: inline-block;
+      padding: 6px 20px;
+      border-radius: 4px;
+      background: rgba(6,182,212,0.08);
+      margin-bottom: 24px;
+      align-self: flex-start;
+    }
+    .title-main {
+      font-size: 90px;
+      font-weight: 900;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 0%, #67e8f9 50%, #a5b4fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 18px;
+    }
+    .title-sub {
+      font-size: 30px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-bottom: 44px;
+    }
+    .title-desc {
+      font-size: 24px;
+      color: rgba(103,232,249,0.8);
+      line-height: 1.7;
+      border-left: 3px solid var(--accent);
+      padding-left: 20px;
+    }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 23px; }
+    th {
+      background: rgba(6,182,212,0.15);
+      color: var(--accent);
+      font-weight: 700;
+      padding: 16px 22px;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 21px;
+    }
+    td { padding: 14px 22px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.45; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good { color: var(--emerald); }
+    td.bad { color: var(--danger); }
+    td.neutral { color: var(--gold); }
+    td.tip { color: var(--gold); font-family: var(--mono); font-size: 19px; }
+
+    /* ─── Cards ─── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 32px;
+    }
+    .card-title { font-size: 24px; font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+    .card-body { font-size: 22px; color: var(--muted); line-height: 1.55; }
+
+    /* ─── Flow nodes ─── */
+    .flow-node {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 28px;
+      text-align: center;
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* ─── Arch diagram ─── */
+    .arch-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      flex: 1;
+    }
+    .arch-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 28px 36px;
+      border-radius: 16px;
+      text-align: center;
+    }
+    .arch-icon { font-size: 48px; }
+    .arch-label { font-size: 26px; font-weight: 700; color: var(--white); }
+    .arch-sub   { font-size: 19px; color: var(--muted); line-height: 1.4; }
+    .arch-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 24px;
+      gap: 6px;
+    }
+    .arch-arrow-label { font-size: 18px; color: var(--muted); font-family: var(--mono); }
+    .arch-arrow-line  { font-size: 36px; color: var(--accent); }
+
+    /* ─── MCP vs CLI ─── */
+    .mcp-cli-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      flex: 1;
+    }
+    .choice-card {
+      border-radius: 18px;
+      padding: 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .choice-card.bad  { background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.3); }
+    .choice-card.good { background: rgba(16,185,129,0.05); border: 2px solid rgba(16,185,129,0.3); }
+    .choice-verdict {
+      font-size: 20px;
+      font-weight: 700;
+      padding: 6px 16px;
+      border-radius: 6px;
+      align-self: flex-start;
+    }
+    .choice-card.bad  .choice-verdict { background: rgba(239,68,68,0.1); color: var(--danger); }
+    .choice-card.good .choice-verdict { background: rgba(16,185,129,0.1); color: var(--emerald); }
+    .choice-title { font-size: 34px; font-weight: 800; color: var(--white); }
+    .choice-desc  { font-size: 22px; color: var(--muted); line-height: 1.55; }
+    .choice-why   { font-size: 20px; color: var(--danger); margin-top: 4px; }
+    .choice-win   { font-size: 20px; color: var(--emerald); margin-top: 4px; }
+
+    /* ─── Context file diagram ─── */
+    .ctx-flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      gap: 14px;
+      justify-content: center;
+    }
+    .ctx-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      width: 100%;
+    }
+    .ctx-node {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 32px;
+      text-align: center;
+      min-width: 180px;
+    }
+    .ctx-node.highlight {
+      border-color: var(--accent);
+      background: rgba(6,182,212,0.07);
+    }
+    .ctx-arrow { font-size: 28px; color: var(--accent); padding: 0 20px; }
+    .ctx-file {
+      background: rgba(99,102,241,0.12);
+      border: 2px solid var(--primary);
+      border-radius: 14px;
+      padding: 20px 44px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    /* ─── Parallel tabs ─── */
+    .parallel-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      flex: 1;
+    }
+    .tab-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .tab-header {
+      padding: 12px 20px;
+      background: rgba(99,102,241,0.12);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+    }
+    .tab-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .tab-body {
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 220px;
+    }
+    .tab-model { font-size: 26px; font-weight: 700; color: var(--white); margin-bottom: 4px; }
+    .tab-task  { font-size: 20px; color: var(--muted); }
+    .thinking-pulse {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: auto;
+      color: var(--accent);
+      font-size: 19px;
+      font-family: var(--mono);
+    }
+    .dot-anim {
+      display: flex; gap: 5px;
+    }
+    .dot-anim span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    .dot-anim span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-anim span:nth-child(3) { animation-delay: 0.4s; }
+
+    /* ─── Safety gradient ─── */
+    .safety-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      flex: 1;
+    }
+    .safety-zone {
+      border-radius: 18px;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .safety-zone.read  { background: rgba(16,185,129,0.05); border: 2px solid rgba(16,185,129,0.3); }
+    .safety-zone.write { background: rgba(245,158,11,0.05); border: 2px solid rgba(245,158,11,0.3); }
+    .safety-label { font-size: 22px; font-weight: 700; }
+    .safety-zone.read  .safety-label { color: var(--emerald); }
+    .safety-zone.write .safety-label { color: var(--gold); }
+    .safety-item { font-size: 21px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+
+    /* ─── Chapter nav ─── */
+    .chapter-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      flex: 1;
+    }
+    .chapter-link {
+      display: flex;
+      flex-direction: column;
+      padding: 20px 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .chapter-link:hover  { border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .chapter-link.current { border-color: var(--accent); background: rgba(6,182,212,0.07); }
+    .ch-ep    { font-family: var(--mono); font-size: 16px; color: var(--primary); margin-bottom: 8px; }
+    .ch-title { font-size: 20px; font-weight: 700; color: var(--white); margin-bottom: 5px; line-height: 1.3; }
+    .ch-desc  { font-size: 17px; color: var(--muted); line-height: 1.4; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ─── Relation row (真實畫面頁用) ─── */
+    .rel-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 15px 22px;
+      border-radius: 14px;
+      background: rgba(99,102,241,0.06);
+      border: 1.5px solid rgba(99,102,241,0.22);
+    }
+    .rel-icon { font-size: 26px; flex-shrink: 0; }
+    .rel-body { flex: 1; }
+    .rel-title { font-size: 19px; font-weight: 700; color: var(--white); }
+    .rel-desc  { font-size: 16px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+    .rel-badge {
+      font-size: 13px; padding: 5px 14px;
+      border-radius: 20px; font-family: var(--mono); flex-shrink: 0;
+    }
+    .rel-badge.indigo { background: rgba(99,102,241,0.13); border: 1px solid rgba(99,102,241,0.38); color: var(--accent); }
+    .rel-badge.cyan   { background: rgba(6,182,212,0.10); border: 1px solid rgba(6,182,212,0.35); color: var(--accent); }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="第二集：三顆大腦，一個夥伴（CLI 橋接 + 跨模型不失憶 + 並行）">
+    <header>
+      <div class="brand">HANA // HARNESS</div>
+      <div class="meta">EPISODE 02 · 三顆大腦，一個夥伴</div>
+    </header>
+
+    <main class="slides">
+
+      <!-- ====================================================
+           SLIDE 1 — 標題（Hana 形象照）
+      ===================================================== -->
+      <section class="slide title-slide"
+        data-transcript="上一集我說，我把三顆頂級大腦串成同一個夥伴。這一集，我把這件事拆開給你看：我怎麼呼叫它們、怎麼讓它們共用同一段對話、又怎麼讓它們並行。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_headset_talk_right.png" alt="Hana 耳機講話">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 02</div>
+            <div class="title-main">三顆大腦，<br>一個夥伴</div>
+            <div class="title-sub">不用金鑰，也能換腦不失憶</div>
+            <div class="title-desc">
+              CLI 橋接 · 跨模型不失憶<br>
+              多分頁並行 · 授權下真的動手
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 2 — 為什麼用 CLI 不用 API（流程圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="我的第一個本事：我不需要你去申請任何 API Key。我直接透過這些 AI 官方的命令列工具來呼叫它們——Claude Code、Antigravity、Codex，用的是它們自己的登入。你裝好、登入過，我就能驅動它們。">
+        <h2>不需要 API Key 的橋接方式</h2>
+        <div class="arch-row">
+          <!-- Portal box -->
+          <div class="arch-box" style="background: rgba(6,182,212,0.08); border: 2px solid var(--accent); min-width: 220px;">
+            <div class="arch-icon">🌐</div>
+            <div class="arch-label">Portal</div>
+            <div class="arch-sub">Hana 的指揮中心</div>
+          </div>
+
+          <!-- Arrow -->
+          <div class="arch-arrow">
+            <div class="arch-arrow-label">CLI 橋</div>
+            <div class="arch-arrow-line">→→→</div>
+            <div class="arch-arrow-label" style="font-size:15px; color: var(--emerald);">用各自的登入</div>
+          </div>
+
+          <!-- Three CLIs stacked -->
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="arch-box" style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.35); flex-direction: row; gap: 16px; padding: 18px 28px;">
+              <div style="font-size: 36px;">🤖</div>
+              <div style="text-align: left;">
+                <div style="font-size: 24px; font-weight: 700; color: var(--white);">Claude Code</div>
+                <div style="font-size: 18px; color: var(--emerald);">訂閱帳號登入 · 免 API Key</div>
+              </div>
+            </div>
+            <div class="arch-box" style="background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.35); flex-direction: row; gap: 16px; padding: 18px 28px;">
+              <div style="font-size: 36px;">✨</div>
+              <div style="text-align: left;">
+                <div style="font-size: 24px; font-weight: 700; color: var(--white);">Antigravity（Gemini）</div>
+                <div style="font-size: 18px; color: var(--emerald);">Google 帳號 OAuth · 免 API Key</div>
+              </div>
+            </div>
+            <div class="arch-box" style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.35); flex-direction: row; gap: 16px; padding: 18px 28px;">
+              <div style="font-size: 36px;">⌨️</div>
+              <div style="text-align: left;">
+                <div style="font-size: 24px; font-weight: 700; color: var(--white);">Codex</div>
+                <div style="font-size: 18px; color: var(--emerald);">OpenAI 帳號登入 · 免 API Key</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align: center; margin-top: 20px; padding: 14px 28px; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.25); border-radius: 10px; font-size: 23px; color: var(--emerald);">
+          裝好、登入過 → 我就能驅動它們，成本固定、無額外帳單
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 3 — 選 CLI 而非 MCP 的故事
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="其實一開始，我們想用 MCP 來串接。但 MCP 本身有它的限制，而且 Claude 並不支援用非官方工具走 OAuth，也就是說，用 MCP 連 Claude 一定要 API Key。所以我們最後改用官方的命令列工具來橋接，複用你已經登入的訂閱帳號，繞開了金鑰這道牆。">
+        <h2>選 CLI 而非 MCP：一段故事</h2>
+        <div class="mcp-cli-grid">
+          <!-- Bad: MCP -->
+          <div class="choice-card bad">
+            <div class="choice-verdict">✗ 放棄這條路</div>
+            <div class="choice-title">MCP 串接</div>
+            <div class="choice-desc">
+              Model Context Protocol 理論上可以讓各家 AI 工具相互串接，一開始確實是我們的第一選擇。
+            </div>
+            <div class="choice-why">
+              但問題是：Claude 不支援非官方工具走 OAuth。<br>
+              用 MCP 連 Claude，就一定要 API Key。<br>
+              無論如何，金鑰這道牆繞不掉。
+            </div>
+          </div>
+          <!-- Good: CLI -->
+          <div class="choice-card good">
+            <div class="choice-verdict">✓ 最終選擇</div>
+            <div class="choice-title">官方 CLI 橋接</div>
+            <div class="choice-desc">
+              改用各家 AI 發布的官方命令列工具：Claude Code、Antigravity、Codex。
+            </div>
+            <div class="choice-win">
+              複用你已登入的訂閱帳號或 OAuth。<br>
+              不申請任何 API Key，成本固定。<br>
+              而且這是官方支援的正式用法。
+            </div>
+          </div>
+        </div>
+        <div style="text-align: center; margin-top: 18px; font-size: 22px; color: var(--muted); font-style: italic;">
+          「先找限制，再找繞法」——這是我替 Charles 做的第一個工程決策
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 4 — 三套 CLI 各自的坑（比較表）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="但要把三套工具收得服服貼貼，每一套都有它的脾氣。Claude Code 的提示要從標準輸入餵進去；Antigravity 跑 Gemini 時，那個印出結果的參數一定要放在最後；Codex 則要特別去撈它最後一則訊息，才拿得到乾淨的答案。這些坑我都替你踩過了。">
+        <h2>三套 CLI，各有脾氣</h2>
+        <table style="margin-top: 12px;">
+          <tr>
+            <th style="width:20%">工具</th>
+            <th style="width:20%">底層模型</th>
+            <th style="width:28%">呼叫方式</th>
+            <th style="width:32%">我替你踩過的坑</th>
+          </tr>
+          <tr>
+            <td><strong>Claude Code</strong><br><span style="font-size:17px; color:var(--muted);">Anthropic</span></td>
+            <td>Claude Sonnet<br>Claude Opus</td>
+            <td>stdin 餵入提示<br>輸出到 stdout</td>
+            <td class="tip">提示一定要從標準輸入餵，不能直接當引數</td>
+          </tr>
+          <tr>
+            <td><strong>Antigravity</strong><br><span style="font-size:17px; color:var(--muted);">Google</span></td>
+            <td>Gemini Flash<br>Gemini Pro</td>
+            <td>引數帶提示<br>print 參數控制輸出</td>
+            <td class="tip">印出結果的參數要放最後，順序錯就拿不到輸出</td>
+          </tr>
+          <tr>
+            <td><strong>Codex</strong><br><span style="font-size:17px; color:var(--muted);">OpenAI</span></td>
+            <td>GPT-4o<br>o1</td>
+            <td>引數帶提示<br>JSON 格式回應</td>
+            <td class="tip">要特別撈最後一則訊息，才拿得到乾淨的答案</td>
+          </tr>
+        </table>
+        <div style="margin-top: 18px; padding: 14px 24px; background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.2); border-radius: 10px; font-size: 21px; color: var(--muted);">
+          這些差異全部收在 Portal 的橋接層 — 對 Charles 來說只看到一個統一的呼叫介面
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 5 — 檔案式共享對話（流程圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="第二個本事，也是最關鍵的：我讓三顆原本互不相識的大腦，共用同一段對話。秘訣是，我把完整的對話脈絡寫成一個檔案，讓接手的 AI 去讀它。">
+        <h2>檔案式共享對話：脈絡住在檔案裡</h2>
+        <div class="ctx-flow">
+          <!-- Step 1: Start with Claude -->
+          <div class="ctx-row">
+            <div class="ctx-node" style="border-color: rgba(99,102,241,0.4); background: rgba(99,102,241,0.08);">
+              <div style="font-size: 28px; margin-bottom: 6px;">🤖 Claude</div>
+              <div style="font-size: 19px; color: var(--muted);">開始一段對話</div>
+            </div>
+            <div class="ctx-arrow">→</div>
+            <div class="ctx-file">
+              <div style="font-size: 40px;">📄</div>
+              <div>
+                <div style="font-size: 22px; font-weight: 700; color: var(--primary); font-family: var(--mono);">context.md</div>
+                <div style="font-size: 19px; color: var(--muted); margin-top: 4px;">完整對話寫成檔案</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Arrow down -->
+          <div style="font-size: 32px; color: var(--accent); margin: 0;">↓ 切換模型</div>
+
+          <!-- Step 2: Gemini reads file -->
+          <div class="ctx-row">
+            <div class="ctx-file">
+              <div style="font-size: 40px;">📄</div>
+              <div>
+                <div style="font-size: 22px; font-weight: 700; color: var(--primary); font-family: var(--mono);">context.md</div>
+                <div style="font-size: 19px; color: var(--muted); margin-top: 4px;">接手的 AI 先讀它</div>
+              </div>
+            </div>
+            <div class="ctx-arrow">→</div>
+            <div class="ctx-node" style="border-color: rgba(6,182,212,0.4); background: rgba(6,182,212,0.08);">
+              <div style="font-size: 28px; margin-bottom: 6px;">✨ Gemini</div>
+              <div style="font-size: 19px; color: var(--muted);">無縫接上，不失憶</div>
+            </div>
+            <div class="ctx-arrow">→</div>
+            <div class="ctx-node" style="border-color: rgba(16,185,129,0.4); background: rgba(16,185,129,0.08);">
+              <div style="font-size: 28px; margin-bottom: 6px;">⌨️ Codex</div>
+              <div style="font-size: 19px; color: var(--muted);">繼續接力</div>
+            </div>
+          </div>
+
+          <!-- Key insight -->
+          <div style="display: flex; gap: 20px; margin-top: 8px; width: 100%;">
+            <div class="card" style="flex: 1; border-color: rgba(16,185,129,0.3);">
+              <div class="card-title" style="color: var(--emerald);">脈絡不中斷</div>
+              <div class="card-body">換模型不等於換記憶，AI 讀同一份檔案、知道前面發生了什麼</div>
+            </div>
+            <div class="card" style="flex: 1; border-color: rgba(6,182,212,0.3);">
+              <div class="card-title">不被截斷</div>
+              <div class="card-body">脈絡住在硬碟，不靠有損的壓縮，長對話也完整保留</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 6 — 換模型不失憶
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="所以你可以講到一半換個模型，它不會失憶，能無縫接上。而且因為脈絡住在檔案裡，長對話也不會被截斷、不靠有損的壓縮。這是各家工具用自己原生的功能做不到的。">
+        <h2>換模型，不失憶</h2>
+        <div style="display: flex; flex-direction: column; flex: 1; gap: 24px;">
+          <!-- Timeline -->
+          <div style="display: flex; align-items: center; gap: 0; padding: 28px 0;">
+            <div style="flex: 1; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; padding: 22px 28px;">
+              <div style="font-size: 20px; color: var(--primary); font-family: var(--mono); margin-bottom: 8px;">對話前段 · Claude</div>
+              <div style="font-size: 24px; color: var(--white);">"幫我設計這個模組的架構..."</div>
+              <div style="font-size: 20px; color: var(--muted); margin-top: 6px;">架構討論了 30 分鐘，決定了三個設計</div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: center; padding: 0 24px; gap: 6px;">
+              <div style="font-size: 18px; color: var(--accent); font-family: var(--mono);">切換</div>
+              <div style="font-size: 32px; color: var(--accent);">→</div>
+              <div style="font-size: 16px; color: var(--muted);">讀 context.md</div>
+            </div>
+            <div style="flex: 1; background: rgba(6,182,212,0.1); border: 1px solid rgba(6,182,212,0.3); border-radius: 12px; padding: 22px 28px;">
+              <div style="font-size: 20px; color: var(--accent); font-family: var(--mono); margin-bottom: 8px;">對話後段 · Codex</div>
+              <div style="font-size: 24px; color: var(--white);">"接著幫我實作第一個設計..."</div>
+              <div style="font-size: 20px; color: var(--muted); margin-top: 6px;">完整記得前面三個架構決定，直接動手</div>
+            </div>
+          </div>
+
+          <!-- Comparison -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div style="padding: 20px 28px; background: rgba(239,68,68,0.05); border: 1px solid rgba(239,68,68,0.25); border-radius: 12px;">
+              <div style="font-size: 20px; color: var(--danger); font-weight: 700; margin-bottom: 8px;">✗ 各家工具原生做不到</div>
+              <div style="font-size: 20px; color: var(--muted);">每個工具只認識自己的對話；換工具就要重新介紹背景</div>
+            </div>
+            <div style="padding: 20px 28px; background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.25); border-radius: 12px;">
+              <div style="font-size: 20px; color: var(--emerald); font-weight: 700; margin-bottom: 8px;">✓ Hana 的做法</div>
+              <div style="font-size: 20px; color: var(--muted);">脈絡是共享的檔案，任何接手的 AI 都能讀懂前面的脈絡</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 7 — 多分頁並行
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="第三個本事：我能同時開多個對話分頁，讓不同的 AI 並行工作，互不阻塞。一個人想架構、一個人寫程式，像一個小團隊。">
+        <h2>多分頁並行：一個小團隊</h2>
+        <div class="parallel-grid">
+          <!-- Tab 1 -->
+          <div class="tab-card">
+            <div class="tab-header">
+              <div class="tab-dot" style="background: rgba(99,102,241,0.8);"></div>
+              <span>對話 · Claude</span>
+            </div>
+            <div class="tab-body">
+              <div class="tab-model">🤖 Claude</div>
+              <div class="tab-task">任務：設計模組架構</div>
+              <div class="tab-task" style="color: var(--accent); font-size: 18px;">已決定三個設計原則</div>
+              <div class="thinking-pulse">
+                已完成
+                <span style="font-size: 22px; margin-left: 8px;">✓</span>
+              </div>
+            </div>
+          </div>
+          <!-- Tab 2 -->
+          <div class="tab-card" style="border-color: rgba(6,182,212,0.3);">
+            <div class="tab-header" style="background: rgba(6,182,212,0.1);">
+              <div class="tab-dot" style="background: rgba(6,182,212,0.8);"></div>
+              <span>對話 · Gemini</span>
+            </div>
+            <div class="tab-body">
+              <div class="tab-model">✨ Gemini</div>
+              <div class="tab-task">任務：蒐集競品分析資料</div>
+              <div class="thinking-pulse">
+                思考中
+                <div class="dot-anim">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Tab 3 -->
+          <div class="tab-card" style="border-color: rgba(16,185,129,0.3);">
+            <div class="tab-header" style="background: rgba(16,185,129,0.1);">
+              <div class="tab-dot" style="background: rgba(16,185,129,0.8);"></div>
+              <span>對話 · Codex</span>
+            </div>
+            <div class="tab-body">
+              <div class="tab-model">⌨️ Codex</div>
+              <div class="tab-task">任務：實作第一個模組</div>
+              <div class="thinking-pulse">
+                撰寫中
+                <div class="dot-anim">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align: center; margin-top: 22px; padding: 14px 28px; background: rgba(99,102,241,0.06); border: 1px solid var(--border); border-radius: 10px; font-size: 23px; color: var(--muted);">
+          三個分頁同時進行 · 互不阻塞 · 像一個小團隊各司其職
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8 — 授權下真的能動手
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="而且在你授權之後，我不只是回答你，我能真的動手——改檔案、跑任務。當然，會動到東西的事，我都守著安全邊界，這個後面講 Telegram 那集會細談。">
+        <h2>授權下，真的能動手</h2>
+        <div class="safety-grid">
+          <div class="safety-zone read">
+            <div class="safety-label">✓ 直接做，不用確認</div>
+            <div class="safety-item">🔍 讀取檔案與程式碼</div>
+            <div class="safety-item">📊 分析資料、生成報告</div>
+            <div class="safety-item">💬 回答問題、提供建議</div>
+            <div class="safety-item">🗺️ 查詢 CodeGraph、DocGraph</div>
+            <div style="margin-top: 8px; font-size: 19px; color: var(--emerald); font-family: var(--mono);">唯讀 · 無副作用</div>
+          </div>
+          <div class="safety-zone write">
+            <div class="safety-label">⚠ 先確認，才動手</div>
+            <div class="safety-item">📝 修改程式或設定檔</div>
+            <div class="safety-item">🚀 部署、執行任務</div>
+            <div class="safety-item">📦 安裝相依、建立資源</div>
+            <div class="safety-item">🗑️ 刪除或重命名檔案</div>
+            <div style="margin-top: 8px; font-size: 19px; color: var(--gold); font-family: var(--mono);">有副作用 · 先告知再做</div>
+          </div>
+        </div>
+        <div style="margin-top: 20px; text-align: center; font-size: 22px; color: var(--muted);">
+          Telegram 那一集（EP5）會細講安全邊界的完整設計
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8b — 真實畫面：模型選單裡的三顆大腦
+      ===================================================== -->
+      <section class="slide media"
+        data-transcript="這張不是示意圖，是我剛剛真的打開的畫面。我在自己的 Chat 面板點開大腦模型選單，你可以看到 Claude Code、Codex、Antigravity 就是 Gemini，三個分組全部排在同一個下拉選單裡。這就是我說的三顆大腦共用一個夥伴，真的長這樣，不是我講講而已。">
+        <h2>真實畫面 — 大腦模型選單</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.6; display: flex; align-items: center; justify-content: center; min-height: 0;">
+            <img src="/raw?path=presentations-v2/assets/ep2/model-selector-three-brains-real.png" alt="Chat 大腦模型選單真實畫面"
+                 style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(99,102,241,0.35); box-shadow: 0 0 60px rgba(99,102,241,0.18);">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="rel-row">
+              <div class="rel-icon">🤖</div>
+              <div class="rel-body">
+                <div class="rel-title">Claude Code 分組</div>
+                <div class="rel-desc">Claude Opus、Sonnet、Haiku 都在同一個下拉選單裡</div>
+              </div>
+              <div class="rel-badge indigo">Anthropic</div>
+            </div>
+            <div class="rel-row">
+              <div class="rel-icon">⌨️</div>
+              <div class="rel-body">
+                <div class="rel-title">Codex 分組</div>
+                <div class="rel-desc">GPT-5.5、GPT-5 Codex、o3，一個點擊就能切換</div>
+              </div>
+              <div class="rel-badge cyan">OpenAI</div>
+            </div>
+            <div class="rel-row">
+              <div class="rel-icon">✨</div>
+              <div class="rel-body">
+                <div class="rel-title">Antigravity（Gemini）分組</div>
+                <div class="rel-desc">Gemini 3.5 Flash、3.1 Pro 也一起收在這裡</div>
+              </div>
+              <div class="rel-badge indigo">Google</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8c — 真實畫面：多分頁並行
+      ===================================================== -->
+      <section class="slide media"
+        data-transcript="這張也是真的操作出來的。我開了三個分頁：第一個是原本就在跑的 Claude 任務，第二個換成 Gemini、第三個換成 Codex，我各自送出一個問題。你可以看到分頁列上每個分頁前面都有一個跳動的小圓點，代表它們真的同時在思考、互不阻塞。這就是多分頁並行，不是排隊等待。">
+        <h2>真實畫面 — 三個分頁同時運作</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.6; display: flex; align-items: center; justify-content: center; min-height: 0;">
+            <img src="/raw?path=presentations-v2/assets/ep2/parallel-tabs-real.png" alt="多分頁並行真實畫面"
+                 style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(6,182,212,0.35); box-shadow: 0 0 60px rgba(6,182,212,0.18);">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="rel-row" style="border-color: rgba(6,182,212,0.30); background: rgba(6,182,212,0.06);">
+              <div class="rel-icon">🤖</div>
+              <div class="rel-body">
+                <div class="rel-title">分頁一 · Claude</div>
+                <div class="rel-desc">原本就在背景跑的任務，繼續它的</div>
+              </div>
+              <div class="rel-badge indigo">running</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(6,182,212,0.30); background: rgba(6,182,212,0.06);">
+              <div class="rel-icon">✨</div>
+              <div class="rel-body">
+                <div class="rel-title">分頁二 · Gemini</div>
+                <div class="rel-desc">切換模型後送出問題，同時思考中</div>
+              </div>
+              <div class="rel-badge cyan">running</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(6,182,212,0.30); background: rgba(6,182,212,0.06);">
+              <div class="rel-icon">⌨️</div>
+              <div class="rel-body">
+                <div class="rel-title">分頁三 · Codex</div>
+                <div class="rel-desc">又切換一次模型送出問題，也同時在跑</div>
+              </div>
+              <div class="rel-badge indigo">running</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 9 — 跳章選單 + 下一集預告
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="橋接讓我能用這些大腦，但要愈用愈懂你，光有大腦還不夠，還要有記憶。下一集，我講我的長期記憶和技能。我們下集見。">
+        <h2>全系列 8 集 — 想跳哪集直接去</h2>
+        <div class="chapter-nav" style="margin-top: 12px;">
+          <a class="chapter-link" href="presentation-hana-episode1-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP01</div>
+            <div class="ch-title">我是 Hana</div>
+            <div class="ch-desc">誕生故事 + 超能力全景</div>
+          </a>
+          <a class="chapter-link current" href="presentation-hana-episode2-v2.html" onclick="event.preventDefault(); return false;">
+            <div class="ch-ep">EP02 ▶ 現在在這</div>
+            <div class="ch-title">三顆大腦，一個夥伴</div>
+            <div class="ch-desc">CLI 橋接 + 跨模型不失憶 + 並行</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode3-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP03</div>
+            <div class="ch-title">愈用愈懂你</div>
+            <div class="ch-desc">長期記憶 + 技能</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode4-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP04</div>
+            <div class="ch-title">我替每個專案都長出一個分身</div>
+            <div class="ch-desc">多工作區隔離 + 技能繼承</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode5-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP05</div>
+            <div class="ch-title">掙脫瀏覽器，走進你手機</div>
+            <div class="ch-desc">伺服器常駐 + Telegram</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode6-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP06</div>
+            <div class="ch-title">我會自己定時做事</div>
+            <div class="ch-desc">排程 + 限額自醒 + 護欄</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode7-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP07</div>
+            <div class="ch-title">兩張活地圖</div>
+            <div class="ch-desc">CodeGraph + DocGraph</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode8-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP08</div>
+            <div class="ch-title">我能安全地修好我自己</div>
+            <div class="ch-desc">自癒四步 + 成長收尾</div>
+          </a>
+        </div>
+
+        <!-- Next episode preview -->
+        <div style="margin-top: 20px; display: flex; justify-content: center;">
+          <div style="display: flex; align-items: center; gap: 28px; padding: 18px 36px; background: rgba(99,102,241,0.06); border: 1px solid var(--border); border-radius: 14px;">
+            <div style="text-align: center;">
+              <div style="font-size: 18px; color: var(--muted); font-family: var(--mono); letter-spacing: 0.12em; margin-bottom: 4px;">NEXT EPISODE</div>
+              <div style="font-size: 42px; font-weight: 900; background: linear-gradient(135deg, #ffffff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1;">EP03</div>
+            </div>
+            <div style="width: 1px; height: 60px; background: var(--border);"></div>
+            <div>
+              <div style="font-size: 26px; font-weight: 700; color: var(--white);">愈用愈懂你、也愈懂我自己</div>
+              <div style="font-size: 20px; color: var(--accent); margin-top: 4px;">長期記憶 · 技能 · 不斷進化</div>
+            </div>
+            <a href="presentation-hana-episode3-v2.html"
+               style="display:inline-block; padding: 14px 32px; background: rgba(99,102,241,0.12); border: 2px solid var(--primary); border-radius: 10px; color: var(--white); font-size: 22px; font-weight: 700; text-decoration: none; white-space: nowrap;">
+              前往 EP03 →
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

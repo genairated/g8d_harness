@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana 自我介紹 - EP9：排程系統</title>
+  <style>
+    /* Base slide styling */
+    .slide {
+      justify-content: flex-start; /* Ensure content starts at top to avoid title clipping */
+      padding-top: 80px;
+    }
+    
+    /* Typography and Colors */
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    h1, h2, h3 {
+      color: #58a6ff;
+    }
+    h2 {
+      margin-bottom: 30px;
+      font-size: 2.2rem;
+      border-bottom: 1px solid rgba(88, 166, 255, 0.3);
+      padding-bottom: 10px;
+    }
+
+    /* Layout utilities */
+    .layout-2 {
+      display: flex;
+      gap: 30px;
+      align-items: flex-start;
+      margin-top: 20px;
+    }
+    .layout-2 > div {
+      flex: 1;
+    }
+    
+    /* Cards and Stacks */
+    .stack .mini-card {
+      min-height: auto; /* Prevent overflow */
+    }
+
+    /* Images and Screenshots */
+    .screenshot-container {
+      text-align: center;
+      margin-top: 20px;
+    }
+    .screenshot-container img {
+      max-height: 480px; /* Restrict height to avoid vertical overflow */
+      max-width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 30px;
+      font-size: 1.2rem;
+    }
+    th, td {
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+      text-align: left;
+    }
+    th {
+      background: rgba(88, 166, 255, 0.1);
+      color: #58a6ff;
+    }
+    td {
+      background: rgba(255,255,255,0.02);
+    }
+    
+    /* Lists */
+    ul.feature-list {
+      font-size: 1.4rem;
+      line-height: 2;
+      list-style-type: none;
+      padding: 0;
+    }
+    ul.feature-list li::before {
+      content: "✓ ";
+      color: #3fb950;
+      font-weight: bold;
+    }
+    
+    /* Diagram blocks */
+    .flow-diagram {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 50px;
+      padding: 30px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .flow-node {
+      text-align: center;
+      flex: 1;
+    }
+    .flow-title {
+      font-size: 1.6rem;
+      margin-bottom: 10px;
+    }
+    .flow-desc {
+      color: #8b949e;
+      font-size: 1.1rem;
+    }
+    .flow-arrow {
+      font-size: 2rem;
+      color: #484f58;
+      padding: 0 20px;
+    }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="排程系統">
+    <main class="slides">
+      
+      <!-- Page 1: Title -->
+      <section class="slide title-slide" data-transcript="這一集，我們來聊聊排程系統。也就是我怎麼學會自己定時做事，並且在你沒開瀏覽器的時候，依然能把事情做完。">
+        <div style="text-align: center; margin-top: 15%;">
+          <h1 style="font-size: 4rem; margin-bottom: 20px;">我會自己定時做事</h1>
+          <h2 style="border: none; font-size: 2.5rem; color: #8b949e;">第九集：排程系統</h2>
+          <div style="margin-top: 40px; font-size: 1.3rem; color: #58a6ff;">Hana 自我介紹系列</div>
+        </div>
+      </section>
+
+      <!-- Page 2: 為什麼要排程 -->
+      <section class="slide" data-transcript="為什麼要排程？因為有些例行工作，像是凌晨蒐集資訊、自我診斷，或是跨模型審查程式，不應該靠你的人腦去記。有了排程，這些工作就交給我，到點自動執行。">
+        <h2>例行工作不該靠人腦記得</h2>
+        <div class="layout-2">
+          <div>
+            <ul class="feature-list">
+              <li><strong>凌晨蒐集資訊</strong>：自動彙整最新情報，醒來即可閱讀</li>
+              <li><strong>自我診斷</strong>：定期檢查系統健康狀態</li>
+              <li><strong>跨模型審查</strong>：定時啟動多大腦審閱程式碼</li>
+            </ul>
+            <p style="margin-top: 30px; font-size: 1.2rem; color: #8b949e;">把重複性負擔交給系統，讓大腦專注於決策。</p>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); min-height: 250px;">
+            <div style="font-size: 4rem; text-align: center;">
+              <div>🧠 人類負責規劃</div>
+              <div style="color: #58a6ff; font-size: 3rem; margin: 15px 0;">⬇️ 交付排程</div>
+              <div>🤖 系統自動執行</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Page 3: 三層資料 -->
+      <section class="slide" data-transcript="為了解決複雜的狀態管理，我的排程系統有三層資料設計。從定義規則、每一次的執行紀錄，到最終的產出物，讓你一眼就能看出從什麼時候開始跑、跑了什麼，以及產出了什麼。">
+        <h2>一眼看懂排程結構：三層資料設計</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>層級</th>
+              <th>角色定位</th>
+              <th>內容說明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1. 排程定義</strong></td>
+              <td>規則與藍圖</td>
+              <td>定義何時觸發（單次或 cron）、要做什麼任務、以及使用哪個模型</td>
+            </tr>
+            <tr>
+              <td><strong>2. 執行紀錄</strong> (Run)</td>
+              <td>歷史軌跡</td>
+              <td>每一次具體執行的開始時間、結束時間與執行狀態（成功或失敗）</td>
+            </tr>
+            <tr>
+              <td><strong>3. 產出物</strong></td>
+              <td>最終結果</td>
+              <td>任務完成後留下的實際檔案內容與執行摘要</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Page 4: 新增排程表單 -->
+      <section class="slide" data-transcript="這是一個新增排程的畫面。你可以設定排程時間、輸入具體的任務指令，甚至指定要用哪一個模型來跑。設定好之後，我會把它記錄在伺服器上。">
+        <h2>新增排程：精準定義任務與頻率</h2>
+        <div class="screenshot-container">
+          <img src="/raw?path=presentations/ep_9/新增排程.png" alt="新增排程表單截圖">
+        </div>
+      </section>
+
+      <!-- Page 5: 執行在伺服器 -->
+      <section class="slide" data-transcript="就像上一集提到的，大腦在伺服器，瀏覽器只是觀看者。所以即使你設定好排程後關閉網頁，時間一到，我依然會在伺服器上自動醒來，默默幫你把任務跑完。">
+        <h2>執行在伺服器：沒開瀏覽器也照跑</h2>
+        <div class="layout-2">
+          <div>
+            <div style="padding: 25px; background: rgba(46, 160, 67, 0.1); border-left: 5px solid #2ea043; border-radius: 4px; margin-bottom: 20px;">
+              <h3 style="color: #3fb950; margin: 0 0 10px 0;">常駐執行者 (Server)</h3>
+              <p style="margin: 0; font-size: 1.1rem; color: #c9d1d9;">Portal 伺服器在背景常駐，時間一到自動喚醒並啟動任務，不依賴前端狀態。</p>
+            </div>
+            <div style="padding: 25px; background: rgba(88, 166, 255, 0.1); border-left: 5px solid #58a6ff; border-radius: 4px;">
+              <h3 style="color: #58a6ff; margin: 0 0 10px 0;">輕量觀看者 (Client)</h3>
+              <p style="margin: 0; font-size: 1.1rem; color: #c9d1d9;">網頁與手機前端，負責設定與隨時連線查看進度，可隨時關閉不影響任務。</p>
+            </div>
+          </div>
+          <div class="screenshot-container" style="margin-top: 0;">
+            <img src="/raw?path=presentations/ep_9/排程任務_執行.png" alt="排程任務執行中截圖">
+          </div>
+        </div>
+      </section>
+
+      <!-- Page 6: 排程清單 -->
+      <section class="slide" data-transcript="在排程任務清單裡，你可以清楚看到目前有哪些任務正在等候中，或是正在執行。這就是你在網頁上看到的觀看者視角。">
+        <h2>掌控全局：排程任務清單</h2>
+        <div class="screenshot-container">
+          <img src="/raw?path=presentations/ep_9/排程任務.png" alt="排程任務清單截圖">
+        </div>
+      </section>
+
+      <!-- Page 7: 限額自醒續跑 -->
+      <section class="slide" data-transcript="遇到用量限制怎麼辦？這是我很驕傲的一個設計。如果中途撞到了額度上限，我會自己記下重置時間。時間一到，我會自動醒來，讀取之前的半成品，繼續把剩下的工作做完。">
+        <h2>限額自醒續跑：遇上用量限制也能接力完成</h2>
+        <div class="flow-diagram">
+          <div class="flow-node">
+            <div class="flow-title" style="color: #f85149;">🛑 撞上限中斷</div>
+            <div class="flow-desc">記錄重置時間<br>與任務半成品</div>
+          </div>
+          <div class="flow-arrow">➔</div>
+          <div class="flow-node">
+            <div class="flow-title" style="color: #d29922;">⏳ 休眠等待</div>
+            <div class="flow-desc">釋放系統資源<br>定時器開始倒數</div>
+          </div>
+          <div class="flow-arrow">➔</div>
+          <div class="flow-node">
+            <div class="flow-title" style="color: #2ea043;">🟢 自動醒來接力</div>
+            <div class="flow-desc">餵回歷史脈絡<br>與硬碟現況接續執行</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Page 8: 執行歷史 -->
+      <section class="slide" data-transcript="任務完成後，所有的歷史軌跡都會被完整記錄下來。打開執行歷史面板，你可以看到每一次的起訖時間與狀態，完全透明，不怕找不到過去的產出。">
+        <h2>Run 執行歷史：軌跡一目了然</h2>
+        <div class="screenshot-container">
+          <img src="/raw?path=presentations/ep_9/排程執行歷史.png" alt="Run 執行歷史截圖">
+        </div>
+      </section>
+
+      <!-- Page 9: 護欄機制 -->
+      <section class="slide" data-transcript="在無人看管的情況下跑任務，安全最重要。所以我有一套嚴格的護欄機制。包括每個排程的預算上限、重試次數限制，以及連續失敗時的自動熔斷，避免我在背景不小心把額度燒光。">
+        <h2>護欄機制：能力越大，安全越重要</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>安全機制</th>
+              <th>目的與防護效果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>預算上限</strong></td>
+              <td>限制單一排程的花費，避免無人看管時無限制消耗 API 額度。</td>
+            </tr>
+            <tr>
+              <td><strong>重試限制</strong></td>
+              <td>任務遇到暫時性錯誤時限制重試次數，防止陷入死迴圈。</td>
+            </tr>
+            <tr>
+              <td><strong>連續失敗熔斷</strong></td>
+              <td>當多次執行皆失敗時，自動暫停該排程，等待指揮官介入檢查。</td>
+            </tr>
+            <tr>
+              <td><strong>危險任務隔離</strong></td>
+              <td>會重啟系統的危險操作（例如部署任務），禁止設定為自動排程。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Page 10: 通知 -->
+      <section class="slide" data-transcript="最後，任務做完後我一定會回報。結果會推送到網頁的近期動態，同時也會傳送到你口袋裡的 Telegram。你完全不用守在電腦前，這就是我們合作的最佳默契。">
+        <h2>主動通知：跑完結果直接推送</h2>
+        <div class="layout-2" style="margin-top: 50px;">
+          <div style="background: rgba(255,255,255,0.03); padding: 40px 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); text-align: center;">
+            <div style="font-size: 5rem; margin-bottom: 20px;">💻</div>
+            <h3 style="margin-bottom: 15px;">站內近期動態</h3>
+            <p style="color: #8b949e; font-size: 1.1rem;">回到電腦前，一眼掌握<br>排程跑完的歷史軌跡與摘要。</p>
+          </div>
+          <div style="background: rgba(255,255,255,0.03); padding: 40px 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); text-align: center;">
+            <div style="font-size: 5rem; margin-bottom: 20px;">📱</div>
+            <h3 style="margin-bottom: 15px;">Telegram 通知</h3>
+            <p style="color: #8b949e; font-size: 1.1rem;">人在外面，第一時間接收<br>專案、產出位置與執行結果。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Page 11: 預告 -->
+      <section class="slide" data-transcript="這集就介紹到這邊。下一集，我會向你展示我的文件與程式知識圖譜，帶你看看我如何快速看懂你的程式與規格。我們下集見。">
+        <h2>下一集預告：DocGraph 與 CodeGraph 雙圖譜</h2>
+        <div style="margin-top: 50px; font-size: 1.4rem; color: #c9d1d9; background: rgba(88, 166, 255, 0.1); padding: 30px; border-radius: 8px; border-left: 5px solid #58a6ff;">
+          <p style="margin: 0;"><strong>看懂規格，釐清影響面，精準導航不迷路。</strong></p>
+          <ul style="margin-top: 15px; margin-bottom: 0; color: #8b949e;">
+            <li>DocGraph：Markdown 治理知識圖譜（規格與法令導航）</li>
+            <li>CodeGraph：程式碼關係圖譜（呼叫關聯與影響面分析）</li>
+          </ul>
+        </div>
+        <div style="margin-top: 50px; text-align: center;">
+          <a href="presentation-hana-episode10.html" style="display: inline-block; padding: 15px 40px; background: #238636; color: white; text-decoration: none; border-radius: 6px; font-size: 1.3rem; font-weight: bold; box-shadow: 0 4px 15px rgba(35, 134, 54, 0.4);">前往第十集 ➔</a>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

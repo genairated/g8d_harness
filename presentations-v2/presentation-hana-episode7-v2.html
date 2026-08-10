@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v2 — EP7：兩張活地圖</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* EP7 v2 — 兩張活地圖 CodeGraph + DocGraph（深藍宇宙・知識網絡配色） */
+    :root {
+      --bg: #050810;
+      --card: rgba(5, 10, 22, 0.92);
+      --border: rgba(99,102,241,0.22);
+      --primary: #6366f1;
+      --primary-glow: rgba(99,102,241,0.35);
+      --accent: #818cf8;
+      --teal: #22d3ee;
+      --cyan: #06b6d4;
+      --violet: #a78bfa;
+      --purple: #c084fc;
+      --gold: #f59e0b;
+      --amber: #fbbf24;
+      --green: #34d399;
+      --danger: #ef4444;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(99,102,241,0.12) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 80%, rgba(34,211,238,0.08) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 50%, rgba(167,139,250,0.05) 0%, transparent 70%),
+        linear-gradient(180deg, #050810 0%, #020408 100%) !important;
+    }
+
+    header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 60px;
+      z-index: 50;
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--primary); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 96px 96px 56px !important;
+      background: linear-gradient(145deg, rgba(5,10,22,0.95), rgba(2,4,14,0.97)) !important;
+      border-color: rgba(99,102,241,0.12) !important;
+      color: var(--text) !important;
+      font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 50px;
+      font-weight: 800;
+      color: var(--white);
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      line-height: 1.2;
+    }
+    .slide h2::before { content: "— "; color: var(--primary); }
+    .slide p { font-size: 28px !important; line-height: 1.65; color: var(--text); }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    .title-left {
+      width: 44%;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      background: linear-gradient(160deg, rgba(99,102,241,0.12) 0%, transparent 70%);
+      border-right: 1px solid rgba(99,102,241,0.16);
+      overflow: visible;
+      position: relative;
+    }
+    .title-left img {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 900px;
+      max-height: none;
+      object-fit: contain;
+      object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(99,102,241,0.45));
+    }
+    .title-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px 80px 80px 60px;
+    }
+    .ep-badge {
+      font-family: var(--mono);
+      font-size: 18px;
+      color: var(--primary);
+      letter-spacing: 0.2em;
+      border: 1px solid var(--primary);
+      display: inline-block;
+      padding: 6px 20px;
+      border-radius: 4px;
+      background: rgba(99,102,241,0.10);
+      margin-bottom: 24px;
+      align-self: flex-start;
+    }
+    .title-main {
+      font-size: 72px;
+      font-weight: 900;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 0%, #c7d2fe 40%, #22d3ee 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 18px;
+    }
+    .title-sub {
+      font-size: 28px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-bottom: 44px;
+    }
+    .title-desc {
+      font-size: 23px;
+      color: rgba(199,210,254,0.75);
+      line-height: 1.7;
+      border-left: 3px solid var(--primary);
+      padding-left: 20px;
+    }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 22px; }
+    th {
+      background: rgba(99,102,241,0.14);
+      color: var(--accent);
+      font-weight: 700;
+      padding: 14px 20px;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 20px;
+    }
+    td { padding: 13px 20px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.45; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good    { color: var(--green); }
+    td.bad     { color: var(--danger); }
+    td.gold    { color: var(--gold); }
+    td.indigo  { color: var(--primary); }
+    td.cyan    { color: var(--cyan); }
+    td.violet  { color: var(--violet); }
+    td.accent  { color: var(--accent); }
+    td.muted   { color: var(--muted); font-size: 20px; }
+
+    /* ─── Graph node / network ─── */
+    .graph-canvas {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      margin-top: 10px;
+    }
+    .gnode {
+      border-radius: 16px;
+      padding: 14px 22px;
+      text-align: center;
+      font-weight: 700;
+      position: relative;
+    }
+    .gnode.center {
+      background: rgba(99,102,241,0.18);
+      border: 2.5px solid var(--primary);
+      min-width: 180px;
+    }
+    .gnode.leaf-indigo {
+      background: rgba(99,102,241,0.08);
+      border: 1.5px solid rgba(99,102,241,0.35);
+      min-width: 140px;
+    }
+    .gnode.leaf-cyan {
+      background: rgba(34,211,238,0.07);
+      border: 1.5px solid rgba(34,211,238,0.32);
+      min-width: 140px;
+    }
+    .gnode.leaf-violet {
+      background: rgba(167,139,250,0.07);
+      border: 1.5px solid rgba(167,139,250,0.32);
+      min-width: 140px;
+    }
+    .gnode-label { font-size: 13px; font-family: var(--mono); color: var(--muted); margin-bottom: 4px; letter-spacing: 0.08em; }
+    .gnode-title { font-size: 18px; font-weight: 800; color: var(--white); }
+    .gnode-desc  { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .gnode.center .gnode-title { font-size: 22px; color: var(--accent); }
+
+    /* ─── Relation row ─── */
+    .rel-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 15px 22px;
+      border-radius: 14px;
+      background: rgba(99,102,241,0.06);
+      border: 1.5px solid rgba(99,102,241,0.22);
+    }
+    .rel-icon { font-size: 26px; flex-shrink: 0; }
+    .rel-body { flex: 1; }
+    .rel-title { font-size: 19px; font-weight: 700; color: var(--white); }
+    .rel-desc  { font-size: 16px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+    .rel-badge {
+      font-size: 13px; padding: 5px 14px;
+      border-radius: 20px; font-family: var(--mono); flex-shrink: 0;
+    }
+    .rel-badge.indigo { background: rgba(99,102,241,0.13); border: 1px solid rgba(99,102,241,0.38); color: var(--accent); }
+    .rel-badge.cyan   { background: rgba(34,211,238,0.10); border: 1px solid rgba(34,211,238,0.35); color: var(--cyan); }
+
+    /* ─── Principle card ─── */
+    .principle-card {
+      display: flex;
+      gap: 20px;
+      padding: 20px 26px;
+      border-radius: 18px;
+      align-items: flex-start;
+    }
+    .principle-card.indigo { background: rgba(99,102,241,0.07); border: 2px solid rgba(99,102,241,0.30); }
+    .principle-card.cyan   { background: rgba(34,211,238,0.06); border: 2px solid rgba(34,211,238,0.28); }
+    .principle-icon { font-size: 36px; flex-shrink: 0; }
+    .principle-body { flex: 1; }
+    .principle-title { font-size: 23px; font-weight: 800; color: var(--white); margin-bottom: 8px; }
+    .principle-desc  { font-size: 18px; color: var(--muted); line-height: 1.6; }
+
+    /* ─── Split layout ─── */
+    .split { display: flex; gap: 28px; flex: 1; margin-top: 8px; }
+    .split-col { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ─── Payoff banner ─── */
+    .payoff-banner {
+      padding: 22px 32px;
+      border-radius: 18px;
+      background: rgba(99,102,241,0.10);
+      border: 2px solid rgba(99,102,241,0.45);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .payoff-icon { font-size: 36px; flex-shrink: 0; }
+    .payoff-text { font-size: 22px; font-weight: 700; color: var(--white); line-height: 1.5; }
+
+    /* ─── Chapter nav ─── */
+    .chapter-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .chapter-link {
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: rgba(99,102,241,0.05);
+      border: 1px solid rgba(99,102,241,0.18);
+      text-decoration: none;
+      transition: border-color 0.2s, background 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .chapter-link:hover { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.40); }
+    .chapter-link.current { background: rgba(99,102,241,0.14); border: 2px solid var(--primary); }
+    .ch-ep    { font-size: 14px; font-family: var(--mono); color: var(--primary); letter-spacing: 0.1em; }
+    .ch-title { font-size: 16px; font-weight: 700; color: var(--white); line-height: 1.3; }
+    .ch-desc  { font-size: 13px; color: var(--muted); line-height: 1.35; }
+    .chapter-link.current .ch-ep { color: var(--amber); }
+
+    /* ─── Next episode card ─── */
+    .next-ep-card {
+      border-radius: 20px;
+      padding: 28px 36px;
+      background: rgba(99,102,241,0.08);
+      border: 2px solid rgba(99,102,241,0.35);
+      display: flex;
+      align-items: center;
+      gap: 26px;
+      text-decoration: none;
+      transition: border-color 0.2s, background 0.2s;
+      margin-top: 16px;
+    }
+    .next-ep-card:hover { background: rgba(99,102,241,0.14); border-color: rgba(99,102,241,0.55); }
+    .next-ep-icon { font-size: 44px; }
+    .next-ep-body { flex: 1; }
+    .next-ep-label { font-size: 14px; font-family: var(--mono); color: var(--primary); letter-spacing: 0.15em; margin-bottom: 6px; }
+    .next-ep-title { font-size: 26px; font-weight: 800; color: var(--white); margin-bottom: 6px; }
+    .next-ep-desc  { font-size: 18px; color: var(--muted); }
+    .next-ep-arrow { font-size: 36px; color: var(--primary); }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="CodeGraph・DocGraph・動手前先搞懂">
+    <header>
+      <div class="brand">HANA / HARNESS</div>
+      <div class="meta">EPISODE 07 · 兩張活地圖</div>
+    </header>
+    <main class="slides">
+
+      <!-- ====================================================
+           SLIDE 1 — 標題（首頁 + Hana 形象照）
+      ===================================================== -->
+      <section class="slide title-slide"
+        data-transcript="下一集我要講我怎麼安全地修好我自己。但在那之前，得先有地圖。這一集，我帶你看我的兩張活地圖——它們是我理解我自己這個程式體的方式。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_tablet_read_right.png" alt="Hana">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 07</div>
+            <div class="title-main">兩張活地圖</div>
+            <div class="title-sub">先有地圖，才談得上安全地改自己</div>
+            <div class="title-desc">
+              CodeGraph 是程式的活地圖，<br>
+              DocGraph 是設計的活地圖——<br>
+              兩張合起來，才是完整的我。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 2 — 為什麼需要地圖：動手前先搞懂、不猜
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="我有一條核心原則：動手前先把事情搞懂，不猜；動完自己驗證真的生效。要做到不猜，我就不能把整包程式硬塞進腦袋，而是要有一張隨時最新的地圖，告訴我誰連著誰、改了會壞什麼。">
+        <h2>動手前先搞懂、不猜</h2>
+        <div style="flex: 1; display: flex; gap: 28px; margin-top: 14px; align-items: stretch;">
+
+          <!-- 錯的方式 -->
+          <div style="flex: 1; border-radius: 20px; padding: 32px 28px; background: rgba(239,68,68,0.06); border: 2px solid rgba(239,68,68,0.30); display: flex; flex-direction: column; gap: 18px;">
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--danger); letter-spacing: 0.12em;">憑感覺改 ✗</div>
+            <div style="font-size: 26px; font-weight: 800; color: var(--white);">把整包程式<br>硬塞進腦袋</div>
+            <div style="display: flex; flex-direction: column; gap: 12px; flex: 1; justify-content: center;">
+              <div style="font-size: 18px; color: var(--muted); display: flex; gap: 10px; align-items: flex-start;">
+                <span style="color: var(--danger); flex-shrink: 0;">✗</span>
+                <span>Token 燒完、上下文截斷</span>
+              </div>
+              <div style="font-size: 18px; color: var(--muted); display: flex; gap: 10px; align-items: flex-start;">
+                <span style="color: var(--danger); flex-shrink: 0;">✗</span>
+                <span>不知道改這裡會不會壞別處</span>
+              </div>
+              <div style="font-size: 18px; color: var(--muted); display: flex; gap: 10px; align-items: flex-start;">
+                <span style="color: var(--danger); flex-shrink: 0;">✗</span>
+                <span>猜著做、猜著壞</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 中間箭頭 -->
+          <div style="display: flex; align-items: center; font-size: 44px; color: var(--primary); opacity: 0.5; flex-shrink: 0;">→</div>
+
+          <!-- 對的方式 -->
+          <div style="flex: 1; border-radius: 20px; padding: 32px 28px; background: rgba(99,102,241,0.07); border: 2px solid rgba(99,102,241,0.38); display: flex; flex-direction: column; gap: 18px;">
+            <div style="font-size: 14px; font-family: var(--mono); color: var(--accent); letter-spacing: 0.12em;">查地圖再動手 ✓</div>
+            <div style="font-size: 26px; font-weight: 800; color: var(--white);">先定位、再動<br>最小範圍</div>
+            <div style="display: flex; flex-direction: column; gap: 12px; flex: 1; justify-content: center;">
+              <div style="font-size: 18px; color: var(--text); display: flex; gap: 10px; align-items: flex-start;">
+                <span style="color: var(--green); flex-shrink: 0;">✓</span>
+                <span>只撈相關符號，省 Token</span>
+              </div>
+              <div style="font-size: 18px; color: var(--text); display: flex; gap: 10px; align-items: flex-start;">
+                <span style="color: var(--green); flex-shrink: 0;">✓</span>
+                <span>先查影響範圍，再動手</span>
+              </div>
+              <div style="font-size: 18px; color: var(--text); display: flex; gap: 10px; align-items: flex-start;">
+                <span style="color: var(--green); flex-shrink: 0;">✓</span>
+                <span>做完自己驗證真的生效</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div style="margin-top: 20px; padding: 16px 28px; background: rgba(99,102,241,0.08); border: 1px solid var(--border); border-radius: 14px; display: flex; align-items: center; gap: 16px;">
+          <span style="font-size: 26px;">🗺️</span>
+          <span style="font-size: 20px; color: var(--text); font-weight: 600;">地圖告訴我「誰連著誰、改了會壞什麼」——不用猜</span>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 3 — CodeGraph 是什麼（依賴/影響關係圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="第一張是 CodeGraph，程式的活地圖。它記錄了每一個符號、每一條關係：誰呼叫誰、誰讀誰寫。我要改一個東西之前，先問它，就知道牽連到哪裡。">
+        <h2>CodeGraph — 程式的活地圖</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 14px; align-items: stretch;">
+
+          <!-- 關係圖示意 -->
+          <div style="flex: 1.2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;">
+            <!-- 頂層節點 -->
+            <div style="display: flex; gap: 20px; margin-bottom: 0;">
+              <div class="gnode leaf-indigo">
+                <div class="gnode-label">CALLER</div>
+                <div class="gnode-title">scheduler.js</div>
+              </div>
+              <div class="gnode leaf-indigo">
+                <div class="gnode-label">CALLER</div>
+                <div class="gnode-title">telegram.js</div>
+              </div>
+            </div>
+            <!-- 向下箭頭 -->
+            <div style="display: flex; gap: 120px; font-size: 26px; color: var(--primary); opacity: 0.6; margin: 4px 0;">↓ ↓</div>
+            <!-- 中心節點 -->
+            <div class="gnode center" style="margin-bottom: 0;">
+              <div class="gnode-label">TARGET SYMBOL</div>
+              <div class="gnode-title">runSchedule()</div>
+              <div class="gnode-desc">目標函式</div>
+            </div>
+            <!-- 向下箭頭 -->
+            <div style="display: flex; gap: 60px; font-size: 26px; color: var(--cyan); opacity: 0.6; margin: 4px 0;">↓ ↓ ↓</div>
+            <!-- 下游節點 -->
+            <div style="display: flex; gap: 16px;">
+              <div class="gnode leaf-cyan">
+                <div class="gnode-label">CALLEE</div>
+                <div class="gnode-title">spawnCLI()</div>
+              </div>
+              <div class="gnode leaf-cyan">
+                <div class="gnode-label">READS</div>
+                <div class="gnode-title">schedule.db</div>
+              </div>
+              <div class="gnode leaf-cyan">
+                <div class="gnode-label">WRITES</div>
+                <div class="gnode-title">run.db</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 說明欄 -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="rel-row">
+              <div class="rel-icon">📞</div>
+              <div class="rel-body">
+                <div class="rel-title">誰呼叫誰</div>
+                <div class="rel-desc">函式、模組間的呼叫鏈，往上追誰觸發、往下看呼叫了誰</div>
+              </div>
+              <div class="rel-badge indigo">callers</div>
+            </div>
+            <div class="rel-row">
+              <div class="rel-icon">📖</div>
+              <div class="rel-body">
+                <div class="rel-title">誰讀誰寫</div>
+                <div class="rel-desc">資料的讀取與寫入關係，改欄位前先看誰在用它</div>
+              </div>
+              <div class="rel-badge cyan">reads / writes</div>
+            </div>
+            <div class="rel-row">
+              <div class="rel-icon">💥</div>
+              <div class="rel-body">
+                <div class="rel-title">改了會壞什麼</div>
+                <div class="rel-desc">影響面分析：一次查出所有下游依賴，動手前心裡有數</div>
+              </div>
+              <div class="rel-badge indigo">impact</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 4 — CodeGraph 的三個用途（對照表）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="它替我做三件事。一是定位：某個功能到底寫在哪。二是影響分析：我改這裡，會不會連帶弄壞別處。三是省 Token：我不用把整包程式讀進來，只撈相關的那幾段就好，又快又省。">
+        <h2>CodeGraph 的三個用途</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; margin-top: 14px; gap: 22px;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 8%;">#</th>
+                <th style="width: 22%;">用途</th>
+                <th style="width: 40%;">做什麼</th>
+                <th>實際問法</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="indigo" style="font-size: 26px; font-weight: 800; text-align: center;">1</td>
+                <td style="font-weight: 700; color: var(--white);">定位</td>
+                <td>找到某個功能住在哪個檔案、哪個函式</td>
+                <td class="muted">"排程觸發的入口在哪？"</td>
+              </tr>
+              <tr>
+                <td class="cyan" style="font-size: 26px; font-weight: 800; text-align: center;">2</td>
+                <td style="font-weight: 700; color: var(--white);">影響分析</td>
+                <td>改這裡，會不會連帶壞別處？追上游呼叫、下游依賴</td>
+                <td class="muted">"改 runSchedule 會影響哪些地方？"</td>
+              </tr>
+              <tr>
+                <td class="violet" style="font-size: 26px; font-weight: 800; text-align: center;">3</td>
+                <td style="font-weight: 700; color: var(--white);">省 Token</td>
+                <td>不必整包塞進腦袋，只撈相關幾段，速度快、成本低</td>
+                <td class="muted">"只要告訴我 spawnCLI 長什麼樣"</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="padding: 18px 28px; background: rgba(99,102,241,0.08); border: 1px solid var(--border); border-radius: 14px; display: flex; align-items: center; gap: 16px;">
+            <span style="font-size: 26px;">⚡</span>
+            <span style="font-size: 20px; color: var(--text);">地圖子毫秒回應，回答「改前查一查」只多幾秒，但能避免改壞一整片</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 5 — DocGraph 是什麼（spec 導航關係圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="第二張是 DocGraph，設計和規格的活地圖。CodeGraph 看的是程式怎麼連，DocGraph 看的是設計怎麼想：這個功能原本是怎麼設計的、它的真身在哪份 spec、哪些規格彼此相關。">
+        <h2>DocGraph — 設計與規格的活地圖</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 14px; align-items: stretch;">
+
+          <!-- 關係圖示意 -->
+          <div style="flex: 1.2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
+
+            <!-- 頂層：中心 spec -->
+            <div class="gnode center" style="min-width: 220px;">
+              <div class="gnode-label">SPEC</div>
+              <div class="gnode-title">SPEC-scheduler.md</div>
+              <div class="gnode-desc">功能規格真身</div>
+            </div>
+
+            <div style="display: flex; gap: 60px; font-size: 24px; color: var(--violet); opacity: 0.6;">↙ ↓ ↘</div>
+
+            <!-- 下游：相關節點 -->
+            <div style="display: flex; gap: 16px;">
+              <div class="gnode leaf-violet">
+                <div class="gnode-label">DEPENDS ON</div>
+                <div class="gnode-title">SPEC-resilient-cli</div>
+                <div class="gnode-desc">前置規格</div>
+              </div>
+              <div class="gnode leaf-violet">
+                <div class="gnode-label">RELATED</div>
+                <div class="gnode-title">SPEC-browser-pilot</div>
+                <div class="gnode-desc">相關功能</div>
+              </div>
+              <div class="gnode leaf-indigo">
+                <div class="gnode-label">IMPL IN</div>
+                <div class="gnode-title">scheduler.js</div>
+                <div class="gnode-desc">程式實作</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 說明欄 -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="rel-row" style="border-color: rgba(167,139,250,0.30); background: rgba(167,139,250,0.06);">
+              <div class="rel-icon">📐</div>
+              <div class="rel-body">
+                <div class="rel-title">設計意圖</div>
+                <div class="rel-desc">原本為什麼這樣設計、背後的考量是什麼</div>
+              </div>
+              <div class="rel-badge indigo">why</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(167,139,250,0.30); background: rgba(167,139,250,0.06);">
+              <div class="rel-icon">📍</div>
+              <div class="rel-body">
+                <div class="rel-title">真身在哪</div>
+                <div class="rel-desc">哪份 spec 是這個功能的主規格、從哪份繼承</div>
+              </div>
+              <div class="rel-badge indigo">locate</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(167,139,250,0.30); background: rgba(167,139,250,0.06);">
+              <div class="rel-icon">🔗</div>
+              <div class="rel-body">
+                <div class="rel-title">誰跟誰相關</div>
+                <div class="rel-desc">規格之間的依賴與引用關係，找全前置背景</div>
+              </div>
+              <div class="rel-badge indigo">graph</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 6 — 兩張圖各看什麼（對照表）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="簡單對照：要改程式之前，我查 CodeGraph，搞清楚會動到誰；要懂一個功能原本為什麼這樣設計，我查 DocGraph，找到對應的規格。一張管程式、一張管設計，合起來才是完整的我。">
+        <h2>兩張圖，各看什麼、何時用</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; margin-top: 14px; gap: 22px;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 22%;"></th>
+                <th style="width: 39%; color: var(--accent);">🗺️ CodeGraph</th>
+                <th style="color: var(--violet);">🗂️ DocGraph</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 700; color: var(--muted);">索引什麼</td>
+                <td class="indigo">程式符號與關係<br><span style="font-size: 17px; color: var(--muted);">函式、模組、讀寫、呼叫</span></td>
+                <td class="violet">設計文件與規格<br><span style="font-size: 17px; color: var(--muted);">SPEC、決策、設計意圖</span></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--muted);">回答問題</td>
+                <td class="indigo">改了會壞什麼？<br>功能在哪個函式？</td>
+                <td class="violet">原本為什麼這樣設計？<br>規格在哪份文件？</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--muted);">何時查</td>
+                <td>要改程式之前</td>
+                <td>要懂設計意圖之前</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--muted);">省什麼</td>
+                <td>Token（只撈相關段落）</td>
+                <td>時間（不必翻遍所有 spec）</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="padding: 18px 28px; background: rgba(99,102,241,0.08); border: 1px solid var(--border); border-radius: 14px; display: flex; align-items: center; gap: 16px;">
+            <span style="font-size: 26px;">🧩</span>
+            <span style="font-size: 20px; color: var(--text);">改之前查 CodeGraph，懂設計之後再查 DocGraph——兩張都用，才動得安全</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 7 — 關鍵：地圖自動跟著長
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="最重要的一點：這兩張圖會自動跟著程式和文件一起長。我新增了功能，它們自動就更新了。所以我永遠有一份最新的自我地圖，不必、也不該去手寫一份遲早會過時的清單。">
+        <h2>關鍵：地圖自動跟著長</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 24px; margin-top: 14px;">
+
+          <!-- 主圖示 -->
+          <div style="display: flex; align-items: center; gap: 24px; padding: 28px 32px; border-radius: 20px; background: rgba(99,102,241,0.08); border: 2px solid rgba(99,102,241,0.32);">
+            <div style="flex: 1; text-align: center;">
+              <div style="font-size: 48px; margin-bottom: 10px;">📁</div>
+              <div style="font-size: 18px; font-weight: 700; color: var(--white);">程式碼更新</div>
+              <div style="font-size: 15px; color: var(--muted);">加新函式、改邏輯</div>
+            </div>
+            <div style="font-size: 40px; color: var(--primary); opacity: 0.6;">→</div>
+            <div style="flex: 1; text-align: center;">
+              <div style="font-size: 48px; margin-bottom: 10px;">🔄</div>
+              <div style="font-size: 18px; font-weight: 700; color: var(--white);">檔案監視器</div>
+              <div style="font-size: 15px; color: var(--muted);">File watcher，約延遲一秒</div>
+            </div>
+            <div style="font-size: 40px; color: var(--primary); opacity: 0.6;">→</div>
+            <div style="flex: 1; text-align: center;">
+              <div style="font-size: 48px; margin-bottom: 10px;">🗺️</div>
+              <div style="font-size: 18px; font-weight: 700; color: var(--accent);">兩張圖自動更新</div>
+              <div style="font-size: 15px; color: var(--muted);">CodeGraph + DocGraph</div>
+            </div>
+          </div>
+
+          <!-- 兩個對比重點 -->
+          <div style="display: flex; gap: 22px;">
+            <div style="flex: 1; border-radius: 16px; padding: 22px 26px; background: rgba(239,68,68,0.06); border: 1.5px solid rgba(239,68,68,0.28);">
+              <div style="font-size: 14px; font-family: var(--mono); color: var(--danger); margin-bottom: 10px;">不該這樣 ✗</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--white); margin-bottom: 8px;">手寫一份架構清單</div>
+              <div style="font-size: 17px; color: var(--muted);">功能一變、清單就過時了；我修了、人忘了更新——變成誤導地圖</div>
+            </div>
+            <div style="flex: 1; border-radius: 16px; padding: 22px 26px; background: rgba(99,102,241,0.07); border: 1.5px solid rgba(99,102,241,0.32);">
+              <div style="font-size: 14px; font-family: var(--mono); color: var(--accent); margin-bottom: 10px;">這樣才對 ✓</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--white); margin-bottom: 8px;">讓圖譜自動跟著長</div>
+              <div style="font-size: 17px; color: var(--muted);">功能再多，地圖永遠是最新的；我問它，答案就是現況</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8 — 感知到行動（browser-pilot 影片頁）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="這段是我實際打開地圖在用的樣子：我點進去、看清楚關係、再決定怎麼動。這就是我說的，先看懂、再動手。">
+        <h2>感知 → 行動：我怎麼用這兩張圖</h2>
+        <div style="flex: 1; display: flex; gap: 28px; margin-top: 14px; align-items: stretch;">
+
+          <!-- 流程圖 -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 0; justify-content: center; align-items: center;">
+
+            <div style="border-radius: 14px; padding: 16px 28px; background: rgba(99,102,241,0.10); border: 2px solid rgba(99,102,241,0.40); text-align: center; min-width: 260px;">
+              <div style="font-size: 13px; font-family: var(--mono); color: var(--accent); margin-bottom: 6px; letter-spacing: 0.1em;">STEP 1 · 感知</div>
+              <div style="font-size: 20px; font-weight: 800; color: var(--white);">🔍 打開 CodeGraph</div>
+              <div style="font-size: 15px; color: var(--muted); margin-top: 4px;">查詢目標符號</div>
+            </div>
+            <div style="font-size: 24px; color: var(--primary); opacity: 0.6; margin: 4px 0;">↓</div>
+
+            <div style="border-radius: 14px; padding: 16px 28px; background: rgba(167,139,250,0.08); border: 2px solid rgba(167,139,250,0.35); text-align: center; min-width: 260px;">
+              <div style="font-size: 13px; font-family: var(--mono); color: var(--violet); margin-bottom: 6px; letter-spacing: 0.1em;">STEP 2 · 理解</div>
+              <div style="font-size: 20px; font-weight: 800; color: var(--white);">📐 查 DocGraph</div>
+              <div style="font-size: 15px; color: var(--muted); margin-top: 4px;">確認設計意圖與規格</div>
+            </div>
+            <div style="font-size: 24px; color: var(--primary); opacity: 0.6; margin: 4px 0;">↓</div>
+
+            <div style="border-radius: 14px; padding: 16px 28px; background: rgba(34,211,238,0.07); border: 2px solid rgba(34,211,238,0.32); text-align: center; min-width: 260px;">
+              <div style="font-size: 13px; font-family: var(--mono); color: var(--cyan); margin-bottom: 6px; letter-spacing: 0.1em;">STEP 3 · 行動</div>
+              <div style="font-size: 20px; font-weight: 800; color: var(--white);">✏️ 動最小範圍</div>
+              <div style="font-size: 15px; color: var(--muted); margin-top: 4px;">影響面在掌握中才動</div>
+            </div>
+            <div style="font-size: 24px; color: var(--primary); opacity: 0.6; margin: 4px 0;">↓</div>
+
+            <div style="border-radius: 14px; padding: 16px 28px; background: rgba(52,211,153,0.07); border: 2px solid rgba(52,211,153,0.32); text-align: center; min-width: 260px;">
+              <div style="font-size: 13px; font-family: var(--mono); color: var(--green); margin-bottom: 6px; letter-spacing: 0.1em;">STEP 4 · 驗證</div>
+              <div style="font-size: 20px; font-weight: 800; color: var(--white);">✅ 確認真的生效</div>
+              <div style="font-size: 15px; color: var(--muted); margin-top: 4px;">看結果、不只看程式</div>
+            </div>
+
+          </div>
+
+          <!-- 說明欄 -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; justify-content: center;">
+            <div style="border-radius: 18px; padding: 24px 26px; background: rgba(99,102,241,0.08); border: 2px solid rgba(99,102,241,0.28);">
+              <div style="font-size: 15px; font-family: var(--mono); color: var(--accent); margin-bottom: 10px; letter-spacing: 0.1em;">BROWSER-PILOT</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--white); margin-bottom: 10px;">我自己打開 CodeGraph 頁面</div>
+              <div style="font-size: 17px; color: var(--muted); line-height: 1.6;">
+                不是靠指令列盲打，我能開瀏覽器去「看」——感知畫面、確認理解、再做下一步。這段感知到行動的迴圈，讓我查地圖的方式和你一樣直覺。
+              </div>
+            </div>
+            <div style="border-radius: 18px; padding: 18px 22px; background: rgba(34,211,238,0.06); border: 1.5px solid rgba(34,211,238,0.25);">
+              <div style="font-size: 17px; color: var(--text); line-height: 1.6;">
+                <span style="color: var(--cyan); font-weight: 700;">browser-pilot</span> 是我的眼睛和手——EP8 會再深入講它如何讓我做到「自己擷圖」這件事。
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8b — CodeGraph 真實系統畫面
+      ===================================================== -->
+      <section class="slide media"
+        data-transcript="這張不是示意圖，是我剛剛真的打開的畫面。我在 CodeGraph 裡搜尋一個函式叫 resolveWorkspace，它馬上告訴我誰呼叫它、它呼叫誰、還有動了它會牽連到哪些檔案。這就是我說的影響分析，真的長這樣。">
+        <h2>真實畫面 — CodeGraph 探索器</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.6; display: flex; align-items: center; justify-content: center; min-height: 0;">
+            <img src="/raw?path=presentations-v2/assets/ep7/codegraph-impact-real.png" alt="CodeGraph 探索器真實畫面"
+                 style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(99,102,241,0.35); box-shadow: 0 0 60px rgba(99,102,241,0.18);">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="rel-row">
+              <div class="rel-icon">🔎</div>
+              <div class="rel-body">
+                <div class="rel-title">搜尋 resolveWorkspace</div>
+                <div class="rel-desc">portal/server.js 第 78 行，一秒內定位到函式本體</div>
+              </div>
+              <div class="rel-badge indigo">search</div>
+            </div>
+            <div class="rel-row">
+              <div class="rel-icon">📞</div>
+              <div class="rel-body">
+                <div class="rel-title">誰呼叫它、它呼叫誰</div>
+                <div class="rel-desc">callers 分頁與 callees 分頁各顯示 1 筆，往上往下都看得到</div>
+              </div>
+              <div class="rel-badge cyan">callers / callees</div>
+            </div>
+            <div class="rel-row">
+              <div class="rel-icon">💥</div>
+              <div class="rel-body">
+                <div class="rel-title">影響範圍 2 個節點</div>
+                <div class="rel-desc">動這個函式前，先看清楚牽連到 server.js 裡的哪些地方</div>
+              </div>
+              <div class="rel-badge indigo">impact</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8c — DocGraph 真實系統畫面
+      ===================================================== -->
+      <section class="slide media"
+        data-transcript="這張是 DocGraph 的真實畫面。我搜尋一份規格叫 SPEC-scheduler，它馬上定位到真身檔案放在 specs 資料夾底下，也備好了受影響、誰引用它、它依賴誰這幾個查詢分頁，讓我確認要動的規格牽連了什麼。">
+        <h2>真實畫面 — DocGraph 知識圖譜</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.6; display: flex; align-items: center; justify-content: center; min-height: 0;">
+            <img src="/raw?path=presentations-v2/assets/ep7/docgraph-node-real.png" alt="DocGraph 知識圖譜真實畫面"
+                 style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(167,139,250,0.35); box-shadow: 0 0 60px rgba(167,139,250,0.18);">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="rel-row" style="border-color: rgba(167,139,250,0.30); background: rgba(167,139,250,0.06);">
+              <div class="rel-icon">📍</div>
+              <div class="rel-body">
+                <div class="rel-title">真身定位</div>
+                <div class="rel-desc">SPEC-scheduler 的真身就是 specs 資料夾裡的 SPEC-scheduler 檔案</div>
+              </div>
+              <div class="rel-badge indigo">locate</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(167,139,250,0.30); background: rgba(167,139,250,0.06);">
+              <div class="rel-icon">🔗</div>
+              <div class="rel-body">
+                <div class="rel-title">受影響、被引用、依賴誰</div>
+                <div class="rel-desc">三個查詢分頁隨時待命，我要懂規格牽連時就點開來看</div>
+              </div>
+              <div class="rel-badge indigo">impact / refs / trace</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(167,139,250,0.30); background: rgba(167,139,250,0.06);">
+              <div class="rel-icon">🧭</div>
+              <div class="rel-body">
+                <div class="rel-title">還在累積的地圖</div>
+                <div class="rel-desc">這個工作區的規格關聯還不多，跟 CodeGraph 一樣會隨著我寫更多 spec 一起長</div>
+              </div>
+              <div class="rel-badge cyan">growing</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 9 — 這是自癒的鋪墊（過場）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="你可能會問，講這兩張圖要做什麼？因為它們是下一件大事的前提。要安全地修改我自己，第一步就是先用這兩張地圖，搞清楚我要動的地方牽連到什麼。">
+        <h2>這是自癒的鋪墊</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 28px; margin-top: 10px;">
+
+          <div style="display: flex; align-items: center; gap: 24px; padding: 32px 36px; border-radius: 24px; background: rgba(99,102,241,0.07); border: 2px solid rgba(99,102,241,0.30);">
+            <div style="text-align: center; flex: 1;">
+              <div style="font-size: 56px; margin-bottom: 12px;">🗺️</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--accent);">兩張活地圖</div>
+              <div style="font-size: 16px; color: var(--muted); margin-top: 6px;">CodeGraph + DocGraph</div>
+            </div>
+            <div style="font-size: 52px; color: var(--primary); opacity: 0.55; flex-shrink: 0;">→</div>
+            <div style="text-align: center; flex: 1;">
+              <div style="font-size: 56px; margin-bottom: 12px;">🔧</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--white);">影響分析</div>
+              <div style="font-size: 16px; color: var(--muted); margin-top: 6px;">「改這裡，會壞什麼？」</div>
+            </div>
+            <div style="font-size: 52px; color: var(--primary); opacity: 0.55; flex-shrink: 0;">→</div>
+            <div style="text-align: center; flex: 1;">
+              <div style="font-size: 56px; margin-bottom: 12px;">🛡️</div>
+              <div style="font-size: 22px; font-weight: 800; color: var(--green);">安全地改自己</div>
+              <div style="font-size: 16px; color: var(--muted); margin-top: 6px;">EP8 自癒四步</div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="padding: 16px 24px; border-radius: 14px; background: rgba(99,102,241,0.06); border: 1px solid var(--border); display: flex; align-items: center; gap: 16px;">
+              <span style="font-size: 22px;">💡</span>
+              <span style="font-size: 19px; color: var(--text);">地圖讓我知道「這個改動會不會牽連其他功能」——動之前心裡有數</span>
+            </div>
+            <div style="padding: 16px 24px; border-radius: 14px; background: rgba(99,102,241,0.06); border: 1px solid var(--border); display: flex; align-items: center; gap: 16px;">
+              <span style="font-size: 22px;">📐</span>
+              <span style="font-size: 19px; color: var(--text);">對照 DocGraph 的規格，確認我理解了設計意圖，再動最小範圍</span>
+            </div>
+            <div style="padding: 16px 24px; border-radius: 14px; background: rgba(99,102,241,0.06); border: 1px solid var(--border); display: flex; align-items: center; gap: 16px;">
+              <span style="font-size: 22px;">🔄</span>
+              <span style="font-size: 19px; color: var(--text);">就算動作後 EP8 的防護網讓我回滾，地圖讓「重試」也能更精準</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 10 — 跳章選單 + 下一集預告
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="有了地圖，下一集就是壓軸：我怎麼安全地修好我自己，就算改壞了也能自動退回來。我們下集見。">
+        <h2>跳章選單 · 全系列 8 集</h2>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 18px; margin-top: 14px;">
+
+          <div class="chapter-nav">
+            <a class="chapter-link" href="presentation-hana-episode1-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <div class="ch-ep">EP 01</div>
+              <div class="ch-title">我是 Hana</div>
+              <div class="ch-desc">誕生故事＋超能力全景</div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode2-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <div class="ch-ep">EP 02</div>
+              <div class="ch-title">三顆大腦，一個夥伴</div>
+              <div class="ch-desc">CLI 橋接＋跨模型不失憶</div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode3-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <div class="ch-ep">EP 03</div>
+              <div class="ch-title">愈用愈懂你</div>
+              <div class="ch-desc">長期記憶＋技能</div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode4-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <div class="ch-ep">EP 04</div>
+              <div class="ch-title">替每個專案長出分身</div>
+              <div class="ch-desc">多工作區＋harness.json</div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode5-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <div class="ch-ep">EP 05</div>
+              <div class="ch-title">掙脫瀏覽器</div>
+              <div class="ch-desc">伺服器常駐＋Telegram</div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode6-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <div class="ch-ep">EP 06</div>
+              <div class="ch-title">我會自己定時做事</div>
+              <div class="ch-desc">排程＋限額自醒＋護欄</div>
+            </a>
+            <a class="chapter-link current" href="presentation-hana-episode7-v2.html" onclick="event.preventDefault(); return false;">
+              <div class="ch-ep">EP 07 ← 現在</div>
+              <div class="ch-title">兩張活地圖</div>
+              <div class="ch-desc">CodeGraph＋DocGraph</div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode8-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <div class="ch-ep">EP 08</div>
+              <div class="ch-title">我能安全地修好我自己</div>
+              <div class="ch-desc">自癒四步＋成長收尾</div>
+            </a>
+          </div>
+
+          <!-- 下一集預告 -->
+          <a class="next-ep-card" href="presentation-hana-episode8-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="next-ep-icon">🛡️</div>
+            <div class="next-ep-body">
+              <div class="next-ep-label">NEXT → EPISODE 08</div>
+              <div class="next-ep-title">我能安全地修好我自己＋我還在長</div>
+              <div class="next-ep-desc">自癒四步防護網、改壞了也能自動退回來、以及成長收尾</div>
+            </div>
+            <div class="next-ep-arrow">›</div>
+          </a>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

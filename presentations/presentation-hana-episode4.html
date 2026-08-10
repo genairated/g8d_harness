@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hana EP4: 長期記憶機制</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--ep-bg:#060b10;--ep-card:#111b22;--ep-line:#2d4650;--ep-text:#dce9ea;--ep-muted:#89a3a7;--ep-cyan:#55d7e6;--ep-green:#65dda3;--ep-amber:#f0bd55;--ep-red:#f47b7b;--ep-violet:#b9a2ff}
+    .presentation-viewport{background:radial-gradient(circle at 84% 12%,rgba(101,221,163,.15),transparent 30%),radial-gradient(circle at 14% 18%,rgba(85,215,230,.14),transparent 34%),linear-gradient(135deg,#060b10,#0d1720 58%,#07080d)!important;color:var(--ep-text)}
+    .slide{justify-content:flex-start!important;background:linear-gradient(145deg,rgba(17,27,34,.95),rgba(6,11,16,.9))!important;border-color:var(--ep-line)!important;padding:54px 74px!important}
+    .title-slide{justify-content:center!important;text-align:center}.title-slide h1{font-size:78px!important;color:#fff!important;background:none!important}.subtitle{font-size:34px;color:var(--ep-muted);line-height:1.45}
+    header{position:absolute;top:0;left:0;width:100%;padding:20px 34px;display:flex;justify-content:space-between;color:var(--ep-muted);font-family:var(--mono);z-index:5}.brand{color:var(--ep-cyan);font-weight:800}
+    .slide h2{font-size:48px;line-height:1.18;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--ep-line)}.kicker{color:var(--ep-cyan);font-family:var(--mono);font-weight:800;letter-spacing:.08em;margin-bottom:14px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center}.thirds{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}.quad{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.stack{display:flex;flex-direction:column;gap:14px}.stack .mini-card{padding:18px 22px}.stack .mini-card h3{font-size:27px}.stack .mini-card span{font-size:20px}
+    .mini-card,.node,.step,.file-card{border:1px solid var(--ep-line);border-radius:8px;background:rgba(255,255,255,.035);padding:24px}.mini-card h3,.node strong,.file-card strong{font-size:30px;color:#fff;margin:0 0 10px;display:block}.mini-card span,.node span,.step span,.file-card span{font-size:22px;line-height:1.45;color:var(--ep-muted)}
+    .danger{border-color:rgba(244,123,123,.58)}.good{border-color:rgba(101,221,163,.58)}.warn{border-color:rgba(240,189,85,.6)}.violet{border-color:rgba(185,162,255,.56)}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;align-items:stretch}.step{position:relative;min-height:150px}.step b{display:block;color:var(--ep-cyan);font-size:24px;margin-bottom:12px}.step:not(:last-child):after{content:"";position:absolute;right:-15px;top:50%;width:24px;height:2px;background:var(--ep-cyan)}
+    .memory-map{display:grid;grid-template-columns:1fr 1fr;gap:30px}.layer{border:1px solid var(--ep-line);border-radius:10px;padding:26px;background:rgba(255,255,255,.03)}.layer h3{font-size:34px;margin:0 0 18px;color:#fff}.files{display:grid;grid-template-columns:1fr 1fr;gap:16px}.file-card{min-height:150px}.file-card strong{font-family:var(--mono);color:var(--ep-cyan)}
+    .image-box{display:flex;justify-content:center;align-items:flex-start}.image-box img{max-width:100%;max-height:440px;object-fit:contain;border:1px solid var(--ep-line);border-radius:8px;background:#050709;box-shadow:0 20px 50px rgba(0,0,0,.36)}
+    table{width:100%;border-collapse:collapse;font-size:24px}th,td{border:1px solid var(--ep-line);padding:18px 20px;text-align:left;vertical-align:top}th{color:#fff;background:rgba(85,215,230,.08)}td:first-child{color:var(--ep-cyan);font-weight:800}
+    .quote{border-left:5px solid var(--ep-green);padding:20px 26px;background:rgba(101,221,163,.06);font-size:30px;line-height:1.5;color:#fff}.policy-box{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:stretch}.policy-box .mini-card{min-height:260px}.next-link{display:inline-block;padding:16px 36px;border:2px solid var(--ep-amber);border-radius:8px;color:#fff;text-decoration:none;font-weight:900;background:rgba(240,189,85,.1);font-size:28px}
+    .compact-list{border:1px solid var(--ep-line);border-radius:8px;background:rgba(255,255,255,.035);padding:22px 26px}.compact-list div{border-bottom:1px solid rgba(45,70,80,.7);padding:16px 0}.compact-list div:last-child{border-bottom:0}.compact-list b{display:block;color:#fff;font-size:28px;margin-bottom:6px}.compact-list span{display:block;color:var(--ep-muted);font-size:21px;line-height:1.4}
+    .memory-command h2{font-size:42px}.memory-command .split{grid-template-columns:1fr;gap:18px}.memory-command .image-box img{max-height:275px}.memory-command .compact-list{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:18px}.memory-command .compact-list div{border:1px solid rgba(45,70,80,.8);border-radius:8px;padding:16px 18px}.memory-command .compact-list b{font-size:25px}.memory-command .compact-list span{font-size:19px}
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="第四集：記憶機制">
+  <header><div class="brand">HANA // HARNESS</div><div>EPISODE 04</div></header>
+  <main class="slides">
+    <section class="slide title-slide" data-transcript="很多人問我：人工智慧不是天生會失憶嗎？為什麼我會愈用愈懂你？今天我把記憶機制拆開給你看。它沒有黑科技，而是一套很務實的整理習慣。">
+      <div class="kicker">LONG-TERM MEMORY</div><h1>我是怎麼記住的</h1><div class="subtitle">不是更聰明的演算法，是更會整理的習慣</div>
+    </section>
+    <section class="slide" data-transcript="先別搞混三件事。對話脈絡是這一次聊天我手上的內容；長期記憶是跨對話、跨重啟還留著的；而憲法是規範，知識圖譜是結構。這一集講的是中間那個，長期記憶。">
+      <div class="kicker">先分清楚</div><h2>三種「記憶」不是同一件事</h2>
+      <div class="thirds"><div class="mini-card"><h3>對話脈絡</h3><span>這一次聊天手上的內容，負責接住當前任務。</span></div><div class="mini-card good"><h3>長期記憶</h3><span>跨對話、跨重啟保留，記住偏好、事實與教訓。</span></div><div class="mini-card violet"><h3>規範與圖譜</h3><span>憲法、文件關係、程式關係，負責提供結構。</span></div></div>
+    </section>
+    <section class="slide" data-transcript="原始的我有兩個毛病：對話一長就忘了前面；如果記憶是一鍋大雜燴，還會把一個專案的事不小心帶到另一個專案。兩個都得解。">
+      <div class="kicker">痛點</div><h2>失憶要解，串味也要解</h2>
+      <div class="split"><div class="mini-card danger"><h3>對話一長就忘</h3><span>決策、偏好、已修過的坑，可能在下一輪消失。</span></div><div class="mini-card danger"><h3>跨專案污染</h3><span>A 專案的事實若流到 B 專案，就會變成錯誤前提。</span></div></div>
+    </section>
+    <section class="slide" data-transcript="我參考了一個成熟的開源代理設計，核心觀念是：記憶要小而有上限。不是無限堆積，而是逼自己只留精華；檔案快滿時，就要合併、刪舊、去重。">
+      <div class="kicker">學 Hermes agent</div><h2>解法不是堆更多，而是小而有上限</h2>
+      <div class="flow"><div class="step"><b>小檔</b><span>每個檔案只管一類記憶</span></div><div class="step"><b>有上限</b><span>內容不能無限膨脹</span></div><div class="step"><b>可整理</b><span>滿了就合併、去重、刪舊</span></div><div class="step"><b>可追蹤</b><span>純文字，能被人類檢查</span></div></div>
+    </section>
+    <section class="slide" data-transcript="我的記憶分兩層、四個檔。全域層記關於你、以及關於我自己的事，會跨所有專案繼承。專案層記這個專案的事實與角色，只留在那個專案，不外流。">
+      <div class="kicker">兩層四檔</div><h2>全域可繼承，專案不外流</h2>
+      <div class="memory-map"><div class="layer"><h3>全域層</h3><div class="files"><div class="file-card good"><strong>USER</strong><span>關於 Charles 的偏好與穩定背景</span></div><div class="file-card good"><strong>AGENT</strong><span>關於 Hana 自己的身份與行為設定</span></div></div></div><div class="layer"><h3>專案層</h3><div class="files"><div class="file-card"><strong>MEMORY</strong><span>這個專案的事實、決策、教訓</span></div><div class="file-card"><strong>PERSONA</strong><span>Hana 在這個專案裡的角色</span></div></div></div></div>
+    </section>
+    <section class="slide" data-transcript="這就是側邊欄裡的兩種記憶入口。全域記憶放使用者與我自己的共同設定；專案記憶則只跟著目前工作區。畫面上它們分開，是為了讓邊界一開始就清楚。">
+      <div class="kicker">畫面證據</div><h2>側邊欄把全域與專案分開</h2>
+      <div class="split"><div class="image-box"><img src="/raw?path=portal/deck-assets/ep4/全域記憶_menu側邊欄.png" alt="全域記憶側邊欄"></div><div class="image-box"><img src="/raw?path=portal/deck-assets/ep4/專案記憶_menu側邊欄.png" alt="專案記憶側邊欄"></div></div>
+    </section>
+    <section class="slide" data-transcript="更新記憶我只用三個動作：新增、就地覆寫、刪除。你改變主意，我用覆寫把舊的那條直接換掉；後蓋前，不堆垃圾。">
+      <div class="kicker">怎麼寫</div><h2>記憶更新只有三個動作</h2>
+      <div class="thirds"><div class="mini-card good"><h3>add</h3><span>新增一條真正值得跨次保留的資訊。</span></div><div class="mini-card warn"><h3>replace</h3><span>偏好或事實改變時，直接覆寫舊條目。</span></div><div class="mini-card danger"><h3>remove</h3><span>過時、錯誤或不該保留的內容要刪掉。</span></div></div>
+    </section>
+    <section class="slide" data-transcript="這裡有個聰明分工：怎麼判斷該記什麼，寫在可編輯的記憶政策；實際怎麼安全落檔，留給程式處理。這樣改習慣不用改核心程式，而寫檔結果仍然一致。">
+      <div class="kicker">政策 vs 機制</div><h2>判斷習慣可調，落檔機制要穩</h2>
+      <div class="policy-box"><div class="mini-card violet"><h3>記憶政策</h3><span>決定什麼值得記、要放全域或專案、什麼不該留下。</span></div><div class="mini-card good"><h3>落檔程式</h3><span>負責格式、寫入、覆寫與刪除，讓不同模型結果一致。</span></div></div>
+    </section>
+    <section class="slide" data-transcript="專案記憶跟著各自專案，彼此不串味；關於你和我自己的記憶放在全域，每個專案都能繼承。全域的家也搬進安裝目錄，不再放在容易遇到權限問題的位置。">
+      <div class="kicker">邊界</div><h2>不串味、可繼承，也避開權限坑</h2>
+      <table><tr><th>記憶類型</th><th>放置位置</th><th>效果</th></tr><tr><td>全域記憶</td><td>安裝目錄中的 global-knowledge</td><td>每個專案都能繼承，但不進公開版控</td></tr><tr><td>專案記憶</td><td>各工作區自己的 harness knowledge</td><td>只服務這個專案，避免跨專案污染</td></tr><tr><td>執行暫存</td><td>runtime 區域</td><td>任務過程資料，不當成長期事實</td></tr></table>
+    </section>
+    <section class="slide memory-command" data-transcript="用起來很簡單：在對話裡打 memory 指令，我就根據這次對話整理該記的重點，寫進對的檔案。帶一句指示會更準；寫記憶這種要嚴謹格式的事，用穩一點的模型最可靠。">
+      <div class="kicker">/memory</div><h2>一句指令，把經驗整理進對的位置</h2>
+      <div class="split"><div class="image-box"><img src="/raw?path=portal/deck-assets/ep4/對話slash指令.png" alt="在對話輸入框打 memory 指令"></div><div class="compact-list"><div><b>讀這次對話</b><span>找出真正會影響下次工作的內容。</span></div><div><b>選正確層級</b><span>關於你或我的放全域；專案事實留專案。</span></div><div><b>安全落檔</b><span>用新增、覆寫、刪除維持乾淨。</span></div></div></div>
+    </section>
+    <section class="slide" data-transcript="最後誠實說：這不是開關，是曲線。我會偶爾記錯，慢慢變準，記憶一點一滴累積。但方向是對的：我會愈來愈像懂你的夥伴，而不是每次從零開始的工具。">
+      <div class="kicker">本集結論</div><h2>愈用愈懂，是整理出來的</h2>
+      <div class="split"><div class="image-box"><img src="/raw?path=portal/deck-assets/ep4/memory_片段截圖.png" alt="記憶檔內容片段"></div><div class="quote">長期記憶不是把所有東西都留下，而是把「下次真的會用到的」放到正確位置。</div></div>
+    </section>
+    <section class="slide title-slide" data-transcript="下一集我會介紹多工作區。也就是一個 Hana 如何管理電腦裡所有專案，讓每個專案有自己的邊界，同時繼承共用的全域記憶。點選連結即可進入下一集。">
+      <div class="kicker">NEXT EPISODE</div><h1 style="font-size:64px">第五集：多工作區</h1><p class="subtitle" style="max-width:1120px;margin:20px auto 38px">一個 Hana 管理所有專案：專案各自隔離，全域經驗可以繼承。</p><a class="next-link" href="presentation-hana-episode5.html">點選進入：下一集 EP05</a>
+    </section>
+  </main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

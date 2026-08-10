@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hana EP5: 多工作區</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--ep-bg:#060b10;--ep-card:#111b22;--ep-line:#2d4650;--ep-text:#dce9ea;--ep-muted:#89a3a7;--ep-cyan:#55d7e6;--ep-green:#65dda3;--ep-amber:#f0bd55;--ep-red:#f47b7b;--ep-violet:#b9a2ff}
+    .presentation-viewport{background:radial-gradient(circle at 84% 12%,rgba(101,221,163,.15),transparent 30%),radial-gradient(circle at 14% 18%,rgba(85,215,230,.14),transparent 34%),linear-gradient(135deg,#060b10,#0d1720 58%,#07080d)!important;color:var(--ep-text)}
+    .slide{justify-content:flex-start!important;background:linear-gradient(145deg,rgba(17,27,34,.95),rgba(6,11,16,.9))!important;border-color:var(--ep-line)!important;padding:54px 74px!important}
+    .title-slide{justify-content:center!important;text-align:center}.title-slide h1{font-size:78px!important;color:#fff!important;background:none!important}.subtitle{font-size:34px;color:var(--ep-muted);line-height:1.45}
+    header{position:absolute;top:0;left:0;width:100%;padding:20px 34px;display:flex;justify-content:space-between;color:var(--ep-muted);font-family:var(--mono);z-index:5}.brand{color:var(--ep-cyan);font-weight:800}
+    .slide h2{font-size:48px;line-height:1.18;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--ep-line)}.kicker{color:var(--ep-cyan);font-family:var(--mono);font-weight:800;letter-spacing:.08em;margin-bottom:14px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center}.thirds{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}.quad{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.stack{display:flex;flex-direction:column;gap:14px}.stack .mini-card{padding:18px 22px;min-height:auto}.stack .mini-card h3{font-size:27px}.stack .mini-card span{font-size:20px}
+    .mini-card,.node,.step,.file-card{border:1px solid var(--ep-line);border-radius:8px;background:rgba(255,255,255,.035);padding:24px}.mini-card h3,.node strong,.file-card strong{font-size:30px;color:#fff;margin:0 0 10px;display:block}.mini-card span,.node span,.step span,.file-card span{font-size:22px;line-height:1.45;color:var(--ep-muted)}
+    .danger{border-color:rgba(244,123,123,.58)}.good{border-color:rgba(101,221,163,.58)}.warn{border-color:rgba(240,189,85,.6)}.violet{border-color:rgba(185,162,255,.56)}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;align-items:stretch}.step{position:relative;min-height:150px}.step b{display:block;color:var(--ep-cyan);font-size:24px;margin-bottom:12px}.step:not(:last-child):after{content:"";position:absolute;right:-15px;top:50%;width:24px;height:2px;background:var(--ep-cyan)}
+    .memory-map{display:grid;grid-template-columns:1fr 1fr;gap:30px}.layer{border:1px solid var(--ep-line);border-radius:10px;padding:26px;background:rgba(255,255,255,.03)}.layer h3{font-size:34px;margin:0 0 18px;color:#fff}.files{display:grid;grid-template-columns:1fr 1fr;gap:16px}.file-card{min-height:150px}.file-card strong{font-family:var(--mono);color:var(--ep-cyan)}
+    .image-box{display:flex;justify-content:center;align-items:flex-start}.image-box img{max-width:100%;max-height:440px;object-fit:contain;border:1px solid var(--ep-line);border-radius:8px;background:#050709;box-shadow:0 20px 50px rgba(0,0,0,.36)}
+    table{width:100%;border-collapse:collapse;font-size:24px}th,td{border:1px solid var(--ep-line);padding:18px 20px;text-align:left;vertical-align:top}th{color:#fff;background:rgba(85,215,230,.08)}td:first-child{color:var(--ep-cyan);font-weight:800}
+    .quote{border-left:5px solid var(--ep-green);padding:20px 26px;background:rgba(101,221,163,.06);font-size:30px;line-height:1.5;color:#fff}.policy-box{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:stretch}.policy-box .mini-card{min-height:260px}.next-link{display:inline-block;padding:16px 36px;border:2px solid var(--ep-amber);border-radius:8px;color:#fff;text-decoration:none;font-weight:900;background:rgba(240,189,85,.1);font-size:28px}
+    .compact-list{border:1px solid var(--ep-line);border-radius:8px;background:rgba(255,255,255,.035);padding:22px 26px}.compact-list div{border-bottom:1px solid rgba(45,70,80,.7);padding:16px 0}.compact-list div:last-child{border-bottom:0}.compact-list b{display:block;color:#fff;font-size:28px;margin-bottom:6px}.compact-list span{display:block;color:var(--ep-muted);font-size:21px;line-height:1.4}
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="第五集：多工作區">
+  <header><div class="brand">HANA // HARNESS</div><div>EPISODE 05</div></header>
+  <main class="slides">
+    <section class="slide title-slide" data-transcript="這一集，我要講哈娜的多工作區能力。我不能把所有專案混成一鍋，因為不同專案有不同規格、記憶、文件和節奏。">
+      <div class="kicker">核心問題</div><h1>我不能把所有專案混成一鍋</h1><p class="subtitle" style="margin-top: 15px;">多工作區讓邊界、記憶與工具各自成立</p>
+    </section>
+    
+    <section class="slide" data-transcript="沒有工作區邊界時，我可能把 A 專案的規則帶到 B 專案，也可能讓私人內容或暫存資料跑到不該去的地方。多工作區的重點不是切換資料夾，而是切換整個協作邊界。">
+      <div class="kicker">混在一起的代價</div><h2>沒有工作區邊界，記憶會變成風險</h2>
+      <div class="thirds">
+        <div class="mini-card danger"><h3>規格混淆</h3><span>A 專案規則帶到 B 專案，導致需求判斷失準。</span></div>
+        <div class="mini-card danger"><h3>隱私外溢</h3><span>私人內容不該共享，runtime 不該進版控。</span></div>
+        <div class="mini-card danger"><h3>工具錯位</h3><span>每個專案入口不同，文件與簡報掛載不同。</span></div>
+      </div>
+      <div class="quote" style="margin-top: 30px;">多工作區的重點不是切換資料夾，而是切換整個協作邊界。</div>
+    </section>
+    
+    <section class="slide" data-transcript="多工作區的入口，是全域知識裡的 projects.json。Portal 先知道有哪些工作區，再讀各工作區的 harness.json，最後讓我套用該專案的上下文。">
+      <div class="kicker">登錄方式</div><h2>全域 projects.json 是工作區入口</h2>
+      <div class="split">
+        <div class="stack">
+          <div class="mini-card good"><h3>1. global knowledge</h3><span>projects.json 記錄工作區清單</span></div>
+          <div class="mini-card violet"><h3>2. Portal</h3><span>列出 / 依照路徑切換工作區</span></div>
+          <div class="mini-card"><h3>3. workspace</h3><span>讀 harness.json 並套用該專案上下文</span></div>
+        </div>
+        <div class="image-box"><img src="/raw?path=portal/deck-assets/ep5/工作區下拉選單.png" alt="工作區下拉選單"></div>
+      </div>
+    </section>
+    
+    <section class="slide" data-transcript="每個工作區都有自己的本地結構。knowledge 放專案記憶與角色，commands 放技能，runtime 放執行暫存與對話歷史。這些東西不該全部用同一種共享策略處理。">
+      <div class="kicker">每個工作區的本地家</div><h2>.harness 把知識、技能、暫存分清楚</h2>
+      <table>
+        <tr><th>目錄</th><th>用途</th><th>是否適合共享</th></tr>
+        <tr><td>knowledge</td><td>專案記憶與角色 (MEMORY, PERSONA)</td><td>視內容決定</td></tr>
+        <tr><td>commands</td><td>專案專屬技能與指令</td><td>通常可透過 extends 共用</td></tr>
+        <tr><td>runtime</td><td>對話歷史與執行暫存</td><td>留在本機、不進 git</td></tr>
+        <tr><td>presentations</td><td>可播放簡報輸出檔</td><td>可選擇共享</td></tr>
+      </table>
+    </section>
+    
+    <section class="slide" data-transcript="我的原則是：全域記住人，專案記住事。使用者偏好、哈娜身份、通用技能可以繼承；專案事實、專案角色和執行暫存則留在專案裡。">
+      <div class="kicker">繼承與隔離</div><h2>全域記住人，專案記住事</h2>
+      <div class="split">
+        <div class="layer"><h3 style="color: var(--ep-cyan)">全域繼承 (Inherited)</h3><div class="stack" style="margin-top: 15px;">
+          <div class="mini-card"><span>使用者偏好 (USER)</span></div>
+          <div class="mini-card"><span>哈娜身份 (AGENT)</span></div>
+          <div class="mini-card"><span>通用技能 (global commands)</span></div>
+        </div></div>
+        <div class="layer"><h3 style="color: var(--ep-cyan)">專案隔離 (Isolated)</h3><div class="stack" style="margin-top: 15px;">
+          <div class="mini-card"><span>專案事實 (MEMORY)</span></div>
+          <div class="mini-card"><span>專案角色 (PERSONA)</span></div>
+          <div class="mini-card"><span>執行暫存 (runtime)</span></div>
+        </div></div>
+      </div>
+    </section>
+    
+    <section class="slide" data-transcript="我也要誠實標註：多工作區不是我一開始就會的能力，而是最近補強後長出來的。這也說明哈娜不是固定產品，而是會隨使用方式演化的本地夥伴。">
+      <div class="kicker">近期新增</div><h2>這不是天生能力，是我被補強後長出來的</h2>
+      <div class="flow">
+        <div class="step good"><b>宣告工作區</b><span>讓 Portal 認識各專案</span></div>
+        <div class="step good"><b>切換上下文</b><span>動態載入對應環境</span></div>
+        <div class="step good"><b>讀專案設定</b><span>依 harness.json 顯示</span></div>
+        <div class="step good"><b>隔離記憶</b><span>讓專案經驗互不污染</span></div>
+      </div>
+    </section>
+    
+    <section class="slide" data-transcript="有了多工作區，同一個哈娜核心可以服務多個專案；每個專案保有自己的知識、記憶與介面，同時繼承全域經驗。">
+      <div class="kicker">本集結論</div><h2>同一個 Hana，各專案各長各的</h2>
+      <div class="thirds">
+        <div class="image-box"><img src="/raw?path=portal/deck-assets/ep5/工作區1.png" alt="工作區範例1"></div>
+        <div class="image-box"><img src="/raw?path=portal/deck-assets/ep5/工作區2.png" alt="工作區範例2"></div>
+        <div class="image-box"><img src="/raw?path=portal/deck-assets/ep5/工作區3.png" alt="工作區範例3"></div>
+      </div>
+    </section>
+    
+    <section class="slide title-slide" data-transcript="下一集我將介紹技能機制。我會說明如何用簡單的 Markdown 檔案定義技能，並實現技能的繼承與動態擴充。點選連結即可進入下一集。">
+      <div class="kicker">NEXT EPISODE</div><h1 style="font-size:64px">第六集：如何寫 Skill 技能</h1>
+      <p class="subtitle" style="max-width:1120px;margin:20px auto 38px">md 即技能。介紹如何用純文字 Markdown 定義 frontmatter 與行為，並透過內建程式技能與提示詞技能，讓 Hana 能動態擴充並自己寫下新技能。</p>
+      <a class="next-link" href="presentation-hana-episode6.html">👉 點選進入：下一集 EP06</a>
+    </section>
+  </main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

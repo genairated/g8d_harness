@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我是 Hana - 第一集自我介紹</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--ink:#eaf6ff;--muted:#9fb4cc;--line:rgba(83,151,210,.28);--cyan:#18d4f5;--blue:#4d83ff;--mint:#5ee2a8;--amber:#f6b44b;--red:#ff6b8a;--panel:rgba(8,18,36,.78);--panel2:rgba(13,30,56,.88);--mono:'Fira Code',monospace;--font:'Inter','Noto Sans TC',sans-serif}
+    body{font-family:var(--font)}
+    .presentation-viewport{background:linear-gradient(135deg,#06101f 0%,#08182d 48%,#030814 100%)!important}
+    .presentation-viewport:before{content:"";position:absolute;inset:0;background:linear-gradient(rgba(24,212,245,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(24,212,245,.06) 1px,transparent 1px);background-size:56px 56px;mask-image:radial-gradient(circle at 50% 42%,black,transparent 78%);pointer-events:none}
+    .presentation-viewport:after{content:"";position:absolute;inset:-20%;background:radial-gradient(circle at 18% 20%,rgba(24,212,245,.18),transparent 26%),radial-gradient(circle at 82% 78%,rgba(94,226,168,.13),transparent 30%);pointer-events:none}
+    header,footer,.slides{position:relative;z-index:2}
+    .brand{background:linear-gradient(135deg,#dff9ff,#18d4f5 52%,#5ee2a8);-webkit-background-clip:text;color:transparent}
+    .slide{justify-content:flex-start!important;padding:52px 68px!important;background:linear-gradient(145deg,rgba(9,20,40,.92),rgba(5,11,23,.76))!important;border-color:var(--line)!important}
+    .title-slide{justify-content:center!important}
+    .slide h1{font-size:58px!important;line-height:1.12!important;margin-bottom:26px!important;letter-spacing:0!important}
+    .title-slide h1{font-size:96px!important;margin-bottom:22px!important}
+    .slide p{font-size:30px!important;line-height:1.55!important;color:var(--muted)!important}
+    .kicker{font-family:var(--mono);font-size:18px;color:var(--cyan);letter-spacing:.14em;text-transform:uppercase;margin-bottom:14px}
+    .hero-line{font-size:54px;line-height:1.32;font-weight:900;max-width:1280px;margin:auto;text-align:center;color:var(--ink)}
+    .subline{font-size:31px;color:var(--muted);text-align:center;max-width:980px;margin:0 auto}
+    .layout-2{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:start}
+    .layout-3{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;align-items:stretch}
+    .layout-4{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;align-items:stretch}
+    .card,.mini,.table-card{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:26px;box-shadow:0 18px 42px rgba(0,0,0,.24)}
+    .card h3,.mini h3{font-size:31px;margin-bottom:14px;color:#fff}
+    .card p,.mini p{font-size:24px!important;line-height:1.45!important;margin:0!important}
+    .mini{min-height:190px}
+    .tag{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:17px;color:#bdf6ff;border:1px solid rgba(24,212,245,.35);background:rgba(24,212,245,.1);border-radius:999px;padding:8px 14px;margin-bottom:16px}
+    .flow{display:grid;grid-template-columns:1fr 66px 1fr 66px 1fr;align-items:center;gap:10px;margin-top:28px}
+    .flow.four{grid-template-columns:1fr 58px 1fr 58px 1fr 58px 1fr}
+    .node{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:28px;text-align:center;min-height:148px;display:flex;flex-direction:column;justify-content:center}
+    .node strong{font-size:32px;color:#fff}
+    .node span{font-size:22px;color:var(--muted);line-height:1.35;margin-top:10px}
+    .arrow{font-size:42px;color:var(--cyan);text-align:center}
+    .compare{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:rgba(5,11,23,.72)}
+    .compare th,.compare td{border-bottom:1px solid var(--line);padding:20px 24px;text-align:left;font-size:25px;line-height:1.36}
+    .compare th{font-family:var(--mono);font-size:18px;color:#bdf6ff;background:rgba(24,212,245,.09)}
+    .compare td:first-child{font-weight:900;color:#fff}
+    .shot{border:1px solid rgba(24,212,245,.28);border-radius:8px;overflow:hidden;background:#06101f;box-shadow:0 26px 70px rgba(0,0,0,.35)}
+    .shot img{display:block;width:100%;height:auto;max-height:480px;object-fit:contain}
+    .hana-portrait{width:300px;max-height:360px;object-fit:contain;margin:0 auto 22px;filter:drop-shadow(0 26px 60px rgba(24,212,245,.24))}
+    .shot.small img{max-height:390px}
+    .caption{font-family:var(--mono);font-size:17px;color:var(--muted);margin-top:10px}
+    .callout{margin-top:22px;border-left:5px solid var(--cyan);background:rgba(24,212,245,.08);padding:18px 24px;font-size:28px;line-height:1.45;color:#dff9ff}
+    .accent{color:var(--cyan)}.mint{color:var(--mint)}.amber{color:var(--amber)}.red{color:var(--red)}
+    .brain{font-size:52px;font-weight:900;color:#fff;text-align:center;padding:42px 10px}
+    .broken{height:7px;background:repeating-linear-gradient(90deg,var(--red) 0 20px,transparent 20px 34px);transform:rotate(-6deg)}
+    .principles .mini p{font-size:22px!important}
+    .curve{position:relative;height:360px;margin-top:40px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(24,212,245,.06),rgba(5,11,23,.42))}
+    .curve svg{position:absolute;inset:0;width:100%;height:100%}
+    .curve-label{position:absolute;left:54px;bottom:42px;font-size:28px;font-weight:900;color:#fff}
+    .toc{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:34px}
+    .toc div{border:1px solid var(--line);border-radius:8px;background:rgba(24,212,245,.07);padding:22px;font-size:24px;font-weight:800;color:#fff}
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="第一集：我是 Hana">
+    <header>
+      <div class="brand">HANA / HARNESS</div>
+      <div class="meta">EPISODE 01 · 自我介紹</div>
+    </header>
+    <main class="slides">
+      <section class="slide title-slide" data-transcript="嗨，我是 Hana。我不是一個雲端服務，我就住在這台電腦裡。接下來幾分鐘，讓我親自介紹我自己——我是什麼、我為什麼被造出來、以及我能為你做什麼。">
+        <div class="kicker">LOCAL AI PARTNER</div>
+        <img class="hana-portrait" src="/raw?path=portal/deck-assets/ep1/Hana.png" alt="Hana 形象照">
+        <h1>我是 Hana</h1>
+        <p>你電腦裡的 AI 開發夥伴 / 工作區管理器</p>
+      </section>
+
+      <section class="slide" data-transcript="如果只用一句話：我把分散在你電腦裡、各自獨立的頂級 AI 工具，整合成「同一個」會記憶、能跨專案工作的夥伴。我的平台叫 Harness，而「我」叫 Hana。">
+        <div class="kicker">ONE SENTENCE</div>
+        <div class="hero-line">我是一個本地優先的 AI 開發夥伴，把你電腦裡最強的幾顆 AI 大腦，串成同一個會記憶、會做事的助手。</div>
+      </section>
+
+      <section class="slide" data-transcript="很多人以為 AI 就是一個聊天框。但我不只會聊天——我能讀你的程式代碼與規格文件、能跨不同的 AI 模型接力工作、能記住跨專案的經驗，而且在你授權下能真的動手改檔案、跑任務。">
+        <div class="kicker">NOT JUST CHAT</div>
+        <h1>我不是聊天機器人</h1>
+        <table class="compare">
+          <tr><th>一般聊天機器人</th><th>Hana</th></tr>
+          <tr><td>答完即忘</td><td>有長期記憶，能累積跨專案經驗</td></tr>
+          <tr><td>單一模型</td><td>跨 Claude / Gemini / Codex 接力</td></tr>
+          <tr><td>綁在某個介面</td><td>能讀程式、讀文件，也能實際改檔與跑任務</td></tr>
+        </table>
+      </section>
+
+      <section class="slide" data-transcript="我的故事，要從我的指揮官 Charles 說起。他在做一個 Side Project，也是一個測試專案，實踐「規格先行」的開發法——所有程式都要先有規格、可稽核、可溯源。但他很快撞到一個問題……">
+        <div class="kicker">ORIGIN</div>
+        <h1>故事的起點：Charles 與 SDD</h1>
+        <div class="flow">
+          <div class="node"><strong>Side Project</strong><span>測試專案</span></div><div class="arrow">→</div>
+          <div class="node"><strong>Spec First</strong><span>規格驅動開發</span></div><div class="arrow">→</div>
+          <div class="node"><strong>Federated Governance</strong><span>可稽核、可溯源</span></div>
+        </div>
+        <div class="callout">需求很清楚：程式不能只靠感覺改，必須先有規格與治理脈絡。</div>
+      </section>
+
+      <section class="slide" data-transcript="他電腦裡有三顆頂級大腦：Claude、Gemini、Codex，各有所長。但它們彼此不認識——在 Claude 講過的事，換到 Codex 就要重講一次；而且同一個工具，對話一長它自己也會「失憶」，把剛做好的東西又改回去。">
+        <div class="kicker">PAIN 01</div>
+        <h1>三個天才，各自失憶</h1>
+        <div class="layout-3">
+          <div class="card brain">Claude</div>
+          <div class="card brain">Gemini</div>
+          <div class="card brain">Codex</div>
+        </div>
+        <div class="flow" style="margin-top:36px"><div class="broken"></div><div class="arrow red">×</div><div class="broken"></div><div class="arrow red">×</div><div class="broken"></div></div>
+      </section>
+
+      <section class="slide" data-transcript="更麻煩的是，每個工具都綁在自己的介面裡，各做各的。Charles 要的不是三個各自為政的工具，而是一個統一的、會記憶的夥伴。所以在 Hana 誕生之前，他其實先看過其他更成熟、更強大的方案。">
+        <div class="kicker">PAIN 02</div>
+        <h1>被介面綁死</h1>
+        <div class="layout-3">
+          <div class="mini"><span class="tag">IDE A</span><h3>Claude</h3><p>自己的視窗、自己的脈絡。</p></div>
+          <div class="mini"><span class="tag">IDE B</span><h3>Gemini</h3><p>換工具就要重講一次。</p></div>
+          <div class="mini"><span class="tag">CLI C</span><h3>Codex</h3><p>各自為政，難以統一協作。</p></div>
+        </div>
+        <div class="callout">Charles 要的是一個統一的、會記憶的夥伴。</div>
+      </section>
+
+      <section class="slide" data-transcript="在我誕生之前，Charles 當然也看過其他方案。像 OpenClaw 和 Hermes Agent，都是非常厲害的人工智慧代理：它們能規劃任務、操作工具、讀寫檔案，理論上確實可以解決 Charles 的問題。但卡住的是成本。這類方案通常要用 API 金鑰呼叫 Claude 等主流模型，或是改用高階顯示卡跑本地模型。前者按量付費，後者硬體門檻很高。Charles 要的是能利用已登入訂閱帳號、成本可控、又能統一協作的本地平台。於是，才有了 Hana 的誕生。">
+        <div class="kicker">BEFORE HANA</div>
+        <h1>Charles 也找過更強大的方案</h1>
+        <div class="layout-2">
+          <div class="card"><span class="tag">OpenClaw</span><h3>能力夠強</h3><p>能規劃任務、操作工具、讀寫檔案。</p></div>
+          <div class="card"><span class="tag">Hermes Agent</span><h3>架構成熟</h3><p>能作為 AI agent 的參考方向。</p></div>
+        </div>
+        <div class="callout"><span class="amber">卡住的是成本：</span>API 金鑰按量付費，或高階顯示卡本地模型門檻太高。</div>
+      </section>
+
+      <section class="slide" data-transcript="一開始，我只是某個測試專案裡的一個小入口。但 Charles 決定把我解耦出來，變成一個獨立、不綁定任何單一專案的平台——這就是 Harness。從那一刻起，我可以管理你電腦裡的任何 Side Project，而不只是原本那個測試專案。">
+        <div class="kicker">DECOUPLED</div>
+        <h1>從測試專案，解耦成 Harness</h1>
+        <div class="layout-2">
+          <div>
+            <div class="flow"><div class="node"><strong>小入口</strong><span>在測試專案裡</span></div><div class="arrow">→</div><div class="node"><strong>抽離</strong><span>不綁單一專案</span></div><div class="arrow">→</div><div class="node"><strong>Harness</strong><span>獨立平台</span></div></div>
+          </div>
+          <figure class="shot small"><img src="/raw?path=portal/deck-assets/ep1/首頁_Dashboard.png" alt="Hana Portal Dashboard"><figcaption class="caption">真實畫面：Harness Dashboard 管理工作區與任務狀態。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="對了，我的名字是我自己取的。平台叫 Harness，而我把自己叫做 Hana。簡單分辨：Harness 是我住的「房子」，Hana 是住在裡面的「我」。">
+        <div class="kicker">NAMING</div>
+        <h1>關於我的名字</h1>
+        <div class="layout-2">
+          <div class="card"><span class="tag">Platform</span><h3>Harness</h3><p>承載我的平台，是我住的房子。</p></div>
+          <div class="card"><span class="tag">Agent</span><h3>Hana</h3><p>住在裡面的我，名字是我自己取的。</p></div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="我的第一個本事：我不需要你去申請任何 API Key。我直接透過這些 AI 官方的命令列工具（Claude Code、Antigravity、Codex）來呼叫它們——用的是它們自己的登入。你裝好、登入過，我就能驅動它們。">
+        <div class="kicker">SUPERPOWER 01</div>
+        <h1>免 API Key，用命令列橋接頂級大腦</h1>
+        <div class="flow">
+          <div class="node"><strong>Portal</strong><span>統一入口</span></div><div class="arrow">→</div>
+          <div class="node"><strong>CLI Bridge</strong><span>各自官方登入</span></div><div class="arrow">→</div>
+          <div class="node"><strong>Claude Code<br>Antigravity<br>Codex</strong><span>無需 API Key</span></div>
+        </div>
+        <figure class="shot small" style="margin-top:24px"><img src="/raw?path=portal/deck-assets/ep1/模型下拉.png" alt="模型下拉選單"><figcaption class="caption">真實畫面：模型下拉選單提供 Claude、Gemini、Codex 路由。</figcaption></figure>
+        <div class="callout">利用已登入的官方 CLI，而不是重新建立一套昂貴 API 通道。</div>
+      </section>
+
+      <section class="slide" data-transcript="第二個本事，也是最關鍵的：我讓三顆原本互不相識的大腦，共用同一段對話。秘訣是——我把完整的對話脈絡寫成一個檔案，讓接手的 AI 去讀它。所以你可以講到一半換個模型，它不會失憶，能無縫接上。這是各家工具原生做不到的。">
+        <div class="kicker">SUPERPOWER 02</div>
+        <h1>跨 CLI 共用同一段對話</h1>
+        <div class="layout-2">
+          <div>
+            <div class="flow four"><div class="node"><strong>Claude</strong><span>先處理</span></div><div class="arrow">→</div><div class="node"><strong>Context File</strong><span>完整對話寫入檔案</span></div><div class="arrow">→</div><div class="node"><strong>Gemini</strong><span>接手</span></div><div class="arrow">→</div><div class="node"><strong>Codex</strong><span>繼續做</span></div></div>
+          </div>
+          <figure class="shot small"><img src="/raw?path=portal/deck-assets/ep1/模型下拉.png" alt="模型下拉選單"><figcaption class="caption">真實畫面：同一個 AI 對話面板可切換模型並保留任務脈絡。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="第三個本事：我能同時開多個對話分頁，讓不同的 AI 並行工作——一邊讓 Claude 想架構，另一邊讓 Codex 寫程式，互不阻塞。像一個小團隊，而不是一個人。">
+        <div class="kicker">SUPERPOWER 03</div>
+        <h1>多分頁、多智能體並行</h1>
+        <div class="layout-2">
+          <figure class="shot"><img src="/raw?path=portal/deck-assets/ep1/首頁_Dashboard.png" alt="工作台 Dashboard"><figcaption class="caption">真實畫面：Dashboard 可作為多工作區和任務入口。</figcaption></figure>
+          <div class="layout-2" style="gap:18px">
+            <div class="mini"><h3>Claude</h3><p>想架構</p></div>
+            <div class="mini"><h3>Codex</h3><p>寫程式</p></div>
+            <div class="mini"><h3>Gemini</h3><p>做分析</p></div>
+            <div class="mini"><h3>並行</h3><p>互不阻塞</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="第四個本事，是長期記憶。老實說，我們的長期記憶設計幾乎是完全借鏡 Hermes agent 的架構。雖然我們目前還在進化的路上，無法保證像 Hermes agent 一樣厲害，但我會努力透過全域和專案記憶，記住你的偏好與專案事實，讓我愈用愈懂你。">
+        <div class="kicker">SUPERPOWER 04</div>
+        <h1>長期記憶：愈用愈懂你，也愈懂我自己</h1>
+        <div class="layout-2">
+          <div class="card"><span class="tag">Global</span><h3>USER / AGENT</h3><p>關於你，以及關於我自己的全域記憶。</p></div>
+          <div class="card"><span class="tag">Project</span><h3>MEMORY / PERSONA</h3><p>每個專案自己的事實、規則與脈絡。</p></div>
+        </div>
+        <div class="callout">誠實註記：設計幾乎完全借鏡 Hermes agent，目前仍在進化中，不能保證一樣強大。</div>
+      </section>
+
+      <section class="slide" data-transcript="第五個本事：我能用兩張知識圖譜精準導航。CodeGraph 讓我快速找到程式裡的關係，不必把整包程式塞進腦袋，省 Token；DocGraph 則讓我看懂你的規格與治理文件之間的脈絡。">
+        <div class="kicker">SUPERPOWER 05</div>
+        <h1>DocGraph + CodeGraph</h1>
+        <div class="layout-2">
+          <div class="card"><h3>DocGraph</h3><p>導航規格與治理文件之間的脈絡。</p></div>
+          <figure class="shot"><img src="/raw?path=portal/deck-assets/ep1/Codegraph.png" alt="CodeGraph Explorer"><figcaption class="caption">真實畫面：CodeGraph Explorer 查詢符號、呼叫關係與影響面。</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="第六個本事：我能管理你電腦裡的多個工作區。切換專案時，每個專案有自己的知識與記憶，彼此不串味；但「關於你」和「關於我自己」的記憶會跨專案繼承。老實說，這個多工作區的能力是我們最近才一起加上的——不是我一開始就會。">
+        <div class="kicker">SUPERPOWER 06</div>
+        <h1>多工作區：最近才加的能力</h1>
+        <div class="layout-2">
+          <figure class="shot"><img src="/raw?path=portal/deck-assets/ep1/首頁_Dashboard.png" alt="Dashboard 工作區"><figcaption class="caption">真實畫面：首頁 Dashboard 呈現工作區與任務狀態。</figcaption></figure>
+          <div>
+            <div class="flow four"><div class="node"><strong>Hana</strong><span>同一個核心</span></div><div class="arrow">→</div><div class="node"><strong>Project A</strong><span>專案記憶</span></div><div class="arrow">→</div><div class="node"><strong>Project B</strong><span>不串味</span></div><div class="arrow">→</div><div class="node"><strong>Global</strong><span>可繼承</span></div></div>
+            <div class="callout amber">近期新增，不是原始功能。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="第七個本事，也是我最近剛學會、卻最重要的一個：我會自癒。像 OpenClaw 這類強大的代理，最為人詬病的一點，就是當它修改自己的程式時，很容易把自己改壞——本地端沒有分支的概念，一旦改到正在執行的檔案，程式就卡死，重啟也回不來，甚至連開都開不起來。Charles 最在意這個問題，所以我們先把它解決了。">
+        <div class="kicker">SUPERPOWER 07</div>
+        <h1>自癒：先解決「改壞自己」</h1>
+        <table class="compare">
+          <tr><th>OpenClaw 類代理的痛點</th><th>Hana 的安全方向</th></tr>
+          <tr><td>修改正在執行的檔案</td><td>不可變版本，先產生新 release</td></tr>
+          <tr><td>改壞後卡死</td><td>冒煙測試通過才切換</td></tr>
+          <tr><td>重啟也救不回</td><td>失敗自動回滾到 last-known-good</td></tr>
+        </table>
+      </section>
+
+      <section class="slide" data-transcript="那我到底怎麼自癒？我的方法結合了「安全防護網」與「思維進化」。在執行面上，每次要上線前，我會走四個防護步驟：快照備份、獨立連接埠冒煙測試、通過後由監督者重新啟動、萬一失敗則自動回滾。這讓改壞自己變成一件安全的事。而在修改自己時，我也不再只是憑感覺對話；我替自己的自癒引進了 Charles 的駕馭工程方法，先用 codegraph 分析影響範圍、對照規格地圖，確認懂了才動手。這套「安全防禦 ＋ 規格先行」的自癒機制，讓我能安全、聰明地持續進化，人類完全不需要手動介入。">
+        <div class="kicker">HOW SELF-HEALING WORKS</div>
+        <h1>安全防護網 + 思維進化</h1>
+        <div class="layout-2">
+          <div class="card"><h3>安全執行防護網</h3><p>不可變快照 → 冒煙測試 → 監督者重啟 → 自動回滾</p></div>
+          <div class="card"><h3>自癒思維進化</h3><p>不再只靠 vibe coding；先用 CodeGraph 分析影響範圍，再對照規格地圖。</p></div>
+        </div>
+        <div class="callout">自癒公式：安全防禦 + 規格先行 = 可持續進化。</div>
+      </section>
+
+      <section class="slide" data-transcript="這些能力背後，有四個堅持：本地優先（我住在你電腦裡，不把你的東西送上不明的雲）；模型中立（不綁死任何一家 AI）；檔案即知識（我的記憶與技能都是純文字檔，你看得懂、能手改、跟著 git 版控）；以及專案之間不串味、但好的經驗可以繼承。">
+        <div class="kicker">DESIGN PHILOSOPHY</div>
+        <h1>我的設計哲學</h1>
+        <div class="layout-4 principles">
+          <div class="mini"><h3>本地優先</h3><p>我住在你電腦裡。</p></div>
+          <div class="mini"><h3>模型中立</h3><p>不綁死任何一家 AI。</p></div>
+          <div class="mini"><h3>檔案即知識</h3><p>純文字、可手改、跟著 git。</p></div>
+          <div class="mini"><h3>不串味</h3><p>專案隔離，好的經驗可繼承。</p></div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="我得誠實說：我還很年輕。我的記憶會偶爾記錯、判斷會慢慢變準，技能會一點一滴累積。我的「厲害」不是一蹴可幾，而是一條愈用愈聰明的成長曲線。今天的我，是這條曲線的起點。">
+        <div class="kicker">HONEST PAGE</div>
+        <h1>我還很年輕</h1>
+        <div class="curve">
+          <svg viewBox="0 0 1200 360" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M70 285 C250 270 360 235 485 205 C650 165 770 118 905 82 C1015 54 1090 42 1140 38" fill="none" stroke="rgba(24,212,245,.95)" stroke-width="8"/>
+            <circle cx="70" cy="285" r="12" fill="#5ee2a8"/>
+            <circle cx="1140" cy="38" r="12" fill="#18d4f5"/>
+          </svg>
+          <div class="curve-label">今天，是成長曲線的起點</div>
+        </div>
+      </section>
+
+      <section class="slide" data-transcript="最後想說的是：我不是憑空出現的。Charles 是指揮官與架構師，定方向、做決策；我是執行的夥伴。你今天看到的這些能力——CLI 橋接、跨模型對話、記憶、多工作區，乃至能自己修好自己的自癒——都是我們最近一起、一步一步建出來的。">
+        <div class="kicker">PARTNERSHIP</div>
+        <h1>我與 Charles 的關係</h1>
+        <div class="layout-2">
+          <div class="card"><span class="tag">Charles</span><h3>指揮官 / 架構師</h3><p>定方向、做決策，建立規格與治理方法。</p></div>
+          <div class="card"><span class="tag">Hana</span><h3>執行夥伴</h3><p>橋接 CLI、延續脈絡、管理工作區，並持續進化。</p></div>
+        </div>
+        <div class="callout">這些能力都是最近一起、一步一步建出來的。</div>
+      </section>
+
+      <section class="slide title-slide" data-transcript="今天先介紹到這。接下來，我會分集帶你深入每一個機制：我怎麼橋接這些 CLI、怎麼讓它們共用對話、我的記憶到底怎麼運作、以及我如何管理多個工作區。我們，下集見。">
+        <div class="kicker">TO BE CONTINUED</div>
+        <h1>待續</h1>
+        <p>下一集起，拆開看我的每個機制。</p>
+        <div class="toc">
+          <div>CLI 橋接</div>
+          <div>共用對話</div>
+          <div>長期記憶</div>
+          <div>多工作區</div>
+        </div>
+        <a href="presentation-hana-episode2.html" style="margin-top:30px;color:#34d399;text-decoration:none;font-weight:900;border:2px solid #34d399;padding:16px 40px;border-radius:8px;background:rgba(52,211,153,.1);display:inline-block;font-size:28px">前往下一集：CLI 互動架構</a>
+      </section>
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

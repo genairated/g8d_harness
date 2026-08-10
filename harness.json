@@ -1,0 +1,64 @@
+{
+  "name": "Hana 的家",
+  "subtitle": "AI 工作區管理器",
+  "icon": "home",
+  "sidebar": {
+    "sections": [
+      {
+        "label": "Hana 自我介紹",
+        "icon": "presentation",
+        "path": "presentations-v2",
+        "filter": "*.html"
+      },
+      {
+        "label": "Hana - AI 特助簡介",
+        "icon": "presentation",
+        "path": "presentations-v3",
+        "filter": "*.html"
+      },
+      {
+        "label": "全域記憶 (USER / AGENT)",
+        "icon": "brain",
+        "path": "global-knowledge",
+        "filter": "*.md"
+      },
+      {
+        "label": "專案記憶 (MEMORY / PERSONA)",
+        "icon": "folder-heart",
+        "path": ".harness/knowledge",
+        "filter": "*.md"
+      },
+      {
+        "label": "規格文件 (Specs)",
+        "icon": "file-text",
+        "path": "specs",
+        "filter": "*.md"
+      }
+    ]
+  },
+  "avatar": "portal/hana_face.png",
+  "nav": {
+    "chat": true,
+    "worktable": true,
+    "scheduler": true,
+    "telegram": true,
+    "documents": true,
+    "meeting": true,
+    "notes": true,
+    "audioTopics": true,
+    "pm": true,
+    "whiteboard": true
+  },
+  "tools": {
+    "codegraph": {
+      "label": "CodeGraph 探索器",
+      "icon": "network",
+      "scope": ""
+    },
+    "docgraph": {
+      "label": "DocGraph 知識圖譜",
+      "icon": "git-fork",
+      "profile": "hana"
+    }
+  }
+}

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Block Deck — Hana / Harness</title>
+<link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+<style>
+/* ── Block Deck 專屬樣式（載入於 core.css 之後，僅補足 block 版型需要的 class）── */
+
+/* action-title：比 h1 小、帶左邊框，用於非標題投影片 */
+.block-action-title {
+  font-size: 42px;
+  font-weight: 900;
+  color: #fff;
+  border-left: 7px solid var(--cyan);
+  padding-left: 22px;
+  margin-bottom: 32px;
+  line-height: 1.25;
+  background: none;
+  -webkit-text-fill-color: #fff;
+}
+
+/* bullets */
+.block-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.block-bullet {
+  font-size: 30px;
+  line-height: 1.65;
+  color: var(--text);
+  padding: 5px 0 5px 30px;
+  position: relative;
+}
+.block-bullet::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--cyan);
+}
+.block-bullet.level-2 {
+  font-size: 24px;
+  color: var(--muted);
+  padding-left: 58px;
+  margin-top: 2px;
+}
+.block-bullet.level-2::before {
+  left: 32px;
+  content: '·';
+  font-size: 32px;
+  color: var(--blue);
+}
+
+/* image */
+.block-image-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  margin-top: 16px;
+  min-height: 0;
+}
+.block-image {
+  max-width: 100%;
+  max-height: 700px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.block-caption {
+  font-size: 22px;
+  color: var(--muted);
+  margin-top: 16px;
+  text-align: center;
+}
+
+/* quote */
+.block-quote-wrap {
+  max-width: 1350px;
+  text-align: center;
+}
+.block-quote-text {
+  font-size: 44px;
+  line-height: 1.55;
+  color: var(--text);
+  font-style: italic;
+  quotes: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 42px;
+}
+.block-quote-attr {
+  font-size: 26px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* custom — fills remaining slide space */
+.block-custom-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+</style>
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="Block Deck 播放器">
+  <header>
+    <div class="brand" id="deck-brand">HANA / HARNESS</div>
+    <div class="meta" id="deck-meta">BLOCK DECK</div>
+  </header>
+  <main class="slides" id="slides-container">
+    <!-- 載入佔位 -->
+    <section class="slide title-slide">
+      <div class="kicker">載入中</div>
+      <h1 id="loading-title">載入區塊簡報…</h1>
+      <p id="loading-status">正在讀取資料</p>
+    </section>
+  </main>
+</div>
+
+<!-- block-renderer 必須先載入（同步），inline 腳本才能呼叫 BlockRenderer -->
+<script src="/raw?path=portal/presentation-player/block-renderer.js"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var deckName = params.get('deck');
+
+  if (!deckName) {
+    document.getElementById('loading-title').textContent = '缺少 ?deck= 參數';
+    document.getElementById('loading-status').textContent =
+      '用法：/raw?path=presentations/block-deck-player.html&deck=<deckName>';
+    loadCore();
+    return;
+  }
+
+  fetch('/raw?path=presentations/' + encodeURIComponent(deckName) + '.blocks.json')
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + '：找不到 ' + deckName + '.blocks.json');
+      return r.json();
+    })
+    .then(function (deckData) {
+      var meta = deckData.meta || {};
+
+      // 更新頁首
+      if (meta.brand) document.getElementById('deck-brand').textContent = meta.brand;
+      var metaParts = [meta.episode, meta.title].filter(Boolean);
+      if (metaParts.length) document.getElementById('deck-meta').textContent = metaParts.join(' · ');
+
+      // 更新播放遮罩副文字
+      if (meta.subtitle) document.getElementById('viewport').setAttribute('data-subtitle', meta.subtitle);
+
+      // 更新頁面 title
+      if (meta.title) document.title = meta.title + ' — Hana / Harness';
+
+      // 渲染投影片（移除佔位）
+      var container = document.getElementById('slides-container');
+      container.innerHTML = '';
+      window.BlockRenderer.renderBlockDeck(deckData, container);
+
+      loadCore();
+    })
+    .catch(function (err) {
+      document.getElementById('loading-title').textContent = '載入失敗';
+      document.getElementById('loading-status').textContent = String(err);
+      loadCore();
+    });
+
+  function loadCore() {
+    var s = document.createElement('script');
+    s.src = '/raw?path=portal/presentation-player/presentation-core.js';
+    document.body.appendChild(s);
+  }
+})();
+</script>
+</body>
+</html>

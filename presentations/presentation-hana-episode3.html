@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hana EP3: 跨 CLI 共用對話</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Inter:wght@400;600;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--ep-bg:#071014;--ep-card:#101820;--ep-line:#29404a;--ep-text:#d8e6ea;--ep-muted:#86a0a8;--ep-cyan:#49d7e8;--ep-green:#5ee0a0;--ep-amber:#f4bd50;--ep-red:#f87171}
+    .presentation-viewport{background:radial-gradient(circle at 20% 5%,rgba(73,215,232,.16),transparent 34%),linear-gradient(135deg,#071014,#0d151f 58%,#050709)!important;color:var(--ep-text)}
+    .slide{justify-content:flex-start!important;background:linear-gradient(145deg,rgba(16,24,32,.94),rgba(7,16,20,.9))!important;border-color:var(--ep-line)!important;padding:54px 74px!important}
+    .title-slide{justify-content:center!important;text-align:center}.title-slide h1{font-size:78px!important;color:#fff!important;background:none!important}.subtitle{font-size:34px;color:var(--ep-muted)}
+    header{position:absolute;top:0;left:0;width:100%;padding:20px 34px;display:flex;justify-content:space-between;color:var(--ep-muted);font-family:var(--mono);z-index:5}.brand{color:var(--ep-cyan);font-weight:800}
+    .slide h2{font-size:48px;line-height:1.18;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--ep-line)}.kicker{color:var(--ep-cyan);font-family:var(--mono);font-weight:800;letter-spacing:.08em;margin-bottom:14px}
+    .content-area{display:flex;flex-direction:column;gap:20px}.split{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}.compare-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+    .mini-card,.node,.step{border:1px solid var(--ep-line);border-radius:8px;background:rgba(255,255,255,.035);padding:24px}.mini-card h3,.node strong{font-size:30px;color:#fff;margin:0 0 10px}.mini-card span,.node span,.step span{font-size:22px;line-height:1.45;color:var(--ep-muted)}
+    .danger{border-color:rgba(248,113,113,.55)}.good{border-color:rgba(94,224,160,.55)}.warn{border-color:rgba(244,189,80,.58)}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;align-items:stretch}.step{position:relative;min-height:150px}.step b{display:block;color:var(--ep-cyan);font-size:24px;margin-bottom:12px}.step:not(:last-child):after{content:"";position:absolute;right:-15px;top:50%;width:24px;height:2px;background:var(--ep-cyan)}
+    .image-box{display:flex;justify-content:center;align-items:flex-start}.image-box img{max-width:100%;max-height:470px;object-fit:contain;border:1px solid var(--ep-line);border-radius:8px;background:#050709;box-shadow:0 20px 50px rgba(0,0,0,.36)}
+    .big-core{margin:auto;width:430px;height:230px;border:2px solid var(--ep-cyan);border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:46px;font-weight:900;color:#fff}.satellites{display:flex;gap:18px;justify-content:center;margin-top:26px}.satellites span{border:1px solid var(--ep-line);border-radius:999px;padding:12px 26px;font-size:24px;color:var(--ep-muted)}
+    table{width:100%;border-collapse:collapse;font-size:24px}th,td{border:1px solid var(--ep-line);padding:18px 20px;text-align:left;vertical-align:top}th{color:#fff;background:rgba(73,215,232,.08)}td:first-child{color:var(--ep-cyan);font-weight:800}
+    .quote{border-left:5px solid var(--ep-green);padding:20px 26px;background:rgba(94,224,160,.06);font-size:30px;line-height:1.5;color:#fff}.next-link{display:inline-block;padding:16px 36px;border:2px solid var(--ep-amber);border-radius:8px;color:#fff;text-decoration:none;font-weight:900;background:rgba(244,189,80,.1);font-size:28px}
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="第三集：跨 CLI 共用對話">
+  <header><div class="brand">HANA // HARNESS</div><div>EPISODE 03</div></header>
+  <main class="slides">
+    <section class="slide title-slide" data-transcript="這一集，我要講 Hana 的第二個核心能力：我怎麼讓 Claude、Gemini、Codex 接手同一段工作，而對話脈絡不會斷掉。">
+      <div class="kicker">MODEL-NEUTRAL CONTEXT</div><h1>換模型時，脈絡不能斷</h1><div class="subtitle">讓三套 CLI 讀同一份模型中立對話</div>
+    </section>
+    <section class="slide" data-transcript="原生 CLI 的續接能力，通常只能接自己的歷史。Claude 接得上 Claude，Codex 接得上 Codex，但它們不會天然讀懂另一套工具剛剛做了什麼。">
+      <div class="kicker">原生限制</div><h2>各家的 resume，只認自己的歷史</h2>
+      <div class="compare-grid"><div class="mini-card"><h3>Claude</h3><span>接自己的 Claude Code 對話</span></div><div class="mini-card"><h3>Gemini</h3><span>接自己的 Antigravity 對話</span></div><div class="mini-card"><h3>Codex</h3><span>接自己的 Codex 對話</span></div></div>
+    </section>
+    <section class="slide" data-transcript="沒有共用脈絡時，我每換一次模型，就得重新鋪陳背景。更糟的是，長對話後模型可能忘記前面決策，把剛修好的東西又改回去。">
+      <div class="kicker">失憶後果</div><h2>斷掉的不只是聊天，是決策與狀態</h2>
+      <div class="compare-grid"><div class="mini-card danger"><h3>重講背景</h3><span>每次換模型都重新鋪陳</span></div><div class="mini-card danger"><h3>決策遺失</h3><span>已確認的方向被忽略</span></div><div class="mini-card danger"><h3>回頭破壞</h3><span>把剛修好的東西改回去</span></div></div>
+    </section>
+    <section class="slide" data-transcript="我的做法，是讓 Portal 擁有一份模型中立的完整對話。模型只是來接手執行的夥伴，不是唯一保存記憶的地方。">
+      <div class="kicker">設計轉向</div><h2>脈絡由 Portal 擁有，不寄放在單一模型裡</h2>
+      <div class="big-core">Portal<br><span style="font-size:24px;color:var(--ep-muted)">模型中立完整對話</span></div><div class="satellites"><span>Claude</span><span>Gemini</span><span>Codex</span></div>
+    </section>
+    <section class="slide" data-transcript="這張畫面就是同一段對話中途換模型。上半段可以由一個模型開始，下半段換成另一個模型接手；對使用者來說，它仍然是同一條工作線。">
+      <div class="kicker">畫面證據</div><h2>同一段對話，中途換模型不失憶</h2>
+      <div class="split"><div class="image-box"><img src="/raw?path=portal/deck-assets/ep3/同一對話兩個模型.png" alt="同一段對話中途換模型"></div><div class="quote">模型可以換，任務線不能斷。Portal 才是對話的主人。</div></div>
+    </section>
+    <section class="slide" data-transcript="每次發問前，我把完整歷史寫成一個檔案。提示裡只放最近幾輪和檔案位置，接手的 AI 可以自己讀回完整脈絡，所以不必靠有損壓縮硬塞進提示。">
+      <div class="kicker">檔案式上下文</div><h2>完整歷史寫成檔案，提示只帶入口</h2>
+      <div class="flow"><div class="step"><b>1. 對話累積</b><span>Portal 收下每一輪訊息</span></div><div class="step"><b>2. 歷史落檔</b><span>完整內容寫成 Markdown</span></div><div class="step"><b>3. 提示帶入口</b><span>最近幾輪加檔案位置</span></div><div class="step"><b>4. 模型接手</b><span>需要時讀回完整脈絡</span></div></div>
+    </section>
+    <section class="slide" data-transcript="這個設計把速度與完整性分開。最近幾輪直接放進提示，讓模型快速接上；完整歷史留在檔案，需要時再讀，避免每次都把整段對話塞滿。">
+      <div class="kicker">取捨</div><h2>最近幾輪在眼前，全量歷史在旁邊</h2>
+      <table><tr><th>層次</th><th>放哪裡</th><th>用途</th></tr><tr><td>最近幾輪</td><td>直接放進提示</td><td>讓模型立刻接上當前狀態</td></tr><tr><td>完整歷史</td><td>本地 Markdown 檔</td><td>保留完整脈絡，必要時讀回</td></tr><tr><td>未來演進</td><td>滾動蒸餾</td><td>把長歷史整理成更精簡的工作狀態</td></tr></table>
+    </section>
+    <section class="slide" data-transcript="左側的歷史對話清單，代表 Portal 不只處理當前這一輪，而是把多個對話工作台保存起來。重新開啟時，我可以回到原本的任務脈絡，而不是從空白頁開始。">
+      <div class="kicker">多對話工作台</div><h2>歷史對話清單，讓工作能回得去</h2>
+      <div class="split"><div class="image-box"><img src="/raw?path=portal/deck-assets/ep3/歷史對話清單.png" alt="左側歷史對話清單"></div><div class="compare-grid" style="grid-template-columns:1fr"><div class="mini-card good"><h3>多對話</h3><span>每條任務線都有自己的脈絡</span></div><div class="mini-card good"><h3>多分頁</h3><span>不同模型可以並行協作</span></div></div></div>
+    </section>
+    <section class="slide" data-transcript="有了共用對話，我可以讓 Claude 想架構，讓 Codex 改程式，讓 Gemini 補另一種觀點。它們仍然是不同模型，但在 Hana 裡，開始像同一個團隊。">
+      <div class="kicker">接力結果</div><h2>不同模型，開始像同一個團隊</h2>
+      <div class="flow" style="grid-template-columns:repeat(3,1fr)"><div class="step"><b>Claude</b><span>釐清架構與風險</span></div><div class="step"><b>Codex</b><span>實作、修改、驗證</span></div><div class="step"><b>Gemini</b><span>補觀點與替代方案</span></div></div>
+    </section>
+    <section class="slide" data-transcript="這集的重點很簡單：不是要求每個模型天生共享記憶，而是把對話主權收回 Portal。只要脈絡是模型中立的，換模型就不等於重新開始。">
+      <div class="kicker">本集結論</div><h2>換模型，不等於重新開始</h2>
+      <div class="compare-grid"><div class="mini-card warn"><h3>Portal 擁有對話</h3><span>不依賴單一 CLI 的 resume</span></div><div class="mini-card warn"><h3>檔案保留全量</h3><span>長對話不靠有損截斷</span></div><div class="mini-card warn"><h3>模型負責接力</h3><span>任務依需求交給最適合的大腦</span></div></div>
+    </section>
+    <section class="slide title-slide" data-transcript="下一集我將介紹長期記憶機制。我會說明如何透過兩層四檔結構，既實現專案間的記憶隔離，又能跨專案繼承通用經驗，讓 Hana 愈用愈懂你。點選連結即可進入下一集。">
+      <div class="kicker">NEXT EPISODE</div><h1 style="font-size:64px">第四集：長期記憶機制</h1><p class="subtitle" style="max-width:1120px;margin:20px auto 38px">兩層四檔、專案隔離、跨專案繼承：讓 Hana 不只接得上這次，也能累積下次。</p><a class="next-link" href="presentation-hana-episode4.html">點選進入：下一集 EP04</a>
+    </section>
+  </main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

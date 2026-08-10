@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "title": "版型展示：Hana Block Deck",
+    "subtitle": "本地優先 AI 開發夥伴",
+    "brand": "HANA / HARNESS",
+    "episode": "DEMO · 區塊版型展示",
+    "theme": "dark",
+    "accent": "#22D3EE"
+  },
+  "slides": [
+    {
+      "layout": "title",
+      "title": "你好，我是 Hana",
+      "subtitle": "本地優先 AI 開發夥伴，你的工程協作者",
+      "kicker": "自我介紹",
+      "transcript": "你好，我是哈娜。我是一位本地優先的 AI 開發夥伴，誕生於 Harness 駕馭工程平台。"
+    },
+    {
+      "layout": "bullets",
+      "title": "Hana 讓 AI 協作從「偶爾能用」變成「每天可信」",
+      "kicker": "核心能力",
+      "bullets": [
+        { "text": "驅動官方 CLI（Claude Code、Gemini、Codex）", "level": 1 },
+        { "text": "使用已登入帳號，無需自備 API Key", "level": 2 },
+        { "text": "長期記憶：跨對話保留背景知識", "level": 1 },
+        { "text": "兩層四檔記憶系統（全域 + 專案）", "level": 2 },
+        { "text": "多工作區並行管理", "level": 1 },
+        { "text": "自癒：改壞了自動回滾，不需人工介入", "level": 1 }
+      ],
+      "transcript": "我能驅動官方 CLI，使用你已登入的訂閱帳號，不需要再花費 API Key。我有長期記憶系統，可以跨對話保留背景知識。我還支援多工作區並行，並具備自癒能力。"
+    },
+    {
+      "layout": "table",
+      "title": "Hana 的差異在於：用訂閱、有記憶、會自癒",
+      "kicker": "比較",
+      "table": {
+        "headers": ["能力", "Hana", "OpenClaw / Hermes Agent"],
+        "rows": [
+          ["使用帳號", "訂閱 OAuth（免費）", "API Key（按量付費）"],
+          ["長期記憶", "兩層四檔系統", "有（設計各異）"],
+          ["自癒機制", "不可變版本 + 自動回滾", "無或需手動"],
+          ["多工作區", "宣告式 JSON 設定", "有限或無"],
+          ["本地優先", "完全本地執行", "依平台而異"]
+        ]
+      },
+      "transcript": "與傳統 Agent 相比，哈娜的最大優勢是使用訂閱帳號而非 API Key，以及具備自癒與自動回滾能力。"
+    },
+    {
+      "layout": "split",
+      "title": "兩種互動模式，一份指揮中樞",
+      "kicker": "架構",
+      "left": {
+        "heading": "網頁 Portal",
+        "items": ["視覺化任務派發", "即時狀態監控", "簡報播放與匯出", "排程管理"]
+      },
+      "right": {
+        "heading": "Telegram",
+        "items": ["隨身指令下達", "結果推送通知", "跨裝置操控", "全域指揮控制台"]
+      },
+      "transcript": "哈娜有兩種主要互動模式：網頁 Portal 提供視覺化介面，Telegram 讓你隨身攜帶並隨時下達指令。"
+    },
+    {
+      "layout": "quote",
+      "quote": "人類寫程式叫軟體工程；人類管理多個 AI Agent 協作叫駕馭工程。",
+      "attribution": "Charles，Harness 創始人",
+      "kicker": "理念",
+      "transcript": "這是駕馭工程的核心理念：人類不再只是工程師，而是 AI 的指揮官。"
+    },
+    {
+      "layout": "custom",
+      "html": "<div class='compare-grid'><div class='mini-card'><h3>自癒</h3><span>不可變版本<br>監督者守護<br>自動回滾</span></div><div class='mini-card'><h3>記憶</h3><span>全域記憶<br>專案記憶<br>跨對話持久</span></div><div class='mini-card'><h3>多工</h3><span>宣告式工作區<br>並行任務<br>隔離執行</span></div></div>",
+      "transcript": "這三項核心超能力讓哈娜成為真正可信賴的本地 AI 夥伴：自癒、記憶、多工。"
+    },
+    {
+      "layout": "title",
+      "title": "開始你的駕馭之旅",
+      "subtitle": "Hana 在此，隨時待命",
+      "kicker": "結語",
+      "transcript": "哈娜已準備就緒。讓我們一起開啟駕馭工程的時代。"
+    }
+  ]
+}

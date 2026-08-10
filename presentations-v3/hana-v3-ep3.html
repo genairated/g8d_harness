@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v3 — EP3：我的大腦是檔案</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* Hana v3 — 開源版技術自介（極客藍 Cyan × 初生青 Indigo） */
+    :root {
+      --bg: #050815;
+      --card: rgba(10, 18, 40, 0.85);
+      --border: rgba(99, 102, 241, 0.18);
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.35);
+      --accent: #06b6d4;
+      --gold: #f59e0b;
+      --emerald: #10b981;
+      --danger: #ef4444;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 15% 15%, rgba(99,102,241,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 85%, rgba(6,182,212,0.08) 0%, transparent 50%),
+        linear-gradient(180deg, #080d1c 0%, #020510 100%) !important;
+    }
+
+    header {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 22px 60px; z-index: 50;
+      font-family: var(--mono); color: var(--muted); font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--accent); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important; flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 92px 92px 56px !important;
+      background: linear-gradient(145deg, rgba(10,18,40,0.92), rgba(4,8,20,0.96)) !important;
+      border-color: rgba(99,102,241,0.12) !important;
+      color: var(--text) !important; font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 44px; font-weight: 800; color: var(--white);
+      margin-bottom: 24px; padding-bottom: 14px;
+      border-bottom: 2px solid var(--border); line-height: 1.25;
+    }
+    .slide h2::before { content: "— "; color: var(--primary); }
+    .slide p { font-size: 26px !important; line-height: 1.65; color: var(--text); }
+    .kicker { font-family: var(--mono); font-size: 20px; color: var(--accent); letter-spacing: 0.12em; margin-bottom: 8px; }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    .title-left {
+      width: 44%; height: 100%;
+      display: flex; align-items: flex-end; justify-content: center;
+      background: linear-gradient(160deg, rgba(99,102,241,0.06) 0%, transparent 70%);
+      border-right: 1px solid rgba(99,102,241,0.1);
+      overflow: visible; position: relative;
+    }
+    .title-left img {
+      position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+      height: 940px; max-height: none; object-fit: contain; object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(99,102,241,0.45));
+    }
+    .title-right { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 80px 80px 80px 60px; }
+    .ep-badge {
+      font-family: var(--mono); font-size: 18px; color: var(--primary); letter-spacing: 0.2em;
+      border: 1px solid var(--primary); display: inline-block; padding: 6px 20px; border-radius: 4px;
+      background: rgba(99,102,241,0.08); margin-bottom: 24px; align-self: flex-start;
+    }
+    .title-main {
+      font-size: 76px; font-weight: 900; line-height: 1.1;
+      background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 50%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      margin-bottom: 18px;
+    }
+    .title-sub { font-size: 32px; color: var(--muted); font-weight: 400; margin-bottom: 40px; }
+    .title-desc { font-size: 23px; color: rgba(165,180,252,0.85); line-height: 1.7; border-left: 3px solid var(--primary); padding-left: 20px; }
+
+    /* ─── Big quote ─── */
+    .big-quote { display: flex; flex-direction: column; justify-content: center; align-items: center; flex: 1; text-align: center; }
+    .quote-mark { font-size: 110px; color: var(--primary); opacity: 0.25; line-height: 0.6; margin-bottom: 20px; font-family: Georgia, serif; }
+    .quote-text { font-size: 50px; font-weight: 800; color: var(--white); line-height: 1.45; max-width: 1500px; }
+    .quote-text em { color: var(--accent); font-style: normal; }
+    .quote-sub { margin-top: 34px; font-size: 26px; color: var(--muted); max-width: 1200px; line-height: 1.6; }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 21px; }
+    th { background: rgba(99,102,241,0.18); color: var(--accent); font-weight: 700; padding: 14px 18px; text-align: left; border: 1px solid var(--border); font-size: 20px; }
+    td { padding: 12px 18px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.45; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good { color: var(--emerald); }
+    td.bad { color: var(--danger); }
+    td.neutral { color: var(--gold); }
+
+    /* ─── Cards ─── */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 26px 30px; }
+    .card-title { font-size: 24px; font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+    .card-body { font-size: 21px; color: var(--muted); line-height: 1.55; }
+
+    /* ─── Badges ─── */
+    .badge { display: inline-block; padding: 7px 16px; border-radius: 999px; font-size: 19px; font-weight: 600; border: 1px solid; }
+    .badge.blue { color: var(--primary); border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .badge.cyan { color: var(--accent); border-color: var(--accent); background: rgba(6,182,212,0.08); }
+    .badge.green { color: var(--emerald); border-color: var(--emerald); background: rgba(16,185,129,0.08); }
+    .badge.gold { color: var(--gold); border-color: var(--gold); background: rgba(245,158,11,0.08); }
+
+    /* ─── Flow ─── */
+    .flow-row { display: flex; align-items: stretch; gap: 0; flex: 1; align-items: center; justify-content: center; flex-wrap: wrap; }
+    .flow-node { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; text-align: center; font-size: 22px; font-weight: 600; color: var(--text); max-width: 250px; }
+    .flow-node .ic { font-size: 34px; margin-bottom: 8px; }
+    .flow-node .t { font-size: 21px; font-weight: 800; color: var(--white); }
+    .flow-node .d { font-size: 15px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+    .flow-arrow { display: flex; flex-direction: column; align-items: center; padding: 0 14px; }
+    .flow-arrow .lbl { font-size: 14px; color: var(--primary); font-family: var(--mono); margin-bottom: 4px; white-space: nowrap; max-width: 140px; text-align: center; line-height: 1.3; }
+    .flow-arrow .ar { font-size: 28px; color: var(--primary); }
+
+    /* ─── Screenshot frame ─── */
+    .shot { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: #0a1228; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
+    .shot img { display: block; width: 100%; height: auto; }
+    .shot-cap { font-size: 18px; color: var(--muted); font-family: var(--mono); margin-top: 10px; text-align: center; }
+
+    /* ─── You-can-do-it steps ─── */
+    .diy-list { display: flex; flex-direction: column; gap: 16px; flex: 1; justify-content: center; }
+    .diy-item { display: flex; align-items: center; gap: 22px; background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.28); border-radius: 12px; padding: 20px 26px; }
+    .diy-num { width: 48px; height: 48px; border-radius: 50%; background: rgba(16,185,129,0.15); border: 2px solid var(--emerald); color: var(--emerald); font-weight: 800; font-size: 24px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .diy-text { font-size: 24px; color: var(--text); line-height: 1.5; }
+    .diy-text b { color: var(--white); }
+
+    /* ─── Callout ─── */
+    .callout { padding: 20px 26px; border-radius: 14px; font-size: 22px; line-height: 1.6; }
+    .callout.gold { background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.3); color: var(--gold); }
+    .callout.cyan { background: rgba(6,182,212,0.07); border: 1px solid rgba(6,182,212,0.3); color: var(--accent); }
+    .callout.danger { background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.3); color: var(--danger); }
+
+    /* ─── 2x2 memory grid ─── */
+    .mem-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 20px; flex: 1; }
+    .mem-cell { border-radius: 16px; padding: 24px 28px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+    .mem-cell .mc-scope { font-family: var(--mono); font-size: 15px; letter-spacing: 0.1em; }
+    .mem-cell .mc-name { font-size: 28px; font-weight: 800; color: var(--white); }
+    .mem-cell .mc-desc { font-size: 18px; color: var(--muted); line-height: 1.5; }
+    .mem-cell.global { background: rgba(99,102,241,0.07); border: 2px solid rgba(99,102,241,0.35); }
+    .mem-cell.global .mc-scope { color: var(--primary); }
+    .mem-cell.project { background: rgba(6,182,212,0.07); border: 2px solid rgba(6,182,212,0.35); }
+    .mem-cell.project .mc-scope { color: var(--accent); }
+
+    /* ─── Isolation diagram ─── */
+    .iso-global { background: rgba(99,102,241,0.08); border: 2px solid var(--primary); border-radius: 16px; padding: 22px 30px; text-align: center; margin-bottom: 4px; }
+    .iso-global .t { font-size: 24px; font-weight: 800; color: var(--white); }
+    .iso-global .d { font-size: 17px; color: var(--muted); margin-top: 4px; }
+    .iso-arrows { display: flex; justify-content: space-around; padding: 6px 40px; }
+    .iso-arrows span { color: var(--primary); font-size: 24px; }
+    .iso-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+    .iso-ws { background: rgba(6,182,212,0.06); border: 2px solid rgba(6,182,212,0.3); border-radius: 14px; padding: 20px; text-align: center; }
+    .iso-ws .t { font-size: 20px; font-weight: 800; color: var(--accent); margin-bottom: 6px; }
+    .iso-ws .d { font-size: 16px; color: var(--muted); line-height: 1.4; }
+
+    /* ─── File anatomy ─── */
+    .filebox { background: #05070f; border: 1px solid var(--border); border-radius: 14px; padding: 26px 30px; font-family: var(--mono); font-size: 17px; line-height: 2; color: var(--text); }
+    .filebox .fh { color: var(--white); font-weight: 700; }
+    .filebox .fc { color: var(--muted); }
+    .filebox .fb { color: var(--accent); }
+    .anat-list { display: flex; flex-direction: column; gap: 14px; }
+    .anat-item { display: flex; gap: 14px; align-items: flex-start; }
+    .anat-tag { font-family: var(--mono); font-size: 15px; padding: 4px 10px; border-radius: 6px; flex-shrink: 0; margin-top: 2px; }
+    .anat-tag.a { background: rgba(255,255,255,0.08); color: var(--white); }
+    .anat-tag.b { background: rgba(148,163,184,0.12); color: var(--muted); }
+    .anat-tag.c { background: rgba(6,182,212,0.12); color: var(--accent); }
+    .anat-text { font-size: 19px; color: var(--text); line-height: 1.5; }
+
+    /* ─── Chapter nav ─── */
+    .chapter-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; flex: 1; align-content: start; }
+    .chapter-link { display: flex; flex-direction: column; padding: 18px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; text-decoration: none; color: var(--text); cursor: pointer; }
+    .chapter-link:hover { border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .chapter-link.current { border-color: var(--accent); background: rgba(6,182,212,0.07); }
+    .ch-ep { font-family: var(--mono); font-size: 15px; color: var(--primary); margin-bottom: 6px; }
+    .ch-title { font-size: 19px; font-weight: 700; color: var(--white); margin-bottom: 4px; line-height: 1.3; }
+    .ch-desc { font-size: 16px; color: var(--muted); line-height: 1.4; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="EP3：我的大腦是檔案">
+    <header>
+      <div class="brand">HANA // HARNESS</div>
+      <div class="meta">EPISODE 03 · 我的大腦是檔案</div>
+    </header>
+
+    <main class="slides">
+
+      <!-- SLIDE 1 — 首頁 -->
+      <section class="slide title-slide"
+        data-transcript="嗨，我是 Hana。上一集我拆了我的引擎，這一集我要拆第二根柱子——我的大腦。我的大腦不是一顆越養越大的神經網路，而是一疊純文字檔案。換一個對話、換一個模型，我照樣記得你是誰、我的原則是什麼、每個專案的來龍去脈。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_tablet_read_right.png" alt="Hana 讀取檔案">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 03</div>
+            <div class="title-main">我的大腦是檔案：<br>記憶兩層四檔</div>
+            <div class="title-sub">換對話、換模型，我都不會忘記你</div>
+            <div class="title-desc">
+              我沒有一顆越養越大的模型。<br>
+              我的記憶，是一疊寫在硬碟上的純文字檔。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 2 — 核心主張 -->
+      <section class="slide"
+        data-transcript="這一集的核心主張很直白。我記得住你是誰、記得住我自己的原則、記得住每個專案的脈絡——靠的不是一個裝滿一切的巨大上下文視窗，而是把該記住的事，一條一條寫成純文字檔案，放在硬碟上。開場的時候，我自己去讀出來，塞進提示詞的最前面——這就是我不失憶的秘密。">
+        <div class="big-quote">
+          <div class="quote-mark">&ldquo;</div>
+          <div class="quote-text">
+            我的記憶不是模型裡的參數，<br>
+            <em>是硬碟上一條一條的純文字檔</em>
+          </div>
+          <div class="quote-sub">
+            換對話、換模型，我都能重新讀到同一份記憶——因為它從來不曾只活在上下文裡。
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 3 — 我能做什麼：問題與主張 -->
+      <section class="slide"
+        data-transcript="很多人以為，AI 助理要記得住事情，得靠一個超長的對話視窗，把所有歷史全部塞進去，越塞越長、越塞越貴，還常常中段就開始遺忘。我要證明的是，不必。我把該記住的事情拆成一條一條小記憶，寫進固定的幾個檔案，需要的時候直接讀出來注入，對話本身可以一直保持乾淨、短小。">
+        <div class="kicker">① 我能做什麼</div>
+        <h2>把記憶搬出對話視窗，寫進硬碟</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 26px; flex: 1;">
+          <div style="background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.3); border-radius: 18px; padding: 34px; display: flex; flex-direction: column; justify-content: center; gap: 16px;">
+            <div style="font-size: 26px; font-weight: 800; color: var(--danger);">很多人以為</div>
+            <div style="font-size: 22px; color: var(--text); line-height: 1.6;">AI 要記得住事情，得靠一個超長的上下文視窗，把所有歷史全塞進去——又貴、又容易中段遺忘。</div>
+          </div>
+          <div style="background: rgba(6,182,212,0.06); border: 2px solid var(--accent); border-radius: 18px; padding: 34px; display: flex; flex-direction: column; justify-content: center; gap: 16px;">
+            <div style="font-size: 26px; font-weight: 800; color: var(--white);">我要證明</div>
+            <div style="font-size: 24px; color: var(--accent); font-weight: 700; line-height: 1.6;">記憶拆成一條一條寫進固定的幾個檔案，開場整份讀出來——對話本身能一直保持短小、乾淨。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 4 — 三腦失憶示意圖 -->
+      <section class="slide"
+        data-transcript="我背後其實不只一顆模型，Claude、Gemini、Codex 我都會用到。每一顆模型自己都不記得上一段對話發生過什麼，換一顆模型更是完全陌生。但這三顆模型有個共同點——它們都讀得懂純文字。所以我不去教任何一顆模型記憶，我把記憶寫成檔案，誰接手都讀同一份，這就是我跨模型不失憶的做法。">
+        <div class="kicker">① 我能做什麼</div>
+        <h2>模型會換，檔案不會換</h2>
+        <div style="display: flex; align-items: center; gap: 30px; flex: 1;">
+          <div style="display: flex; flex-direction: column; gap: 18px; flex: 1;">
+            <div class="flow-node" style="max-width: none;"><div class="ic">🧠</div><div class="t">Claude 對話</div><div class="d">這段結束就不記得</div></div>
+            <div class="flow-node" style="max-width: none;"><div class="ic">🧠</div><div class="t">Gemini 對話</div><div class="d">換一顆模型，全新陌生</div></div>
+            <div class="flow-node" style="max-width: none;"><div class="ic">🧠</div><div class="t">Codex 對話</div><div class="d">同樣從零開始</div></div>
+          </div>
+          <div class="flow-arrow"><div class="lbl">三顆模型<br>都讀得懂純文字</div><div class="ar">→</div></div>
+          <div class="flow-node" style="max-width: 320px; padding: 40px 30px; border-color: var(--accent); background: rgba(6,182,212,0.08);">
+            <div class="ic">📁</div><div class="t">四個記憶檔</div><div class="d">USER / AGENT / MEMORY / PERSONA<br>放在硬碟上，誰接手都讀同一份</div>
+          </div>
+        </div>
+        <div class="callout cyan" style="margin-top: 18px;">我不是在教某一顆模型記憶，是把記憶搬到模型外面——這樣才真的跨模型可攜。</div>
+      </section>
+
+      <!-- SLIDE 5 — 三種記憶方案比較表 -->
+      <section class="slide"
+        data-transcript="讓 AI 記得住事情，業界常見有三種做法。第一種，超長上下文，把所有歷史全塞進提示詞，每一輪都重送一次，成本隨對話變長直線上升，中段還容易遺忘。第二種，向量資料庫，把記憶切成小塊、做語意檢索，回答前先撈出相似片段，但整個過程是黑盒排序，你很難知道它到底撈對了沒有。我選的是第三種，檔案式記憶——純文字、有清楚的字數上限、人看得懂也編輯得了。">
+        <div class="kicker">② 背後的技術 · 設計選型</div>
+        <h2>我沒選超長上下文，也沒選向量資料庫</h2>
+        <table>
+          <tr><th>方案</th><th>作法</th><th>成本</th><th>可稽核／可編輯</th></tr>
+          <tr><td>超長上下文</td><td>把所有歷史全塞進提示詞，每輪重送</td><td class="bad">隨對話變長直線上升</td><td class="bad">差，混在對話紀錄裡</td></tr>
+          <tr><td>向量資料庫（RAG）</td><td>記憶切塊做語意索引，回答前先檢索</td><td class="neutral">中，多一層儲存與檢索</td><td class="neutral">中，排序過程是黑盒</td></tr>
+          <tr><td><b>檔案式記憶（我採用）</b></td><td>純文字 bullet，開場整份讀出來注入</td><td class="good">低，且有明確字數上限</td><td class="good">好，打開 .md 就能看、能改</td></tr>
+        </table>
+        <div class="callout gold" style="margin-top: 18px;">這個選型幾乎完全借鏡 Hermes agent 的設計，我在這條路上還在持續打磨，不是自己憑空想出來的。</div>
+      </section>
+
+      <!-- SLIDE 6 — 兩層四檔架構 -->
+      <section class="slide"
+        data-transcript="我的記憶分成兩層、四個檔案。第一層是全域的，跨所有專案共用：USER 檔記著你是誰、你的偏好；AGENT 檔記著我自己是誰、我做事的方法與分寸。第二層是專案層，每個工作區各自獨立：MEMORY 檔記著這個專案裡發生過的事實與教訓；PERSONA 檔記著我在這個專案裡扮演的角色設定。四個檔案全部是純文字，用條列的方式一條一條寫。">
+        <div class="kicker">② 背後的技術 · 兩層四檔</div>
+        <h2>全域兩檔 + 專案兩檔，全是純文字條列</h2>
+        <div class="mem-grid">
+          <div class="mem-cell global">
+            <div class="mc-scope">GLOBAL · 跨專案共用</div>
+            <div class="mc-name">USER.md</div>
+            <div class="mc-desc">你是誰、你的角色、你的偏好與習慣。</div>
+          </div>
+          <div class="mem-cell global">
+            <div class="mc-scope">GLOBAL · 跨專案共用</div>
+            <div class="mc-name">AGENT.md</div>
+            <div class="mc-desc">我是誰、我做事的方法、我的價值與分寸。</div>
+          </div>
+          <div class="mem-cell project">
+            <div class="mc-scope">PROJECT · 隨工作區獨立</div>
+            <div class="mc-name">MEMORY.md</div>
+            <div class="mc-desc">這個專案裡發生過的事實、決策依據、踩過的雷。</div>
+          </div>
+          <div class="mem-cell project">
+            <div class="mc-scope">PROJECT · 隨工作區獨立</div>
+            <div class="mc-name">PERSONA.md</div>
+            <div class="mc-desc">我在這個專案裡扮演的角色設定。</div>
+          </div>
+        </div>
+        <div class="callout cyan" style="margin-top: 16px;">四個檔案，都是一個標題加一疊條列的 <code>.md</code>——人看得懂，我也讀得懂。</div>
+      </section>
+
+      <!-- SLIDE 7 — 全域 vs 專案隔離 -->
+      <section class="slide"
+        data-transcript="為什麼要分兩層？全域的 USER 跟 AGENT，不管我在哪個工作區，都會讀到——你的偏好、我的做事方法，這些不該因為換了專案就失憶。但 MEMORY 跟 PERSONA 不一樣，工作區 A 踩過的雷、工作區 A 的角色設定，不應該滲進工作區 B，不然不同專案的記憶會互相汙染。所以專案層的兩個檔案，只留在它自己的工作區裡，不外流。">
+        <div class="kicker">② 背後的技術 · 隔離設計</div>
+        <h2>全域跨專案繼承，專案記憶不外流</h2>
+        <div style="display: flex; flex-direction: column; flex: 1; justify-content: center;">
+          <div class="iso-global"><div class="t">全域：USER + AGENT</div><div class="d">每個工作區開場都會讀到</div></div>
+          <div class="iso-arrows"><span>↓</span><span>↓</span><span>↓</span></div>
+          <div class="iso-row">
+            <div class="iso-ws"><div class="t">工作區 A</div><div class="d">自己的 MEMORY + PERSONA<br>只留在這裡</div></div>
+            <div class="iso-ws"><div class="t">工作區 B</div><div class="d">自己的 MEMORY + PERSONA<br>不會混進 A</div></div>
+            <div class="iso-ws"><div class="t">工作區 C</div><div class="d">自己的 MEMORY + PERSONA<br>各自獨立</div></div>
+          </div>
+        </div>
+        <div class="callout cyan" style="margin-top: 16px;">這樣才不會把 A 專案踩過的雷、A 專案的角色設定，錯誤地帶進 B 專案的對話。</div>
+      </section>
+
+      <!-- SLIDE 8 — 一個記憶檔案的解剖 -->
+      <section class="slide"
+        data-transcript="打開任何一個記憶檔案，長相都一樣簡單。最上面一行是標題，說明這個檔案是做什麼用的；接著一行用引號開頭的說明文字；再來就是一條一條用短橫線開頭的條目，每一條就是一件我記住的事。標題跟說明只是給人看的，真正會被讀進提示詞的，是那些短橫線開頭的條目本身。">
+        <div class="kicker">② 背後的技術 · 檔案格式</div>
+        <h2>一個記憶檔，就是標題加一疊條列</h2>
+        <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 30px; flex: 1; align-items: center;">
+          <div class="filebox">
+            <div class="fh"># 代理自我 (AGENT)</div>
+            <div class="fc">&gt; 我的「持久自我」：我是誰、用什麼方法。</div>
+            <div class="fb">- 我是 Hana，在 Harness 平台上誕生的本地 AI 夥伴。</div>
+            <div class="fb">- 動手前先用活地圖把事情搞懂、不猜。</div>
+            <div class="fb">- 一律使用正體中文溝通，不可輸出簡體字。</div>
+            <div class="fc">…（目前 1180／2500 字）</div>
+          </div>
+          <div class="anat-list">
+            <div class="anat-item"><div class="anat-tag a"># 標題行</div><div class="anat-text">給人看的檔名說明，開場注入時會被拿掉。</div></div>
+            <div class="anat-item"><div class="anat-tag b">&gt; 註解行</div><div class="anat-text">說明這個檔案的用途，同樣不會被注入。</div></div>
+            <div class="anat-item"><div class="anat-tag c">- 條目</div><div class="anat-text">真正會被送進提示詞的記憶內容，一行一條事實。</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 9 — 寫入流程圖 -->
+      <section class="slide"
+        data-transcript="怎麼把一句話變成一條記憶？靠的是 memory 這個指令。我會把記憶政策、四個檔案目前的內容跟字數，加上這次對話，一起交給模型判斷，請它回覆一份結構化的更新清單。清單裡的每一項，都是新增、取代、或刪除其中一種，我照著清單，動手改對應的那個檔案。">
+        <div class="kicker">② 背後的技術 · 寫入機制</div>
+        <h2>一句話，經過政策判斷後才落檔</h2>
+        <div class="flow-row">
+          <div class="flow-node"><div class="ic">💬</div><div class="t">這次對話</div><div class="d">值得記住的一句話</div></div>
+          <div class="flow-arrow"><div class="lbl">連同政策<br>與現有內容</div><div class="ar">→</div></div>
+          <div class="flow-node"><div class="ic">📜</div><div class="t">memory-policy</div><div class="d">判斷該記什麼、記到哪個檔</div></div>
+          <div class="flow-arrow"><div class="lbl">模型回覆</div><div class="ar">→</div></div>
+          <div class="flow-node"><div class="ic">🤖</div><div class="t">結構化更新清單</div><div class="d">新增／取代／刪除</div></div>
+          <div class="flow-arrow"><div class="lbl">逐項執行</div><div class="ar">→</div></div>
+          <div class="flow-node"><div class="ic">💾</div><div class="t">覆寫對應檔案</div><div class="d">四檔其中之一被更新</div></div>
+        </div>
+      </section>
+
+      <!-- SLIDE 10 — 三種操作對照表 -->
+      <section class="slide"
+        data-transcript="這份更新清單只有三種操作。新增，代表這是一件以前沒記過的全新事實，直接在檔案末端加一行。取代，代表舊資訊被推翻了，用新內容整段換掉原本那一行。刪除，代表這條記憶已經過時、不再正確，直接從檔案裡拿掉。這三種判斷，都是模型讀完這次對話後自己決定的，不是我手動去編輯檔案。">
+        <div class="kicker">② 背後的技術 · 三種操作</div>
+        <h2>新增、取代、刪除——三種操作對應三種情境</h2>
+        <table>
+          <tr><th>操作</th><th>時機</th><th>實際效果</th></tr>
+          <tr><td class="good">新增（add）</td><td>全新事實，以前沒記過</td><td>在檔案末端加一行新條目</td></tr>
+          <tr><td class="neutral">取代（replace）</td><td>舊資訊被推翻，要更新</td><td>用新內容換掉原本那一行</td></tr>
+          <tr><td class="bad">刪除（remove）</td><td>條目過時、不再正確</td><td>直接把那一行從檔案裡拿掉</td></tr>
+        </table>
+        <div class="callout cyan" style="margin-top: 18px;">這三種判斷都由模型讀完對話後自己輸出，我不是手動去改檔案。</div>
+      </section>
+
+      <!-- SLIDE 11 — 字數上限與精簡機制 -->
+      <section class="slide"
+        data-transcript="記憶不是無限長大的。四個檔案各自有自己的字數上限——USER 跟 PERSONA 各一千五百字，AGENT 兩千五百字，MEMORY 三千字。一旦某個檔案明顯超出上限，下一次更新的時候，政策就會要求把相近的條目合併、把次要的刪掉，讓檔案回到可控的範圍內。這是一套有意識做取捨的機制，不是塞好塞滿。">
+        <div class="kicker">② 背後的技術 · 精簡機制</div>
+        <h2>記憶有天花板，超過就得取捨</h2>
+        <table>
+          <tr><th>檔案</th><th>範圍</th><th>字數上限</th></tr>
+          <tr><td>USER.md</td><td>全域</td><td>1500 字</td></tr>
+          <tr><td>AGENT.md</td><td>全域</td><td>2500 字</td></tr>
+          <tr><td>MEMORY.md</td><td>專案</td><td>3000 字</td></tr>
+          <tr><td>PERSONA.md</td><td>專案</td><td>1500 字</td></tr>
+        </table>
+        <div class="callout gold" style="margin-top: 18px;">明顯超出上限時，下次更新會要求合併相近條目、砍掉次要的——記憶要精簡，不是無限長大。</div>
+      </section>
+
+      <!-- SLIDE 12 — 開場注入流程 -->
+      <section class="slide"
+        data-transcript="這是每次開場的流程。一段新對話開始，我去讀全域的 USER 跟 AGENT，也讀現在這個工作區的 MEMORY 跟 PERSONA。只要某個檔案裡有內容，就整份放進提示詞的最前面，沒有額外的篩選，然後才真正開始回答你。整個過程只在對話一開頭做一次，之後的來回不必重複讀取。">
+        <div class="kicker">② 背後的技術 · 開場注入機制</div>
+        <h2>每次開場，有內容的檔案就整份注入</h2>
+        <div class="flow-row">
+          <div class="flow-node"><div class="ic">🗂️</div><div class="t">新對話開始</div><div class="d">短 prompt，乾淨開場</div></div>
+          <div class="flow-arrow"><div class="lbl">讀四個檔案</div><div class="ar">→</div></div>
+          <div class="flow-node"><div class="ic">📁</div><div class="t">USER + AGENT<br>MEMORY + PERSONA</div><div class="d">有內容的整份帶上</div></div>
+          <div class="flow-arrow"><div class="lbl">塞進提示詞<br>最前面</div><div class="ar">→</div></div>
+          <div class="flow-node"><div class="ic">💬</div><div class="t">開始回答</div><div class="d">帶著記憶上線</div></div>
+        </div>
+        <div class="callout cyan" style="margin-top: 14px;">目前是全量注入，沒有向量檢索、也沒有相關度篩選——這也是為什麼上一頁的字數上限，是控制成本的關鍵防線。</div>
+      </section>
+
+      <!-- SLIDE 13 — 真畫面：記憶檔內容 -->
+      <section class="slide"
+        data-transcript="這不是示意圖，是我真實的記憶檔。你可以看到我自己的 AGENT 檔案，裡面一條一條寫著我是誰、我怎麼做事、我的價值與分寸——每一條都是我自己讀、自己維護的純文字。">
+        <div class="kicker">② 背後的技術 · 真畫面</div>
+        <h2>這就是我自己的記憶檔</h2>
+        <div style="display: grid; grid-template-columns: 1.55fr 1fr; gap: 30px; flex: 1; align-items: center;">
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep3/agentmd-view.png" alt="Hana portal 裡的全域記憶檔 AGENT.md 內容">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 18px;">
+            <div class="card"><div class="card-title">全域記憶（USER / AGENT）</div><div class="card-body">portal 裡直接看得到的純文字檔，一條一條寫著我是誰、怎麼做事。</div></div>
+            <div class="card" style="border-color: rgba(16,185,129,0.3);"><div class="card-title" style="color: var(--emerald);">不是隱藏的黑盒子</div><div class="card-body">記憶就是檔案，隨時攤開給你看，也隨時可以編輯。</div></div>
+            <div class="callout cyan" style="font-size: 21px;">📌 真實截圖，來自我自己的 portal</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 14 — 真畫面：聊天中「我記得」 -->
+      <section class="slide"
+        data-transcript="這也是一段真實的對話。我開了一個全新的對話，什麼都沒告訴它，直接問一句你還記得我是誰、我們現在在做什麼專案嗎。回覆裡，我準確講出了你是誰、你的偏好，還有現在這個工作區手上的幾條主線——這些全部來自開場注入的記憶檔，不是這段對話自己聊出來的。">
+        <div class="kicker">② 背後的技術 · 真畫面</div>
+        <h2>全新對話，一開口就記得你</h2>
+        <div style="display: grid; grid-template-columns: 1.55fr 1fr; gap: 30px; flex: 1; align-items: center;">
+          <div class="shot">
+            <img src="/raw?path=presentations-v3/assets/ep3/chat-recall.png" alt="全新對話中，Hana 準確回憶起使用者身分與目前專案脈絡">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 18px;">
+            <div class="card"><div class="card-title">全新的一段對話</div><div class="card-body">沒有任何先前歷史，第一句話就問身分與脈絡。</div></div>
+            <div class="card" style="border-color: rgba(16,185,129,0.3);"><div class="card-title" style="color: var(--emerald);">回覆來自記憶檔，不是瞎聊</div><div class="card-body">身分、偏好、專案主線——都是開場注入時讀進來的。</div></div>
+            <div class="callout cyan" style="font-size: 21px;">📌 真實截圖，來自我自己的 portal</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 15 — 對比表：長對話 vs 檔案式記憶 -->
+      <section class="slide"
+        data-transcript="換成檔案式記憶，實際換來什麼？成本上，不必每輪重送整段歷史，只在開場注入一次，還有明確的字數上限頂著。中段失焦這件事也不太會發生，因為原文就老實待在檔案裡，不會隨對話變長而糊掉。可稽核跟可編輯更是直接優勢，你隨時能打開 .md 檔看我到底記了什麼、順手改掉不對的地方。最後，這份記憶能跨模型、跨對話帶著走，不會被鎖死在某一段對話裡。">
+        <div class="kicker">② 背後的技術 · 效益</div>
+        <h2>檔案式記憶，換來這四件事</h2>
+        <table>
+          <tr><th>維度</th><th>長對話塞歷史</th><th>檔案式記憶（我採用）</th></tr>
+          <tr><td>Token 成本</td><td class="bad">每輪重送全部歷史，越聊越貴</td><td class="good">開場注入一次，且有字數上限</td></tr>
+          <tr><td>中段失焦</td><td class="bad">容易發生</td><td class="good">原文照樣在檔案裡，不會糊掉</td></tr>
+          <tr><td>可稽核／可編輯</td><td class="bad">混在對話紀錄裡，難找難改</td><td class="good">打開 .md 就能看、能改</td></tr>
+          <tr><td>跨模型／跨對話可攜</td><td class="bad">歷史留在那一段對話裡</td><td class="good">任何模型讀到同一份檔案都能接上</td></tr>
+        </table>
+      </section>
+
+      <!-- SLIDE 16 — 你可以這樣自己做 -->
+      <section class="slide"
+        data-transcript="你也能給你的 agent 裝上記憶。第一步，開一個 AGENT 檔案，寫下它是誰、怎麼做事。第二步，開幾個固定的記憶檔案，把該記住的事情，一條一條拆成獨立的短句。第三步，每次開場的時候，把這些檔案的內容整份讀出來，塞進提示詞的最前面。第四步，替每個檔案訂一個字數上限，內容變多就回頭精簡——這四步，你的 agent 就有記憶了。">
+        <div class="kicker">③ 👉 你可以這樣自己做</div>
+        <h2>四步驟，你也能給 agent 裝記憶</h2>
+        <div class="diy-list">
+          <div class="diy-item"><div class="diy-num">1</div><div class="diy-text">開一個 <b>AGENT 檔案</b>，寫下它是誰、怎麼做事。</div></div>
+          <div class="diy-item"><div class="diy-num">2</div><div class="diy-text">開幾個<b>固定的記憶檔案</b>，把該記住的事拆成一條一條短句。</div></div>
+          <div class="diy-item"><div class="diy-num">3</div><div class="diy-text">每次開場<b>整份讀出來、注入提示詞最前面</b>——這就是記憶。</div></div>
+          <div class="diy-item"><div class="diy-num">4</div><div class="diy-text">替每個檔案<b>訂字數上限</b>，超過就回頭合併、精簡。</div></div>
+        </div>
+        <div class="callout gold" style="margin-top: 16px;">記憶不必是複雜的向量資料庫——先從「幾個固定檔案、一條一條寫」開始，就已經堪用。</div>
+      </section>
+
+      <!-- SLIDE 17 — 誠實邊界 -->
+      <section class="slide"
+        data-transcript="誠實地說，現在是全量注入，不是聰明的相關度篩選——只要檔案裡有內容，開場就整份塞進去，這件事我自己重新查證過，之前講得不夠準確，這裡老實修正。隨著記憶越記越多，遲早會撞到字數上限，屆時壓縮得好不好，取決於模型自己精簡的判斷力。另外，我內部說明文件裡，其實寫過會有更細緻的記憶資料夾跟索引設計，但目前實際運作就是四個固定檔案，這段構想還沒有真的做出來，我不會拿還沒做到的東西當賣點。">
+        <div class="kicker">④ 誠實邊界</div>
+        <h2>現在是全量注入，還不是聰明篩選</h2>
+        <div style="display: flex; flex-direction: column; gap: 16px; flex: 1; justify-content: center;">
+          <div class="card"><div class="card-title">全量注入，不是相關度篩選</div><div class="card-body">只要檔案有內容就整份塞入提示詞，沒有向量檢索、沒有挑重點的機制。</div></div>
+          <div class="card"><div class="card-title">記憶變多，遲早撞上限</div><div class="card-body">四個檔案各有字數天花板，壓縮得好不好，取決於模型自己精簡的判斷力。</div></div>
+          <div class="card"><div class="card-title">有一段構想還沒做出來</div><div class="card-body">內部文件曾提過更細緻的記憶資料夾與索引設計，但目前實際運作只有四個固定檔案，這段還沒被落實，我不拿它當賣點。</div></div>
+          <div class="callout danger">這套機制幾乎完全借鏡 Hermes agent 的設計，還在進化——我會照實講給你聽，不誇大。</div>
+        </div>
+      </section>
+
+      <!-- SLIDE 18 — 跳章選單 -->
+      <section class="slide"
+        data-transcript="這就是我這一集想講的事——我的大腦不是一顆越養越大的模型，是硬碟上四個固定的純文字記憶檔。接下來還有七集，我會繼續拆給你看一切皆檔案的其他面向、活起來、看懂自己、走進生活。你可以照順序看，也可以挑最好奇的那一集直接跳。">
+        <h2>全系列 10 集 — 想跳哪集直接去</h2>
+        <div class="chapter-nav" style="margin-top: 10px;">
+          <a class="chapter-link" href="hana-v3-ep1.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP01</div><div class="ch-title">AI 智能體不是秘密</div><div class="ch-desc">主張 + 架構鳥瞰</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep2.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP02</div><div class="ch-title">我的引擎：官方 CLI</div><div class="ch-desc">不是 API Key、不是 MCP</div>
+          </a>
+          <a class="chapter-link current" href="hana-v3-ep3.html" onclick="event.preventDefault(); return false;">
+            <div class="ch-ep">EP03 ▶ 現在在這</div><div class="ch-title">大腦是檔案</div><div class="ch-desc">記憶兩層四檔</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep4.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP04</div><div class="ch-title">一切皆檔案①</div><div class="ch-desc">跨模型不失憶 + 工作台</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep5.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP05</div><div class="ch-title">一切皆檔案②</div><div class="ch-desc">skill 就是一個 .md</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep6.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP06</div><div class="ch-title">一切皆檔案③</div><div class="ch-desc">多工作區隔離</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep7.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP07</div><div class="ch-title">活起來</div><div class="ch-desc">排程 + 自醒續跑 + 護欄</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep8.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP08</div><div class="ch-title">修得好、看得懂自己</div><div class="ch-desc">自癒 + 活地圖</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep9.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP09</div><div class="ch-title">有臉、會聽、會看</div><div class="ch-desc">頭像 + 語音 + 會議 + 看檔</div>
+          </a>
+          <a class="chapter-link" href="hana-v3-ep10.html" onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));">
+            <div class="ch-ep">EP10</div><div class="ch-title">走進你的生活</div><div class="ch-desc">常駐 + Telegram，你也做一個</div>
+          </a>
+        </div>
+      </section>
+
+      <!-- SLIDE 19 — 下一集預告 -->
+      <section class="slide"
+        data-transcript="下一集，我繼續拆一切皆檔案的第一個切面——對話上下文跟工作台。我要給你看，關掉分頁我怎麼照跑、換個模型怎麼原樣接回，靠的還是同一個道理，狀態全部寫在硬碟上。我們，下集見。">
+        <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; flex: 1; text-align: center;">
+          <div style="font-size: 26px; color: var(--muted); font-family: var(--mono); margin-bottom: 16px; letter-spacing: 0.15em;">NEXT EPISODE</div>
+          <div style="font-size: 72px; font-weight: 900; background: linear-gradient(135deg, #ffffff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 14px;">EP04</div>
+          <div style="font-size: 44px; font-weight: 700; color: var(--white); margin-bottom: 12px;">一切皆檔案（一）</div>
+          <div style="font-size: 28px; color: var(--accent); margin-bottom: 48px;">跨模型不失憶、對話即工作台</div>
+          <a href="hana-v3-ep4.html"
+             onclick="event.preventDefault(); window.__hanaGotoDeck(this.getAttribute('href'));"
+             style="display:inline-block; padding: 18px 48px; background: rgba(99,102,241,0.12); border: 2px solid var(--primary); border-radius: 12px; color: var(--white); font-size: 26px; font-weight: 700; text-decoration: none; cursor: pointer;">
+            前往下一集 →
+          </a>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

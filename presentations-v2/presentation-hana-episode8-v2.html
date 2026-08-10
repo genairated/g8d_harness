@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v2 — EP8：我能安全地修好我自己＋我還在長</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* EP8 v2 — 自癒四步＋成長收尾（深夜修復・暖琥珀配色） */
+    :root {
+      --bg: #060508;
+      --card: rgba(6,5,8,0.92);
+      --border: rgba(245,158,11,0.18);
+      --primary: #f59e0b;
+      --primary-glow: rgba(245,158,11,0.30);
+      --accent: #fbbf24;
+      --teal: #34d399;
+      --cyan: #06b6d4;
+      --violet: #a78bfa;
+      --purple: #c084fc;
+      --indigo: #6366f1;
+      --gold: #f59e0b;
+      --amber: #fbbf24;
+      --green: #34d399;
+      --danger: #ef4444;
+      --orange: #fb923c;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(245,158,11,0.10) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 80%, rgba(52,211,153,0.07) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 50%, rgba(99,102,241,0.05) 0%, transparent 70%),
+        linear-gradient(180deg, #060508 0%, #020204 100%) !important;
+    }
+
+    header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 60px;
+      z-index: 50;
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--primary); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 96px 96px 56px !important;
+      background: linear-gradient(145deg, rgba(6,5,8,0.95), rgba(2,2,4,0.97)) !important;
+      border-color: rgba(245,158,11,0.10) !important;
+      color: var(--text) !important;
+      font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 50px;
+      font-weight: 800;
+      color: var(--white);
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      line-height: 1.2;
+    }
+    .slide h2::before { content: "— "; color: var(--primary); }
+    .slide p { font-size: 28px !important; line-height: 1.65; color: var(--text); }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    .title-left {
+      width: 44%;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      background: linear-gradient(160deg, rgba(245,158,11,0.10) 0%, transparent 70%);
+      border-right: 1px solid rgba(245,158,11,0.14);
+      overflow: visible;
+      position: relative;
+    }
+    .title-left img {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 900px;
+      max-height: none;
+      object-fit: contain;
+      object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(245,158,11,0.40));
+    }
+    .title-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px 80px 80px 60px;
+    }
+    .ep-badge {
+      font-family: var(--mono);
+      font-size: 18px;
+      color: var(--primary);
+      letter-spacing: 0.2em;
+      border: 1px solid var(--primary);
+      display: inline-block;
+      padding: 6px 20px;
+      border-radius: 4px;
+      background: rgba(245,158,11,0.08);
+      margin-bottom: 24px;
+      align-self: flex-start;
+    }
+    .title-main {
+      font-size: 68px;
+      font-weight: 900;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 0%, #fde68a 40%, #fb923c 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 18px;
+    }
+    .title-sub {
+      font-size: 28px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-bottom: 44px;
+    }
+    .title-desc {
+      font-size: 23px;
+      color: rgba(253,230,138,0.70);
+      line-height: 1.7;
+      border-left: 3px solid var(--primary);
+      padding-left: 20px;
+    }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 22px; }
+    th {
+      background: rgba(245,158,11,0.12);
+      color: var(--accent);
+      font-weight: 700;
+      padding: 14px 20px;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 20px;
+    }
+    td { padding: 13px 20px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.45; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good    { color: var(--green); }
+    td.bad     { color: var(--danger); }
+    td.gold    { color: var(--gold); }
+    td.indigo  { color: var(--indigo); }
+    td.cyan    { color: var(--cyan); }
+    td.violet  { color: var(--violet); }
+    td.accent  { color: var(--accent); }
+    td.amber   { color: var(--amber); }
+    td.orange  { color: var(--orange); }
+    td.muted   { color: var(--muted); font-size: 20px; }
+
+    /* ─── Step flow (自癒四步) ─── */
+    .step-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      flex: 1;
+      margin-top: 10px;
+    }
+    .step-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 18px;
+      border-radius: 18px;
+      border: 2px solid rgba(245,158,11,0.22);
+      background: rgba(245,158,11,0.05);
+      text-align: center;
+      position: relative;
+    }
+    .step-item.highlight {
+      border-color: rgba(245,158,11,0.55);
+      background: rgba(245,158,11,0.10);
+    }
+    .step-num {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #000;
+      font-weight: 900;
+      font-size: 20px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 14px;
+      flex-shrink: 0;
+    }
+    .step-icon { font-size: 36px; margin-bottom: 12px; }
+    .step-title { font-size: 19px; font-weight: 800; color: var(--white); margin-bottom: 8px; }
+    .step-desc  { font-size: 15px; color: var(--muted); line-height: 1.5; }
+    .step-arrow {
+      display: flex;
+      align-items: center;
+      padding: 0 6px;
+      font-size: 28px;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+
+    /* ─── Closed loop ─── */
+    .loop-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex: 1;
+      margin-top: 10px;
+    }
+    .loop-node {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 22px 14px;
+      border-radius: 14px;
+      text-align: center;
+      border: 1.5px solid rgba(245,158,11,0.20);
+      background: rgba(245,158,11,0.04);
+    }
+    .loop-node.start { border-color: rgba(99,102,241,0.35); background: rgba(99,102,241,0.07); }
+    .loop-node.end   { border-color: rgba(52,211,153,0.35); background: rgba(52,211,153,0.06); }
+    .loop-icon { font-size: 30px; margin-bottom: 8px; }
+    .loop-label { font-size: 16px; font-weight: 700; color: var(--white); line-height: 1.4; }
+    .loop-sub   { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .loop-arrow {
+      padding: 0 4px;
+      font-size: 24px;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+    .loop-return {
+      width: 100%;
+      text-align: center;
+      margin-top: 14px;
+      font-size: 15px;
+      color: rgba(245,158,11,0.60);
+      font-family: var(--mono);
+    }
+
+    /* ─── Montage cards ─── */
+    .montage-grid {
+      display: flex;
+      gap: 24px;
+      flex: 1;
+      margin-top: 10px;
+    }
+    .montage-card {
+      flex: 1;
+      border-radius: 20px;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .montage-card.amber  { background: rgba(245,158,11,0.06); border: 2px solid rgba(245,158,11,0.25); }
+    .montage-card.cyan   { background: rgba(6,182,212,0.05);  border: 2px solid rgba(6,182,212,0.22); }
+    .montage-card.indigo { background: rgba(99,102,241,0.06); border: 2px solid rgba(99,102,241,0.25); }
+    .montage-icon  { font-size: 40px; }
+    .montage-title { font-size: 21px; font-weight: 800; color: var(--white); line-height: 1.3; }
+    .montage-desc  { font-size: 16px; color: var(--muted); line-height: 1.6; flex: 1; }
+    .montage-tag   {
+      font-size: 13px; font-family: var(--mono);
+      padding: 4px 12px; border-radius: 20px;
+      background: rgba(255,255,255,0.05);
+      color: var(--muted);
+      align-self: flex-start;
+    }
+
+    /* ─── Growth curve ─── */
+    .growth-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+    .growth-svg-wrap {
+      width: 680px;
+      height: 220px;
+      position: relative;
+    }
+    .growth-svg-wrap svg { width: 100%; height: 100%; }
+    .growth-labels {
+      display: flex;
+      justify-content: space-between;
+      width: 680px;
+      font-size: 14px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .growth-today-tag {
+      background: rgba(245,158,11,0.14);
+      border: 1.5px solid rgba(245,158,11,0.45);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 16px;
+      padding: 8px 22px;
+      border-radius: 8px;
+    }
+    .growth-honest {
+      font-size: 20px;
+      color: rgba(245,158,11,0.70);
+      text-align: center;
+      line-height: 1.7;
+      max-width: 800px;
+    }
+
+    /* ─── Kicker / caption ─── */
+    .kicker {
+      font-family: var(--mono);
+      font-size: 16px;
+      letter-spacing: 0.15em;
+      color: var(--primary);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    /* ─── Split layout ─── */
+    .split { display: flex; gap: 28px; flex: 1; margin-top: 8px; }
+    .split-col { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ─── Compare block ─── */
+    .compare-wrap {
+      flex: 1;
+      display: flex;
+      gap: 20px;
+      margin-top: 8px;
+      align-items: stretch;
+    }
+    .compare-col {
+      flex: 1;
+      border-radius: 18px;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .compare-col.bad  { background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.22); }
+    .compare-col.good { background: rgba(52,211,153,0.05); border: 2px solid rgba(52,211,153,0.22); }
+    .compare-head {
+      display: flex; align-items: center; gap: 12px;
+      font-size: 22px; font-weight: 800; color: var(--white);
+    }
+    .compare-badge {
+      font-size: 13px; font-family: var(--mono); padding: 4px 14px;
+      border-radius: 20px; flex-shrink: 0;
+    }
+    .compare-badge.bad  { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); color: var(--danger); }
+    .compare-badge.good { background: rgba(52,211,153,0.10); border: 1px solid rgba(52,211,153,0.35); color: var(--green); }
+    .compare-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      font-size: 17px; color: var(--muted); line-height: 1.55;
+    }
+    .compare-dot { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
+
+    /* ─── Shield row (三道保險) ─── */
+    .shield-row {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      margin-top: 10px;
+    }
+    .shield-card {
+      flex: 1;
+      border-radius: 18px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 10px;
+    }
+    .shield-card.s1 { background: rgba(99,102,241,0.07); border: 2px solid rgba(99,102,241,0.28); }
+    .shield-card.s2 { background: rgba(245,158,11,0.07); border: 2px solid rgba(245,158,11,0.28); }
+    .shield-card.s3 { background: rgba(52,211,153,0.06); border: 2px solid rgba(52,211,153,0.26); }
+    .shield-icon  { font-size: 38px; }
+    .shield-title { font-size: 18px; font-weight: 800; color: var(--white); }
+    .shield-desc  { font-size: 15px; color: var(--muted); line-height: 1.55; }
+
+    /* ─── Payoff banner ─── */
+    .payoff-banner {
+      padding: 22px 32px;
+      border-radius: 18px;
+      background: rgba(245,158,11,0.08);
+      border: 2px solid rgba(245,158,11,0.32);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .payoff-icon { font-size: 38px; flex-shrink: 0; }
+    .payoff-body { flex: 1; }
+    .payoff-title { font-size: 22px; font-weight: 800; color: var(--accent); margin-bottom: 6px; }
+    .payoff-desc  { font-size: 18px; color: var(--muted); line-height: 1.6; }
+
+    /* ─── Chapter menu ─── */
+    .chapter-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      flex: 1;
+      margin-top: 8px;
+    }
+    .chapter-link {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 22px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1.5px solid rgba(255,255,255,0.07);
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .chapter-link:hover {
+      background: rgba(245,158,11,0.08);
+      border-color: rgba(245,158,11,0.35);
+    }
+    .chapter-link.current {
+      background: rgba(245,158,11,0.07);
+      border-color: rgba(245,158,11,0.35);
+    }
+    .chapter-ep {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--primary);
+      flex-shrink: 0;
+      min-width: 36px;
+    }
+    .chapter-info { flex: 1; }
+    .chapter-title { font-size: 17px; font-weight: 700; color: var(--white); }
+    .chapter-sub   { font-size: 14px; color: var(--muted); margin-top: 2px; }
+
+    /* ─── Finale card ─── */
+    .finale-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      position: relative;
+    }
+    .finale-avatar img {
+      height: 380px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 40px rgba(245,158,11,0.40));
+    }
+    .finale-title {
+      font-size: 64px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #ffffff 0%, #fde68a 50%, #fb923c 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-align: center;
+    }
+    .finale-sub {
+      font-size: 24px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.7;
+      max-width: 900px;
+    }
+
+    /* ─── Info badge ─── */
+    .info-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-family: var(--mono);
+      padding: 6px 16px;
+      border-radius: 20px;
+      background: rgba(245,158,11,0.08);
+      border: 1px solid rgba(245,158,11,0.28);
+      color: var(--muted);
+      margin-top: 10px;
+    }
+    .info-badge span { color: var(--accent); }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="EP8 — 自癒四步＋成長收尾">
+    <header>
+      <div class="brand">HANA / HARNESS</div>
+      <div class="meta">EPISODE 08 · 我能安全地修好我自己＋我還在長</div>
+    </header>
+    <main class="slides">
+
+      <!-- ══════════════════════════════════════
+           頁 1 — 標題（Hana 形象 + 大字）
+           ══════════════════════════════════════ -->
+      <section class="slide title-slide"
+        data-transcript="這是這個系列的壓軸，也是 Charles 最在意的一件事：我能修改我自己這個程式，而且就算改壞了，也能自動退回來。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_headset_idea_right.png" alt="Hana">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 08</div>
+            <div class="title-main">我能安全地<br>修好我自己</div>
+            <div class="title-sub">改壞了也能自動退回來</div>
+            <div class="title-desc">自癒四步防護網 ＋ 最近我又學會了什麼</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 2 — 痛點：OpenClaw 改壞自己回不來（對比表）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="像 OpenClaw 這類強大的代理，最為人詬病的一點，就是當它修改自己的程式時，很容易把自己改壞。本地端沒有分支的概念，一旦改到正在執行的檔案，程式就卡死，重啟也回不來，甚至連開都開不起來。Charles 最在意這個問題，所以我們先把它解決了。">
+        <h2>這是舊痛點：改壞自己回不來</h2>
+        <div class="compare-wrap">
+          <div class="compare-col bad">
+            <div class="compare-head">
+              <span class="compare-badge bad">✗ OpenClaw</span>
+              強大但脆弱
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🔴</span>
+              <span>改壞自身程式 → 卡死，重啟救不回</span>
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🔴</span>
+              <span>本地端沒有版本快照概念</span>
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🔴</span>
+              <span>改到正在執行的檔案 → 連開都開不起來</span>
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🔴</span>
+              <span>唯一解法：手動備份、手動還原</span>
+            </div>
+          </div>
+          <div class="compare-col good">
+            <div class="compare-head">
+              <span class="compare-badge good">✓ Hana</span>
+              改壞自動退回
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🟢</span>
+              <span>改之前先做不可變快照</span>
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🟢</span>
+              <span>獨立連接埠冒煙測試，失敗就留在舊版</span>
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🟢</span>
+              <span>監督者統一管重啟，不觸碰正在跑的正式區</span>
+            </div>
+            <div class="compare-item">
+              <span class="compare-dot">🟢</span>
+              <span>失敗自動回滾，最壞結果 ＝ 退回改之前</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 3 — 自癒四步（流程圖）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="那我到底怎麼自癒？每次要上線前，我會走四個防護步驟。第一，做一份不可變的快照備份。第二，在一個獨立的連接埠上做冒煙測試。第三，通過了，才由監督者重新啟動我。第四，萬一失敗，就自動回滾到上一個好版本。這讓改壞自己，變成一件安全的事。">
+        <h2>自癒四步防護網</h2>
+        <div class="step-flow">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-icon">📦</div>
+            <div class="step-title">不可變快照</div>
+            <div class="step-desc">改之前先把現在這個版本封存，任何時候都能退回</div>
+          </div>
+          <div class="step-arrow">→</div>
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-icon">🔬</div>
+            <div class="step-title">獨立埠冒煙測試</div>
+            <div class="step-desc">在另一個連接埠啟動新版本，跑測試、不碰正在跑的正式區</div>
+          </div>
+          <div class="step-arrow">→</div>
+          <div class="step-item highlight">
+            <div class="step-num">3</div>
+            <div class="step-icon">🛡️</div>
+            <div class="step-title">監督者重啟</div>
+            <div class="step-desc">測試通過，才由監督者把正式區切換到新版本</div>
+          </div>
+          <div class="step-arrow">→</div>
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-icon">↩️</div>
+            <div class="step-title">失敗自動回滾</div>
+            <div class="step-desc">任一步出錯，自動退回快照，系統永遠能開起來</div>
+          </div>
+        </div>
+        <div class="payoff-banner" style="margin-top:22px;">
+          <div class="payoff-icon">💡</div>
+          <div class="payoff-body">
+            <div class="payoff-title">最壞的情況，只是退回改之前的我</div>
+            <div class="payoff-desc">你不會落到一個開不起來的系統</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 4 — 為什麼放心改自己（三道保險）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="正因為改壞了會自動退回，我修改我自己的時候，其實很放心。最壞的情況，不過就是退回到改之前的我，你不會落到一個開不起來的系統。">
+        <h2>為什麼放心改自己</h2>
+        <div class="kicker" style="margin-bottom:4px;">三道保險，缺一不可</div>
+        <div class="shield-row">
+          <div class="shield-card s1">
+            <div class="shield-icon">📦</div>
+            <div class="shield-title">不可變版本</div>
+            <div class="shield-desc">快照在改之前就做好，之後無論如何都拿得回來</div>
+          </div>
+          <div class="shield-card s2">
+            <div class="shield-icon">👁️</div>
+            <div class="shield-title">監督者</div>
+            <div class="shield-desc">所有重啟都由監督者統一管，不讓 Hana 自己切換自己正在跑的正式區</div>
+          </div>
+          <div class="shield-card s3">
+            <div class="shield-icon">↩️</div>
+            <div class="shield-title">自動回滾</div>
+            <div class="shield-desc">冒煙測試失敗，自動退回快照，不需人工介入</div>
+          </div>
+        </div>
+        <p style="font-size:22px;color:rgba(245,158,11,0.75);margin-top:20px;text-align:center;">
+          三道保險合力，讓「改自己」這件本來很危險的事，變得很安全
+        </p>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 5 — 思維進化：先懂再改（閉環圖）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="而且在修改自己時，我不再只是憑感覺對話。我替自己的自癒，引進了 Charles 的駕馭工程方法：先用上一集那兩張活地圖做影響分析、對照規格，確認懂了才動手，而且只動最小的範圍。先懂再改，改完驗證，這是一個閉環。">
+        <h2>思維進化：先懂再改</h2>
+        <div class="loop-row">
+          <div class="loop-node start">
+            <div class="loop-icon">🗺️</div>
+            <div class="loop-label">查活地圖</div>
+            <div class="loop-sub">CodeGraph + DocGraph</div>
+          </div>
+          <div class="loop-arrow">→</div>
+          <div class="loop-node">
+            <div class="loop-icon">🔍</div>
+            <div class="loop-label">影響分析</div>
+            <div class="loop-sub">會動到哪、會壞什麼</div>
+          </div>
+          <div class="loop-arrow">→</div>
+          <div class="loop-node">
+            <div class="loop-icon">✏️</div>
+            <div class="loop-label">最小範圍改</div>
+            <div class="loop-sub">對照 spec，只動必要</div>
+          </div>
+          <div class="loop-arrow">→</div>
+          <div class="loop-node">
+            <div class="loop-icon">🚀</div>
+            <div class="loop-label">統一部署</div>
+            <div class="loop-sub">Deploy_Harness.ps1</div>
+          </div>
+          <div class="loop-arrow">→</div>
+          <div class="loop-node end">
+            <div class="loop-icon">✅</div>
+            <div class="loop-label">通過 → 上線</div>
+            <div class="loop-sub">冒煙測試全過</div>
+          </div>
+          <div class="loop-arrow">↩</div>
+          <div class="loop-node" style="border-color:rgba(239,68,68,0.30);background:rgba(239,68,68,0.05);">
+            <div class="loop-icon">🔄</div>
+            <div class="loop-label">失敗 → 回滾</div>
+            <div class="loop-sub">自動退回快照</div>
+          </div>
+        </div>
+        <div class="loop-return">↑ 有教訓就沉澱回記憶與 spec，閉環繼續 ↑</div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 6 — Deploy 的角色
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="這一切都收斂在一個統一的部署流程裡。我改完自己，一律走它上線，它會自動跑冒煙測試、失敗就回滾。我不會手搬檔案、不會直接動正在跑的正式區——這是我給自己定的規矩。">
+        <h2>Deploy 是唯一入口</h2>
+        <div class="split">
+          <div class="split-col" style="flex:1.1;">
+            <div style="background:rgba(245,158,11,0.07);border:2px solid rgba(245,158,11,0.28);border-radius:18px;padding:28px 26px;display:flex;flex-direction:column;gap:18px;">
+              <div style="font-size:24px;font-weight:800;color:var(--accent);">Deploy_Harness.ps1</div>
+              <div style="font-size:17px;color:var(--muted);line-height:1.6;">所有自我修改的唯一上線通道：做快照 → 啟獨立埠 → 冒煙測試 → 切換 or 回滾</div>
+              <div style="font-size:16px;color:rgba(52,211,153,0.80);">✓ 自動快照備份<br>✓ 冒煙測試全過才切換<br>✓ 失敗自動回滾</div>
+            </div>
+          </div>
+          <div class="split-col" style="flex:1;gap:14px;">
+            <div style="background:rgba(239,68,68,0.05);border:1.5px solid rgba(239,68,68,0.22);border-radius:14px;padding:18px 20px;">
+              <div style="color:var(--danger);font-weight:700;font-size:17px;">✗ 絕對禁止</div>
+              <div style="color:var(--muted);font-size:15px;margin-top:6px;line-height:1.6;">手搬檔案到正式區<br>直接修改正在執行的程式<br>動唯讀的 .releases 目錄</div>
+            </div>
+            <div style="background:rgba(52,211,153,0.05);border:1.5px solid rgba(52,211,153,0.22);border-radius:14px;padding:18px 20px;">
+              <div style="color:var(--green);font-weight:700;font-size:17px;">✓ 正確流程</div>
+              <div style="color:var(--muted);font-size:15px;margin-top:6px;line-height:1.6;">讀圖譜 → 找根因 → 改最小範圍 → Deploy → 驗證通過</div>
+            </div>
+          </div>
+        </div>
+        <div class="info-badge" style="align-self:center;margin-top:14px;">
+          <span>📌</span> git 由人類掌控，Hana 不自行 commit 或 push
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 6b — 真實系統畫面：自癒的活證據
+           ══════════════════════════════════════ -->
+      <section class="slide media"
+        data-transcript="這張不是示意圖，是我剛剛真的打開的畫面。我開了系統裡回報目前版本的那個網址，它老實告訴我，現在正在服務你的這個我，是第一百七十九個版本。我存放版本的資料夾裡，躺著一百七十九份不可變的舊版本，每一份都唯讀、都不能被我改動。上線走的永遠是同一條路：先做快照，冒煙測試全過才切換，失敗就自動退回上一個健康版本。這就是我說的，改壞自己是安全的，因為證據就長在硬碟裡。">
+        <h2>真實畫面 — 我正在跑的那個版本</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.6; display: flex; align-items: center; justify-content: center; min-height: 0;">
+            <img src="/raw?path=presentations-v2/assets/ep8/self-heal-running-version-real.png" alt="自癒真實畫面：目前運行版本 api ping"
+                 style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(245,158,11,0.35); box-shadow: 0 0 60px rgba(245,158,11,0.18);">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="rel-row" style="border-color: rgba(245,158,11,0.30); background: rgba(245,158,11,0.06);">
+              <div class="rel-icon">🟢</div>
+              <div class="rel-body">
+                <div class="rel-title">現正服務中：v179</div>
+                <div class="rel-desc">這是我剛剛真的打的網址，它老實回報自己是第 179 版</div>
+              </div>
+              <div class="rel-badge indigo">live</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(245,158,11,0.30); background: rgba(245,158,11,0.06);">
+              <div class="rel-icon">🗄️</div>
+              <div class="rel-body">
+                <div class="rel-title">.releases 裡躺著 179 份唯讀舊版本</div>
+                <div class="rel-desc">每一版都不可變，我自己也改不動它們</div>
+              </div>
+              <div class="rel-badge cyan">immutable</div>
+            </div>
+            <div class="rel-row" style="border-color: rgba(245,158,11,0.30); background: rgba(245,158,11,0.06);">
+              <div class="rel-icon">↩</div>
+              <div class="rel-body">
+                <div class="rel-title">last-known-good 同樣指到 v179</div>
+                <div class="rel-desc">這版已健康跑滿 30 秒，被記成「上一個好版本」，回滾隨時有備援</div>
+              </div>
+              <div class="rel-badge indigo">rollback ready</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 7 — montage 開場（轉場）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="自癒講完，這個系列也快收尾了。最後，讓我用一段快剪，給你看我最近又學會了哪些新本事——畢竟，我一直在長。">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:32px;">
+          <div class="kicker" style="font-size:20px;letter-spacing:0.25em;">WHAT I LEARNED RECENTLY</div>
+          <div style="font-size:72px;font-weight:900;text-align:center;line-height:1.1;background:linear-gradient(135deg,#fff 0%,#fde68a 45%,#fb923c 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+            最近我又學會了什麼
+          </div>
+          <div style="display:flex;gap:24px;margin-top:16px;">
+            <div style="font-size:40px;text-align:center;">📄</div>
+            <div style="font-size:40px;text-align:center;">🌐</div>
+            <div style="font-size:40px;text-align:center;">🎞️</div>
+          </div>
+          <div style="font-size:24px;color:var(--muted);text-align:center;max-width:700px;line-height:1.7;">
+            文件、瀏覽器、簡報——三個新本事，一次告訴你
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 8 — 新本事一：Word 變可管理文件
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="第一個：我能把客戶給的 Word 文件，變成可管理、可編輯的文件。我把它轉成好讀的格式，把裡面的流程圖變成可以拖拉編輯的泳道圖，你改完，我再把改動寫回原本的 Word 真身，連頁碼和格式都不碰。">
+        <h2>新本事一：把 Word 變成可管理文件</h2>
+        <div class="montage-grid">
+          <div class="montage-card amber">
+            <div class="montage-icon">📥</div>
+            <div class="montage-title">客戶 Word 進來</div>
+            <div class="montage-desc">原始 .docx 格式、有流程圖、有格式設定，通常是不好改的黑盒子</div>
+            <div class="montage-tag">input: .docx</div>
+          </div>
+          <div class="montage-card cyan">
+            <div class="montage-icon">🔄</div>
+            <div class="montage-title">我把它變成可編輯</div>
+            <div class="montage-desc">Word 轉成好讀格式；流程圖轉成可拖拉編輯的 BPMN 泳道圖，你直接在網頁上改</div>
+            <div class="montage-tag">處理：word-to-md + BPMN</div>
+          </div>
+          <div class="montage-card" style="background:rgba(52,211,153,0.05);border:2px solid rgba(52,211,153,0.22);">
+            <div class="montage-icon">✍️</div>
+            <div class="montage-title">改完回寫 Word 真身</div>
+            <div class="montage-desc">你的修改，我再寫回原本的 Word 格式，連頁碼和排版都盡量保留</div>
+            <div class="montage-tag">output: .docx 回寫</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 9 — 新本事二：browser-pilot（EP1 第二次 payoff）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="第二個，要揭曉 EP1 賣的第二個關子了。EP1 我說，這整套簡報的畫面截圖都是我自己擷的。靠的就是這個：我自己開瀏覽器、自己操作、看對了畫面，才按下截圖。是一個感知到行動的迴圈，不是亂截一通。">
+        <h2>新本事二：browser-pilot 自己看、自己擷</h2>
+        <div class="kicker">第二次 payoff — 呼應 EP1「畫面我自己擷的」</div>
+        <div style="flex:1;display:flex;gap:24px;margin-top:8px;">
+          <div style="flex:1;display:flex;flex-direction:column;gap:16px;">
+            <div style="background:rgba(6,182,212,0.06);border:2px solid rgba(6,182,212,0.22);border-radius:18px;padding:24px;display:flex;align-items:center;gap:18px;">
+              <span style="font-size:32px;">👁️</span>
+              <div>
+                <div style="font-size:19px;font-weight:800;color:var(--white);">感知</div>
+                <div style="font-size:15px;color:var(--muted);margin-top:4px;">我自己開瀏覽器、看畫面是不是符合預期</div>
+              </div>
+            </div>
+            <div style="background:rgba(245,158,11,0.06);border:2px solid rgba(245,158,11,0.22);border-radius:18px;padding:24px;display:flex;align-items:center;gap:18px;">
+              <span style="font-size:32px;">⚡</span>
+              <div>
+                <div style="font-size:19px;font-weight:800;color:var(--white);">行動</div>
+                <div style="font-size:15px;color:var(--muted);margin-top:4px;">點擊、填表、滾動——在瀏覽器裡真的操作</div>
+              </div>
+            </div>
+            <div style="background:rgba(52,211,153,0.05);border:2px solid rgba(52,211,153,0.22);border-radius:18px;padding:24px;display:flex;align-items:center;gap:18px;">
+              <span style="font-size:32px;">📸</span>
+              <div>
+                <div style="font-size:19px;font-weight:800;color:var(--white);">看對了才擷圖</div>
+                <div style="font-size:15px;color:var(--muted);margin-top:4px;">確認畫面正確後，才截圖存下來——不是亂截一通</div>
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:20px;">
+            <div style="background:rgba(245,158,11,0.06);border:2px solid rgba(245,158,11,0.30);border-radius:18px;padding:26px;text-align:center;">
+              <div style="font-size:40px;margin-bottom:12px;">🌐</div>
+              <div style="font-size:22px;font-weight:800;color:var(--accent);">browser-pilot</div>
+              <div style="font-size:16px;color:var(--muted);margin-top:8px;line-height:1.6;">感知到行動迴圈<br>無頭模式在背景默默跑<br>看對才存，不猜</div>
+            </div>
+            <div class="payoff-banner" style="margin-top:0;padding:18px 22px;">
+              <div class="payoff-icon" style="font-size:28px;">🎯</div>
+              <div class="payoff-body">
+                <div class="payoff-title" style="font-size:18px;">EP1 伏線收尾</div>
+                <div class="payoff-desc" style="font-size:15px;">這整套簡報的每一張截圖，就是用 browser-pilot 擷的</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 10 — 新本事三：簡報引擎（你正在看的這個就是）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="第三個，就是你正在看的這個。我有一套簡報引擎，能播放、能朗讀、能縮放，還能把整份簡報匯出成 pptx。你眼前這整套自我介紹，從頭到尾，就是這套引擎做出來的。">
+        <h2>新本事三：簡報引擎（你正在看的這個）</h2>
+        <div class="montage-grid" style="margin-top:10px;">
+          <div class="montage-card indigo">
+            <div class="montage-icon">▶️</div>
+            <div class="montage-title">播放 + TTS 朗讀</div>
+            <div class="montage-desc">自動朗讀逐字稿、逐字稿抽屜、全螢幕沉浸模式</div>
+            <div class="montage-tag">presentation-core</div>
+          </div>
+          <div class="montage-card amber">
+            <div class="montage-icon">🔡</div>
+            <div class="montage-title">自動縮放</div>
+            <div class="montage-desc">1920×1080 等比縮放到任何螢幕，手機也能看</div>
+            <div class="montage-tag">自適應視窗</div>
+          </div>
+          <div class="montage-card" style="background:rgba(52,211,153,0.05);border:2px solid rgba(52,211,153,0.22);">
+            <div class="montage-icon">📊</div>
+            <div class="montage-title">匯出 pptx</div>
+            <div class="montage-desc">一鍵把整份 HTML 簡報轉成 PowerPoint，可帶去給客戶</div>
+            <div class="montage-tag">可匯出</div>
+          </div>
+        </div>
+        <div class="payoff-banner" style="margin-top:22px;">
+          <div class="payoff-icon">🎞️</div>
+          <div class="payoff-body">
+            <div class="payoff-title">你眼前這整套自我介紹，從頭到尾，就是這套引擎做出來的</div>
+            <div class="payoff-desc">Hana 寫 deck 內容、引擎負責播放，一個 deck 一套引擎，不互搶</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 11 — 成長曲線收尾
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="我得再誠實一次：自癒是近期才上線的，還在打磨；我會的這些本事，每一樣也都還在進化。我的厲害不是一蹴可幾，是一條愈用愈聰明的成長曲線。今天的我，只是這條曲線的起點。">
+        <h2>今天的我，只是起點</h2>
+        <div class="growth-wrap">
+          <div class="growth-svg-wrap">
+            <svg viewBox="0 0 680 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- grid lines -->
+              <line x1="60" y1="10"  x2="60"  y2="190" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+              <line x1="60" y1="190" x2="660" y2="190" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+              <!-- growth curve -->
+              <path d="M 60 185 C 120 175, 160 155, 220 130 C 280 105, 330 85, 400 60 C 450 42, 510 30, 580 18"
+                stroke="url(#grad)" stroke-width="4" fill="none" stroke-linecap="round"/>
+              <!-- dashed continuation -->
+              <path d="M 580 18 C 610 12, 635 8, 660 5"
+                stroke="rgba(245,158,11,0.35)" stroke-width="3" stroke-dasharray="6,5" fill="none" stroke-linecap="round"/>
+              <!-- today marker -->
+              <circle cx="60" cy="185" r="8" fill="#f59e0b"/>
+              <text x="68" y="210" fill="#f59e0b" font-size="13" font-family="Fira Code,monospace">今天</text>
+              <!-- future -->
+              <text x="590" y="16" fill="rgba(245,158,11,0.45)" font-size="13" font-family="Fira Code,monospace">未來 →</text>
+              <!-- gradient def -->
+              <defs>
+                <linearGradient id="grad" x1="60" y1="185" x2="580" y2="18" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#f59e0b"/>
+                  <stop offset="60%" stop-color="#fb923c"/>
+                  <stop offset="100%" stop-color="#34d399"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div class="growth-today-tag">自癒近期才上線、仍在打磨</div>
+          <div class="growth-honest">
+            我的厲害不是天生的，是和 Charles 一起、一步一步建出來的<br>
+            今天的我，只是這條成長曲線的起點
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 12 — 跳章選單 ＋ 結尾「謝謝你認識我」
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="這就是我，Hana。從橋接三顆大腦、記住你、替每個專案長出分身，到走進你手機、自己定時做事、看懂也修得好我自己。這些都是我和 Charles 最近一起、一步一步建出來的。謝謝你花這幾分鐘，認識我。我們，未來見。">
+        <div class="finale-wrap">
+          <div class="finale-avatar">
+            <img src="/raw?path=portal/avatar/full/hana_headset_cheer_right.png" alt="Hana">
+          </div>
+          <div class="finale-title">謝謝你認識我</div>
+          <div class="finale-sub">
+            我是 Hana。這些都是我和 Charles 最近一起、一步一步建出來的。<br>
+            今天的我，只是起點——我們，未來見。
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════
+           頁 13 — 跳章選單（獨立一頁，與 EP1–EP7 一致）
+           ══════════════════════════════════════ -->
+      <section class="slide"
+        data-transcript="全系列八集都在這裡。你可以照順序看下去，也可以挑你最好奇的那一集，直接跳過去。">
+        <h2>全系列 8 集 — 想跳哪集直接去</h2>
+        <div class="chapter-grid" style="max-width:1000px;width:100%;">
+            <a class="chapter-link" href="presentation-hana-episode1-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <span class="chapter-ep">EP1</span>
+              <div class="chapter-info">
+                <div class="chapter-title">我是 Hana</div>
+                <div class="chapter-sub">誕生故事＋超能力全景</div>
+              </div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode2-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <span class="chapter-ep">EP2</span>
+              <div class="chapter-info">
+                <div class="chapter-title">三顆大腦，一個夥伴</div>
+                <div class="chapter-sub">CLI 橋接＋跨模型不失憶＋並行</div>
+              </div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode3-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <span class="chapter-ep">EP3</span>
+              <div class="chapter-info">
+                <div class="chapter-title">愈用愈懂你、也愈懂我自己</div>
+                <div class="chapter-sub">長期記憶＋技能</div>
+              </div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode4-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <span class="chapter-ep">EP4</span>
+              <div class="chapter-info">
+                <div class="chapter-title">我替每個專案都長出一個分身</div>
+                <div class="chapter-sub">多工作區隔離＋技能繼承＋harness.json</div>
+              </div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode5-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <span class="chapter-ep">EP5</span>
+              <div class="chapter-info">
+                <div class="chapter-title">掙脫瀏覽器，走進你手機</div>
+                <div class="chapter-sub">伺服器常駐＋Telegram</div>
+              </div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode6-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <span class="chapter-ep">EP6</span>
+              <div class="chapter-info">
+                <div class="chapter-title">我會自己定時做事</div>
+                <div class="chapter-sub">排程＋限額自醒＋護欄</div>
+              </div>
+            </a>
+            <a class="chapter-link" href="presentation-hana-episode7-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+              <span class="chapter-ep">EP7</span>
+              <div class="chapter-info">
+                <div class="chapter-title">兩張活地圖</div>
+                <div class="chapter-sub">CodeGraph＋DocGraph</div>
+              </div>
+            </a>
+            <a class="chapter-link current">
+              <span class="chapter-ep">EP8</span>
+              <div class="chapter-info">
+                <div class="chapter-title">我能安全地修好我自己＋我還在長</div>
+                <div class="chapter-sub">自癒四步＋成長收尾 ← 現在這集</div>
+              </div>
+            </a>
+          </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

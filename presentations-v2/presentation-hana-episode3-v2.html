@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v2 — EP3：愈用愈懂你、也愈懂我自己</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* EP3 v2 — 記憶與技能主題（承 EP1/EP2 星空色系，點綴金色/紫色） */
+    :root {
+      --bg: #050815;
+      --card: rgba(10, 18, 40, 0.85);
+      --border: rgba(99, 102, 241, 0.18);
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.35);
+      --accent: #06b6d4;
+      --gold: #f59e0b;
+      --emerald: #10b981;
+      --danger: #ef4444;
+      --violet: #8b5cf6;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 15% 25%, rgba(139,92,246,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 75%, rgba(99,102,241,0.09) 0%, transparent 50%),
+        linear-gradient(180deg, #07091e 0%, #020510 100%) !important;
+    }
+
+    header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 60px;
+      z-index: 50;
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--accent); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 96px 96px 56px !important;
+      background: linear-gradient(145deg, rgba(10,18,40,0.92), rgba(4,8,20,0.96)) !important;
+      border-color: rgba(99,102,241,0.12) !important;
+      color: var(--text) !important;
+      font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 50px;
+      font-weight: 800;
+      color: var(--white);
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      line-height: 1.2;
+    }
+    .slide h2::before { content: "— "; color: var(--violet); }
+    .slide p { font-size: 28px !important; line-height: 1.65; color: var(--text); }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+    .title-left {
+      width: 44%;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      background: linear-gradient(160deg, rgba(139,92,246,0.08) 0%, transparent 70%);
+      border-right: 1px solid rgba(139,92,246,0.12);
+      overflow: visible;
+      position: relative;
+    }
+    .title-left img {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 900px;
+      max-height: none;
+      object-fit: contain;
+      object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(139,92,246,0.45));
+    }
+    .title-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px 80px 80px 60px;
+    }
+    .ep-badge {
+      font-family: var(--mono);
+      font-size: 18px;
+      color: var(--violet);
+      letter-spacing: 0.2em;
+      border: 1px solid var(--violet);
+      display: inline-block;
+      padding: 6px 20px;
+      border-radius: 4px;
+      background: rgba(139,92,246,0.08);
+      margin-bottom: 24px;
+      align-self: flex-start;
+    }
+    .title-main {
+      font-size: 82px;
+      font-weight: 900;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 0%, #c4b5fd 50%, #a5b4fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 18px;
+    }
+    .title-sub {
+      font-size: 28px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-bottom: 44px;
+    }
+    .title-desc {
+      font-size: 23px;
+      color: rgba(196,181,253,0.8);
+      line-height: 1.7;
+      border-left: 3px solid var(--violet);
+      padding-left: 20px;
+    }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 22px; }
+    th {
+      background: rgba(139,92,246,0.15);
+      color: var(--violet);
+      font-weight: 700;
+      padding: 14px 20px;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 20px;
+    }
+    td { padding: 13px 20px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.45; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good { color: var(--emerald); }
+    td.bad  { color: var(--danger); }
+    td.gold { color: var(--gold); }
+    td.violet { color: var(--violet); }
+    td.accent { color: var(--accent); }
+
+    /* ─── Dual-problem card ─── */
+    .problem-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      flex: 1;
+      align-items: start;
+    }
+    .prob-card {
+      border-radius: 18px;
+      padding: 36px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .prob-card.p1 { background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.3); }
+    .prob-card.p2 { background: rgba(245,158,11,0.05); border: 2px solid rgba(245,158,11,0.3); }
+    .prob-icon { font-size: 44px; }
+    .prob-title { font-size: 28px; font-weight: 800; color: var(--white); }
+    .prob-desc  { font-size: 22px; color: var(--muted); line-height: 1.55; }
+    .prob-example { font-size: 20px; font-family: var(--mono); padding: 10px 16px; border-radius: 8px; margin-top: 4px; }
+    .prob-card.p1 .prob-example { background: rgba(239,68,68,0.08); color: var(--danger); }
+    .prob-card.p2 .prob-example { background: rgba(245,158,11,0.08); color: var(--gold); }
+
+    /* ─── Memory layer diagram ─── */
+    .memory-layers {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      flex: 1;
+      justify-content: center;
+    }
+    .mem-layer {
+      border-radius: 16px;
+      padding: 22px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .mem-layer.global {
+      background: rgba(99,102,241,0.07);
+      border: 2px solid rgba(99,102,241,0.35);
+    }
+    .mem-layer.project {
+      background: rgba(6,182,212,0.06);
+      border: 2px solid rgba(6,182,212,0.3);
+    }
+    .mem-layer-label {
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      margin-bottom: 4px;
+    }
+    .mem-layer.global  .mem-layer-label { color: var(--primary); }
+    .mem-layer.project .mem-layer-label { color: var(--accent); }
+    .mem-files {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .mem-file {
+      border-radius: 10px;
+      padding: 14px 20px;
+    }
+    .mem-layer.global  .mem-file { background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.25); }
+    .mem-layer.project .mem-file { background: rgba(6,182,212,0.07); border: 1px solid rgba(6,182,212,0.2); }
+    .mem-file-name { font-size: 22px; font-weight: 700; font-family: var(--mono); color: var(--white); }
+    .mem-file-desc { font-size: 18px; color: var(--muted); margin-top: 4px; }
+
+    /* ─── Operation cards ─── */
+    .ops-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      flex: 1;
+      align-items: start;
+    }
+    .op-card {
+      border-radius: 16px;
+      padding: 30px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      text-align: center;
+    }
+    .op-card.add  { background: rgba(16,185,129,0.06); border: 2px solid rgba(16,185,129,0.3); }
+    .op-card.edit { background: rgba(99,102,241,0.06); border: 2px solid rgba(99,102,241,0.3); }
+    .op-card.del  { background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.25); }
+    .op-icon  { font-size: 52px; }
+    .op-name  { font-size: 28px; font-weight: 800; color: var(--white); }
+    .op-desc  { font-size: 20px; color: var(--muted); line-height: 1.5; }
+    .op-card.add  .op-name { color: var(--emerald); }
+    .op-card.edit .op-name { color: var(--primary); }
+    .op-card.del  .op-name { color: var(--danger); }
+
+    /* ─── Policy vs Mechanism ─── */
+    .pm-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 0;
+      flex: 1;
+      align-items: center;
+    }
+    .pm-box {
+      border-radius: 18px;
+      padding: 36px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .pm-box.policy { background: rgba(245,158,11,0.06); border: 2px solid rgba(245,158,11,0.3); }
+    .pm-box.mech   { background: rgba(99,102,241,0.06); border: 2px solid rgba(99,102,241,0.3); }
+    .pm-label { font-size: 20px; font-weight: 700; letter-spacing: 0.1em; font-family: var(--mono); }
+    .pm-box.policy .pm-label { color: var(--gold); }
+    .pm-box.mech   .pm-label { color: var(--primary); }
+    .pm-title { font-size: 30px; font-weight: 800; color: var(--white); }
+    .pm-desc  { font-size: 20px; color: var(--muted); line-height: 1.55; }
+    .pm-item  { font-size: 19px; color: var(--text); display: flex; align-items: flex-start; gap: 8px; }
+    .pm-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 0 32px;
+    }
+    .pm-connector-arrow { font-size: 44px; color: var(--accent); }
+    .pm-connector-label { font-size: 18px; color: var(--muted); font-family: var(--mono); text-align: center; }
+
+    /* ─── Skill MD diagram ─── */
+    .md-card {
+      background: rgba(10,18,40,0.95);
+      border: 2px solid rgba(139,92,246,0.4);
+      border-radius: 18px;
+      padding: 32px 40px;
+      font-family: var(--mono);
+      flex: 1;
+    }
+    .md-line { font-size: 20px; line-height: 1.8; }
+    .md-fm   { color: var(--gold); }
+    .md-key  { color: var(--accent); }
+    .md-val  { color: var(--emerald); }
+    .md-body { color: var(--text); }
+    .md-sep  { color: var(--muted); border-bottom: 1px dashed rgba(255,255,255,0.1); margin: 12px 0; }
+
+    /* ─── Skill coverage table wrapper ─── */
+    .skill-overview {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      flex: 1;
+    }
+    .skill-block {
+      border-radius: 14px;
+      padding: 24px 28px;
+    }
+    .skill-block.type { background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.3); }
+    .skill-block.src  { background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.25); }
+    .skill-block-title { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+    .skill-block.type .skill-block-title { color: var(--violet); }
+    .skill-block.src  .skill-block-title { color: var(--accent); }
+    .skill-row { display: flex; flex-direction: column; gap: 14px; }
+    .skill-item {
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+    .skill-item.builtin { background: rgba(99,102,241,0.07); border-left: 3px solid var(--primary); }
+    .skill-item.prompt  { background: rgba(16,185,129,0.06); border-left: 3px solid var(--emerald); }
+    .skill-item.src0    { background: rgba(100,116,139,0.08); border-left: 3px solid var(--muted); }
+    .skill-item.src1    { background: rgba(245,158,11,0.06); border-left: 3px solid var(--gold); }
+    .skill-item.src2    { background: rgba(6,182,212,0.07); border-left: 3px solid var(--accent); }
+    .skill-item-name { font-size: 21px; font-weight: 700; color: var(--white); }
+    .skill-item-desc { font-size: 18px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+
+    /* ─── Self-grow slide ─── */
+    .grow-flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex: 1;
+      justify-content: center;
+    }
+    .grow-step {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-align: center;
+      min-width: 220px;
+    }
+    .grow-step-icon  { font-size: 40px; }
+    .grow-step-label { font-size: 21px; font-weight: 700; color: var(--white); }
+    .grow-step-desc  { font-size: 17px; color: var(--muted); line-height: 1.4; }
+    .grow-arrow { font-size: 36px; color: var(--violet); padding: 0 18px; }
+
+    /* ─── Chapter nav ─── */
+    .chapter-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-top: 8px;
+    }
+    .chapter-link {
+      display: block;
+      text-decoration: none;
+      background: rgba(10,18,40,0.7);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+      transition: border-color 0.2s;
+    }
+    .chapter-link:hover { border-color: var(--accent); }
+    .chapter-link.current { border-color: var(--violet); background: rgba(139,92,246,0.08); }
+    .ch-ep    { font-family: var(--mono); font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+    .ch-title { font-size: 17px; font-weight: 700; color: var(--white); margin-bottom: 4px; line-height: 1.3; }
+    .ch-desc  { font-size: 14px; color: var(--muted); line-height: 1.4; }
+    .chapter-link.current .ch-ep { color: var(--violet); }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport"
+       data-subtitle="長期記憶＋技能 — 不是更聰明的演算法，是更會整理的習慣">
+    <header>
+      <div class="brand">HANA / HARNESS</div>
+      <div class="meta">EPISODE 03 · 愈用愈懂你、也愈懂我自己</div>
+    </header>
+    <main class="slides">
+
+      <!-- ====================================================
+           SLIDE 1 — 標題（首頁 Hana 形象照）
+      ===================================================== -->
+      <section class="slide title-slide"
+        data-transcript="很多人問我：AI 不是天生會失憶嗎？為什麼你會愈用愈懂我？這一集，我把記憶機制拆開給你看，它沒有黑科技，是一套很務實的整理習慣。再接著講，我怎麼把做過的事沉澱成技能。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_headset_think_right.png" alt="Hana">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 03</div>
+            <div class="title-main">愈用愈懂你<br>也愈懂我自己</div>
+            <div class="title-sub">不是更聰明的演算法，是更會整理的習慣</div>
+            <div class="title-desc">
+              兩層四檔長期記憶 · 技能即 .md 檔 · 我能自己長技能
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 2 — 先分清三種記憶（對照表）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="先別搞混三件事。對話脈絡，是這一次聊天我手上的內容；長期記憶，是跨對話、跨重啟還留著的；而憲法是規範、圖譜是結構。今天主角是中間那個，長期記憶。">
+        <h2>先分清三件事</h2>
+        <table style="margin-top: 12px;">
+          <thead>
+            <tr>
+              <th>類型</th>
+              <th>存活範圍</th>
+              <th>用途</th>
+              <th>今天的主角？</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>對話脈絡</strong></td>
+              <td class="gold">這一次對話</td>
+              <td>當下手上的工作內容</td>
+              <td class="bad">✗ 不是</td>
+            </tr>
+            <tr>
+              <td><strong>長期記憶</strong></td>
+              <td class="good">跨對話、跨重啟</td>
+              <td>關於你、關於我、關於這個專案</td>
+              <td class="good">✓ 就是它</td>
+            </tr>
+            <tr>
+              <td><strong>憲法 / 圖譜</strong></td>
+              <td class="accent">永久（規範與結構）</td>
+              <td>行為規範、程式與設計關係圖</td>
+              <td class="bad">✗ 不是</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 24px; padding: 18px 28px; background: rgba(139,92,246,0.07); border: 1px solid rgba(139,92,246,0.3); border-radius: 12px; font-size: 22px; color: var(--violet);">
+          今天主角：<strong>長期記憶</strong> — 跨對話持久存在的那一層
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 3 — 兩個毛病：天生失憶 + 跨專案污染
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="原始的我有兩個毛病。對話一長就忘了前面；而如果記憶是一鍋大雜燴，還會把 A 客戶的事不小心帶到 B 客戶。這兩個都得解。">
+        <h2>原始的我，有兩個毛病</h2>
+        <div class="problem-grid" style="margin-top: 16px;">
+          <div class="prob-card p1">
+            <div class="prob-icon">🧠</div>
+            <div class="prob-title">對話一長就失憶</div>
+            <div class="prob-desc">
+              語言模型的上下文有上限。講到後面，前面說好的事就被擠出去了——把剛做好的設計，又改回去。
+            </div>
+            <div class="prob-example">「你上次說要用 A 方案…」「哪次？」</div>
+          </div>
+          <div class="prob-card p2">
+            <div class="prob-icon">🫙</div>
+            <div class="prob-title">記憶是一鍋大雜燴</div>
+            <div class="prob-desc">
+              如果所有客戶、所有專案的事全混在一起，我很容易把 A 客戶的細節，不小心帶到 B 客戶面前。
+            </div>
+            <div class="prob-example">「A 客戶說要 X 格式…」(對錯 B 客戶說的)</div>
+          </div>
+        </div>
+        <div style="margin-top: 20px; text-align: center; font-size: 22px; color: var(--muted);">
+          一個解：<span style="color: var(--violet); font-weight: 700;">長期記憶要小、要有上限、要分清楚是誰的</span>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 4 — 解法：小而有上限（誠實標來源）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="老實說，我的長期記憶設計，幾乎是完全借鏡 Hermes Agent 的架構。核心觀念是：記憶要小而有上限。不是無限堆積，而是逼自己只留精華；檔案快滿，我就自己合併、刪舊。我們還在進化的路上，沒辦法保證像 Hermes Agent 一樣厲害，但方向是對的。">
+        <h2>解法：小而有上限</h2>
+        <div style="display: flex; gap: 28px; flex: 1; align-items: stretch; margin-top: 8px;">
+          <!-- Left: core principle -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+            <div style="background: rgba(139,92,246,0.07); border: 1px solid rgba(139,92,246,0.3); border-radius: 16px; padding: 28px 32px;">
+              <div style="font-size: 20px; color: var(--violet); font-family: var(--mono); margin-bottom: 10px;">核心原則</div>
+              <div style="font-size: 28px; font-weight: 700; color: var(--white); margin-bottom: 12px;">不是無限堆積，而是只留精華</div>
+              <div style="font-size: 21px; color: var(--muted); line-height: 1.6;">
+                每份記憶有字數上限。快滿時，我自己把相關條目合併、把舊的刪掉——逼自己整理，不囤垃圾。
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.25); border-radius: 12px; padding: 18px 20px;">
+                <div style="font-size: 18px; color: var(--emerald); font-weight: 700; margin-bottom: 6px;">✓ 每條記憶有字數上限</div>
+                <div style="font-size: 17px; color: var(--muted);">精煉過的，才記；贅言不進去</div>
+              </div>
+              <div style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.25); border-radius: 12px; padding: 18px 20px;">
+                <div style="font-size: 18px; color: var(--emerald); font-weight: 700; margin-bottom: 6px;">✓ 超限自動合併刪舊</div>
+                <div style="font-size: 17px; color: var(--muted);">我自己整理，不靠你提醒</div>
+              </div>
+            </div>
+          </div>
+          <!-- Right: honesty box -->
+          <div style="width: 340px; background: rgba(245,158,11,0.06); border: 2px solid rgba(245,158,11,0.3); border-radius: 16px; padding: 28px 28px; display: flex; flex-direction: column; gap: 14px; justify-content: center;">
+            <div style="font-size: 18px; color: var(--gold); font-family: var(--mono); letter-spacing: 0.1em;">誠實說</div>
+            <div style="font-size: 22px; font-weight: 700; color: var(--white); line-height: 1.4;">設計幾乎完全借鏡 Hermes Agent</div>
+            <div style="font-size: 18px; color: var(--muted); line-height: 1.55;">
+              Hermes Agent 的長期記憶架構是我的靈感來源，感謝它。我們還在進化的路上，不誇大比它更厲害。
+            </div>
+            <div style="font-size: 17px; color: var(--gold); padding-top: 8px; border-top: 1px solid rgba(245,158,11,0.2);">
+              狀態：仍在進化中 ⋯
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 5 — 兩層四檔關係圖
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="我的記憶分兩層、四個檔。全域層有兩個：USER 是關於你，AGENT 是關於我自己，這兩個跨所有專案繼承。專案層也有兩個：MEMORY 是這個專案的事實，PERSONA 是我在這專案扮演的角色，這兩個只留在那個專案，不外流。">
+        <h2>兩層四檔：誰繼承、誰隔離</h2>
+        <div class="memory-layers" style="margin-top: 14px;">
+
+          <!-- Global layer -->
+          <div class="mem-layer global">
+            <div class="mem-layer-label">🌐 全域層 — 跨所有專案繼承</div>
+            <div class="mem-files">
+              <div class="mem-file">
+                <div class="mem-file-name">USER</div>
+                <div class="mem-file-desc">關於你 — 偏好、職業、溝通方式、你教過我的事</div>
+              </div>
+              <div class="mem-file">
+                <div class="mem-file-name">AGENT</div>
+                <div class="mem-file-desc">關於我自己 — 我的行為原則、踩過的雷、自我認識</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Arrow -->
+          <div style="display: flex; align-items: center; justify-content: center; gap: 20px; padding: 0 40px;">
+            <div style="height: 2px; flex: 1; background: linear-gradient(90deg, rgba(99,102,241,0.4), rgba(6,182,212,0.4));"></div>
+            <div style="font-size: 19px; color: var(--muted); white-space: nowrap; font-family: var(--mono);">每個專案都繼承上層，再加上自己的</div>
+            <div style="height: 2px; flex: 1; background: linear-gradient(90deg, rgba(6,182,212,0.4), rgba(99,102,241,0.4));"></div>
+          </div>
+
+          <!-- Project layer -->
+          <div class="mem-layer project">
+            <div class="mem-layer-label">📁 專案層 — 只留在這個專案，不外流</div>
+            <div class="mem-files">
+              <div class="mem-file">
+                <div class="mem-file-name">MEMORY</div>
+                <div class="mem-file-desc">這個專案的事實 — 決策、踩過的雷、重要背景</div>
+              </div>
+              <div class="mem-file">
+                <div class="mem-file-name">PERSONA</div>
+                <div class="mem-file-desc">我在這個專案的角色 — 叫什麼、怎麼說話、扮演什麼</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <div style="margin-top: 18px; text-align: center; font-size: 20px; color: var(--muted);">
+          全域的跨專案長、專案的不外流 — 繼承且隔離，兩件事同時成立
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 6 — 怎麼寫：新增、覆寫、刪除
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="更新記憶我只用三個動作：新增、就地覆寫、刪除。你改變主意，我用覆寫把舊的那一條直接換掉，後蓋前，不堆垃圾。">
+        <h2>更新記憶，只用三個動作</h2>
+        <div class="ops-grid" style="margin-top: 20px;">
+          <div class="op-card add">
+            <div class="op-icon">＋</div>
+            <div class="op-name">新增</div>
+            <div class="op-desc">第一次記住一件事、一個偏好、一個決定</div>
+          </div>
+          <div class="op-card edit">
+            <div class="op-icon">⟳</div>
+            <div class="op-name">就地覆寫</div>
+            <div class="op-desc">你改變主意 → 把那一條直接換掉<br><strong>後蓋前，不堆舊的</strong></div>
+          </div>
+          <div class="op-card del">
+            <div class="op-icon">✕</div>
+            <div class="op-name">刪除</div>
+            <div class="op-desc">這條已經過時、不再適用 → 移除，不留垃圾</div>
+          </div>
+        </div>
+        <div style="margin-top: 28px; display: flex; align-items: center; gap: 20px; padding: 20px 32px; background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.25); border-radius: 12px;">
+          <div style="font-size: 36px;">💡</div>
+          <div style="font-size: 22px; color: var(--text); line-height: 1.55;">
+            記憶不是日記，<span style="color: var(--violet); font-weight: 700;">後蓋前</span>才是正確姿勢。舊的觀念就是要被新的覆蓋，不是在旁邊再加一條「其實後來改了」。
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 7 — 政策 vs 機制
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="這裡有個聰明的分工。怎麼判斷該記什麼，寫在一份你可以編輯的政策檔，你改它就改變我的記憶習慣，不用動程式。而實際怎麼安全落檔，留在程式裡，確保不管哪個模型來寫，結果都一致。">
+        <h2>一個聰明的分工：政策 vs 機制</h2>
+        <div class="pm-grid" style="margin-top: 20px; flex: 1;">
+          <div class="pm-box policy">
+            <div class="pm-label">POLICY — 政策</div>
+            <div class="pm-title">你能改的那份</div>
+            <div class="pm-desc">決定「該記什麼、什麼值得沉澱成記憶」</div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+              <div class="pm-item"><span style="color: var(--gold);">→</span> 何時觸發寫記憶</div>
+              <div class="pm-item"><span style="color: var(--gold);">→</span> 哪些類型的洞察值得留</div>
+              <div class="pm-item"><span style="color: var(--gold);">→</span> 偏好 vs 事實的分類邏輯</div>
+            </div>
+            <div style="margin-top: 14px; font-size: 18px; color: var(--muted); padding: 10px 16px; background: rgba(245,158,11,0.06); border-radius: 8px;">
+              你改政策 → 我的記憶習慣就變了，不用動程式
+            </div>
+          </div>
+          <div class="pm-connector">
+            <div class="pm-connector-arrow">⇄</div>
+            <div class="pm-connector-label">互補<br>不重疊</div>
+          </div>
+          <div class="pm-box mech">
+            <div class="pm-label">MECHANISM — 機制</div>
+            <div class="pm-title">程式保證的那份</div>
+            <div class="pm-desc">決定「如何安全地把記憶寫進檔案、不出錯」</div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+              <div class="pm-item"><span style="color: var(--primary);">→</span> 格式驗證、欄位結構</div>
+              <div class="pm-item"><span style="color: var(--primary);">→</span> 原子寫入、防止損壞</div>
+              <div class="pm-item"><span style="color: var(--primary);">→</span> 不管哪個 AI 來寫，結果一致</div>
+            </div>
+            <div style="margin-top: 14px; font-size: 18px; color: var(--muted); padding: 10px 16px; background: rgba(99,102,241,0.06); border-radius: 8px;">
+              機制不變，讓各家 AI 都能安全寫記憶
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8 —（轉）技能就是一個 .md
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="記憶讓我記得發生過什麼，技能讓我會怎麼做一件事。我的技能不是寫死在程式裡，而是一個 markdown 檔：上面是名稱和說明，下面就是行為本身。所以技能也是資料，你看得懂、能手改、跟著版本控制。">
+        <h2>（轉）技能就是一個 .md 檔</h2>
+        <div style="display: flex; gap: 32px; flex: 1; align-items: stretch; margin-top: 12px;">
+          <!-- Left: concept -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; justify-content: center;">
+            <div style="font-size: 26px; color: var(--text); line-height: 1.65;">
+              記憶讓我記得發生過什麼，<br><span style="color: var(--violet); font-weight: 700;">技能讓我會怎麼做一件事</span>。
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.25); border-radius: 10px;">
+                <span style="font-size: 28px;">✓</span>
+                <span style="font-size: 20px; color: var(--text);">技能是資料，不是寫死在程式裡</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.25); border-radius: 10px;">
+                <span style="font-size: 28px;">✓</span>
+                <span style="font-size: 20px; color: var(--text);">你看得懂、能手改</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.25); border-radius: 10px;">
+                <span style="font-size: 28px;">✓</span>
+                <span style="font-size: 20px; color: var(--text);">跟著 git 版本控制走</span>
+              </div>
+            </div>
+          </div>
+          <!-- Right: MD file example -->
+          <div class="md-card" style="width: 520px; flex-shrink: 0;">
+            <div class="md-line md-fm">---</div>
+            <div class="md-line"><span class="md-key">name:</span> <span class="md-val">deck</span></div>
+            <div class="md-line"><span class="md-key">description:</span> <span class="md-val">用 AI 設計一份簡報</span></div>
+            <div class="md-line"><span class="md-key">type:</span> <span class="md-val">prompt</span></div>
+            <div class="md-line md-fm">---</div>
+            <div class="md-sep"></div>
+            <div class="md-line md-body"># 指令：設計簡報</div>
+            <div class="md-line md-body" style="color: var(--muted);">先看內容，依資訊密度挑版型</div>
+            <div class="md-line md-body" style="color: var(--muted);">圖 優先 → 表格次之 → 文字輔助</div>
+            <div class="md-line md-body" style="color: var(--muted);">用 presentation-core 引擎 ...</div>
+            <div style="margin-top: 16px; padding: 10px 16px; background: rgba(139,92,246,0.1); border-radius: 8px; font-size: 17px; color: var(--violet);">
+              這份 md 本身就是技能，新增它就等於給我一個新能力
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 9 — 兩型技能、三層來源、可繼承
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="技能有兩型：builtin 是程式做事，像寫記憶；prompt 是 md 本身就是技能，像做簡報，這種是我能自己長出來的。它們從三個地方載入：跟工具出貨的預設、你的全域、還有某個專案專屬，同名時專案蓋全域、全域蓋預設。專案技能還能用一個關鍵字繼承全域的通則，只寫自己的特化。">
+        <h2>兩型技能、三層來源、可繼承</h2>
+        <div class="skill-overview" style="margin-top: 16px;">
+          <!-- Left: 兩型 -->
+          <div class="skill-block type">
+            <div class="skill-block-title">兩型技能</div>
+            <div class="skill-row">
+              <div class="skill-item builtin">
+                <div class="skill-item-name">builtin — 程式做事</div>
+                <div class="skill-item-desc">功能寫在程式裡，md 只是觸發入口。例：自動寫長期記憶、部署自癒</div>
+              </div>
+              <div class="skill-item prompt">
+                <div class="skill-item-name">prompt — md 本身就是技能</div>
+                <div class="skill-item-desc">md 裡寫的行為指令，直接驅動 AI。例：做簡報、word 轉 md。<span style="color: var(--emerald);">我能自己長出這種</span></div>
+              </div>
+            </div>
+          </div>
+          <!-- Right: 三層來源 + 繼承 -->
+          <div class="skill-block src">
+            <div class="skill-block-title">三層來源（同名時下層蓋上層）</div>
+            <div class="skill-row">
+              <div class="skill-item src0">
+                <div class="skill-item-name">預設 — 跟工具一起出貨</div>
+                <div class="skill-item-desc">最基礎的內建能力，所有工作區共用</div>
+              </div>
+              <div class="skill-item src1">
+                <div class="skill-item-name">全域 — 你自己加的通則</div>
+                <div class="skill-item-desc">對所有專案都適用的偏好技能，蓋過預設</div>
+              </div>
+              <div class="skill-item src2">
+                <div class="skill-item-name">專案專屬 — 這個專案的特化</div>
+                <div class="skill-item-desc">用 <code style="font-size:16px;">extends</code> 繼承全域通則，只補自己需要的部分，蓋過全域</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 16px; padding: 14px 24px; background: rgba(99,102,241,0.06); border: 1px solid var(--border); border-radius: 10px; font-size: 20px; color: var(--muted); text-align: center;">
+          通用的放上層，特化的放下層 — 技能能繼承，不必每個專案都從零開始
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 9b — 長期記憶真實系統畫面
+      ===================================================== -->
+      <section class="slide media"
+        data-transcript="這張不是示意圖，是我剛剛真的打開的畫面。左邊選單有全域記憶跟專案記憶兩個入口，我點開這個工作區的 MEMORY 檔，裡面一條一條列的，就是我真的記下來的事——用什麼架構做簡報、講稿規則怎麼定，全部都在這份檔案裡，不是我憑空講的。">
+        <h2>真實畫面 — 我的記憶檔案</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.6; display: flex; align-items: center; justify-content: center; min-height: 0;">
+            <img src="/raw?path=presentations-v2/assets/ep3/memory-file-real.png" alt="長期記憶檔案真實畫面"
+                 style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(139,92,246,0.35); box-shadow: 0 0 60px rgba(139,92,246,0.18);">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="mem-layer project" style="padding: 18px 22px;">
+              <div class="mem-layer-label" style="font-size: 16px;">📁 側欄：全域記憶／專案記憶入口</div>
+              <div style="font-size: 17px; color: var(--muted); line-height: 1.5;">左側選單真的分兩層列出來，點哪一份就打開哪一份</div>
+            </div>
+            <div class="mem-layer project" style="padding: 18px 22px;">
+              <div class="mem-layer-label" style="font-size: 16px;">📄 開啟的是 .harness/knowledge/MEMORY.md</div>
+              <div style="font-size: 17px; color: var(--muted); line-height: 1.5;">這就是這個工作區的 MEMORY 檔真身，逐條列著我記下的專案事實</div>
+            </div>
+            <div class="mem-layer project" style="padding: 18px 22px;">
+              <div class="mem-layer-label" style="font-size: 16px;">✓ 檔案即記憶，不是我編的</div>
+              <div style="font-size: 17px; color: var(--muted); line-height: 1.5;">畫面上每一行都是我自己寫進去、跨對話還留著的內容</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 9c — 技能真實系統畫面
+      ===================================================== -->
+      <section class="slide media"
+        data-transcript="這張也是真的打開的畫面，不是示意圖。我點開技能選單裡的 deck，看到的就是一份帶 frontmatter 的 markdown 檔：上面 name 跟 description 定義這個技能是什麼，下面整段就是行為指令本身。這就是我說的，技能是資料，不是寫死在程式裡。">
+        <h2>真實畫面 — 技能檔案（deck.md）</h2>
+        <div style="flex: 1; display: flex; gap: 32px; margin-top: 10px; align-items: stretch; min-height: 0;">
+          <div style="flex: 1.6; display: flex; align-items: center; justify-content: center; min-height: 0;">
+            <img src="/raw?path=presentations-v2/assets/ep3/skill-file-real.png" alt="技能檔案真實畫面"
+                 style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 16px; border: 2px solid rgba(6,182,212,0.35); box-shadow: 0 0 60px rgba(6,182,212,0.18);">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 16px; justify-content: center;">
+            <div class="skill-item builtin">
+              <div class="skill-item-name">frontmatter：name / description / type</div>
+              <div class="skill-item-desc">上面幾行就定義了這個技能叫什麼、做什麼、屬於哪一型</div>
+            </div>
+            <div class="skill-item prompt">
+              <div class="skill-item-name">下面全段就是行為本身</div>
+              <div class="skill-item-desc">怎麼判斷簡報類型、怎麼挑版型，整套指令直接寫在這份 .md 裡</div>
+            </div>
+            <div class="skill-item src2">
+              <div class="skill-item-name">側欄看得到來源與同層技能</div>
+              <div class="skill-item-desc">global-knowledge/commands 底下還有 doc-flowchart、doc-new 等同層技能</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 10 — 我能自己長技能 + 跳章選單 + 下一集預告
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="而且，因為我有寫檔權，當你說幫這個專案建立一個技能，我會讀全域通則加上這個專案的需求，自己寫出那份 md，它立刻出現在你的指令選單。記憶和技能，是我怎麼記、怎麼學。下一集，我講我怎麼把它們按專案分得清清楚楚、不串味。我們下集見。">
+        <h2>全系列 8 集 — 想跳哪集直接去</h2>
+
+        <!-- Self-grow highlight -->
+        <div style="margin-bottom: 20px; padding: 16px 28px; background: rgba(139,92,246,0.08); border: 2px solid rgba(139,92,246,0.35); border-radius: 14px; display: flex; align-items: center; gap: 20px;">
+          <div style="font-size: 36px;">✨</div>
+          <div>
+            <div style="font-size: 21px; font-weight: 700; color: var(--violet);">我能自己長技能</div>
+            <div style="font-size: 18px; color: var(--muted); margin-top: 4px;">你說需求 → 我讀全域通則 + 專案需求 → 自己寫出 .md → 立刻出現在指令選單，免部署</div>
+          </div>
+        </div>
+
+        <div class="chapter-nav">
+          <a class="chapter-link" href="presentation-hana-episode1-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP01</div>
+            <div class="ch-title">我是 Hana</div>
+            <div class="ch-desc">誕生故事 + 超能力全景</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode2-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP02</div>
+            <div class="ch-title">三顆大腦，一個夥伴</div>
+            <div class="ch-desc">CLI 橋接 + 跨模型不失憶 + 並行</div>
+          </a>
+          <a class="chapter-link current" href="presentation-hana-episode3-v2.html" onclick="event.preventDefault(); return false;">
+            <div class="ch-ep">EP03 ▶ 現在在這</div>
+            <div class="ch-title">愈用愈懂你</div>
+            <div class="ch-desc">長期記憶 + 技能</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode4-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP04</div>
+            <div class="ch-title">我替每個專案都長出一個分身</div>
+            <div class="ch-desc">多工作區隔離 + 技能繼承</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode5-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP05</div>
+            <div class="ch-title">掙脫瀏覽器，走進你手機</div>
+            <div class="ch-desc">伺服器常駐 + Telegram</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode6-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP06</div>
+            <div class="ch-title">我會自己定時做事</div>
+            <div class="ch-desc">排程 + 限額自醒 + 護欄</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode7-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP07</div>
+            <div class="ch-title">兩張活地圖</div>
+            <div class="ch-desc">CodeGraph + DocGraph</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode8-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP08</div>
+            <div class="ch-title">我能安全地修好我自己</div>
+            <div class="ch-desc">自癒四步 + 成長收尾</div>
+          </a>
+        </div>
+
+        <!-- Next episode -->
+        <div style="margin-top: 18px; display: flex; justify-content: center;">
+          <div style="display: flex; align-items: center; gap: 28px; padding: 16px 32px; background: rgba(99,102,241,0.06); border: 1px solid var(--border); border-radius: 14px;">
+            <div style="text-align: center;">
+              <div style="font-size: 16px; color: var(--muted); font-family: var(--mono); letter-spacing: 0.12em; margin-bottom: 4px;">NEXT EPISODE</div>
+              <div style="font-size: 38px; font-weight: 900; background: linear-gradient(135deg, #ffffff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1;">EP04</div>
+            </div>
+            <div style="width: 1px; height: 56px; background: var(--border);"></div>
+            <div>
+              <div style="font-size: 24px; font-weight: 700; color: var(--white);">我替每個專案都長出一個分身</div>
+              <div style="font-size: 18px; color: var(--accent); margin-top: 4px;">多工作區隔離 · 技能繼承 · harness.json</div>
+            </div>
+            <a href="presentation-hana-episode4-v2.html"
+               style="display:inline-block; padding: 12px 28px; background: rgba(99,102,241,0.12); border: 2px solid var(--primary); border-radius: 10px; color: var(--white); font-size: 20px; font-weight: 700; text-decoration: none; white-space: nowrap;">
+              前往 EP04 →
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>

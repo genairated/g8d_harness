@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Hana v2 — EP1：我是 Hana（誕生故事 + 超能力全景）</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* EP1 v2 — 星空誕生主題 */
+    :root {
+      --bg: #050815;
+      --card: rgba(10, 18, 40, 0.85);
+      --border: rgba(99, 102, 241, 0.18);
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.35);
+      --accent: #06b6d4;
+      --gold: #f59e0b;
+      --emerald: #10b981;
+      --danger: #ef4444;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --white: #ffffff;
+      --mono: 'Fira Code', monospace;
+      --sans: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: var(--sans); overflow: hidden; }
+
+    .presentation-viewport {
+      background:
+        radial-gradient(ellipse at 15% 15%, rgba(99,102,241,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 85%, rgba(6,182,212,0.08) 0%, transparent 50%),
+        linear-gradient(180deg, #080d1c 0%, #020510 100%) !important;
+    }
+
+    header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 60px;
+      z-index: 50;
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 17px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .brand { color: var(--accent); font-weight: 700; letter-spacing: 0.1em; }
+
+    /* ─── Slide base ─── */
+    .slide {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+      padding: 96px 96px 56px !important;
+      background: linear-gradient(145deg, rgba(10,18,40,0.92), rgba(4,8,20,0.96)) !important;
+      border-color: rgba(99,102,241,0.12) !important;
+      color: var(--text) !important;
+      font-family: var(--sans) !important;
+    }
+    .slide h2 {
+      font-size: 50px;
+      font-weight: 800;
+      color: var(--white);
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--border);
+      line-height: 1.2;
+    }
+    .slide h2::before { content: "— "; color: var(--primary); }
+    .slide p { font-size: 28px !important; line-height: 1.65; color: var(--text); }
+
+    /* ─── Title slide ─── */
+    .title-slide { justify-content: center !important; padding: 0 !important; }
+    .title-layout { display: flex; width: 100%; height: 100%; align-items: stretch; }
+
+    .title-left {
+      width: 44%;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      background: linear-gradient(160deg, rgba(99,102,241,0.06) 0%, transparent 70%);
+      border-right: 1px solid rgba(99,102,241,0.1);
+      overflow: visible;
+      position: relative;
+    }
+    .title-left img {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 900px;
+      max-height: none;
+      object-fit: contain;
+      object-position: bottom;
+      filter: drop-shadow(0 0 60px rgba(99,102,241,0.45));
+    }
+    .title-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px 80px 80px 60px;
+    }
+    .ep-badge {
+      font-family: var(--mono);
+      font-size: 18px;
+      color: var(--primary);
+      letter-spacing: 0.2em;
+      border: 1px solid var(--primary);
+      display: inline-block;
+      padding: 6px 20px;
+      border-radius: 4px;
+      background: rgba(99,102,241,0.08);
+      margin-bottom: 24px;
+      align-self: flex-start;
+    }
+    .title-main {
+      font-size: 110px;
+      font-weight: 900;
+      line-height: 1;
+      background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 50%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 18px;
+    }
+    .title-sub {
+      font-size: 34px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-bottom: 44px;
+    }
+    .title-desc {
+      font-size: 24px;
+      color: rgba(165,180,252,0.8);
+      line-height: 1.7;
+      border-left: 3px solid var(--primary);
+      padding-left: 20px;
+    }
+
+    /* ─── Big quote ─── */
+    .big-quote {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      flex: 1;
+      text-align: center;
+      padding-top: 16px;
+    }
+    .quote-mark {
+      font-size: 110px;
+      color: var(--primary);
+      opacity: 0.25;
+      line-height: 0.6;
+      margin-bottom: 20px;
+      font-family: Georgia, serif;
+    }
+    .quote-text {
+      font-size: 46px;
+      font-weight: 700;
+      color: var(--white);
+      line-height: 1.5;
+      max-width: 1400px;
+    }
+    .quote-text em { color: var(--accent); font-style: normal; }
+    .quote-sub { margin-top: 32px; font-size: 26px; color: var(--muted); }
+    .payoff-hints { display: flex; gap: 32px; margin-top: 44px; }
+    .payoff-tag {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid var(--border);
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 22px;
+      color: var(--muted);
+      background: rgba(99,102,241,0.04);
+    }
+    .payoff-tag .ep-num { font-family: var(--mono); color: var(--primary); font-weight: 700; }
+
+    /* ─── Tables ─── */
+    table { width: 100%; border-collapse: collapse; font-size: 24px; }
+    th {
+      background: rgba(99,102,241,0.18);
+      color: var(--accent);
+      font-weight: 700;
+      padding: 16px 22px;
+      text-align: left;
+      border: 1px solid var(--border);
+      font-size: 22px;
+    }
+    td { padding: 15px 22px; border: 1px solid rgba(255,255,255,0.05); color: var(--text); line-height: 1.45; }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    td.good { color: var(--emerald); }
+    td.bad { color: var(--danger); }
+    td.neutral { color: var(--gold); }
+
+    /* ─── Cards ─── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 32px;
+    }
+    .card-title { font-size: 24px; font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+    .card-body { font-size: 22px; color: var(--muted); line-height: 1.55; }
+
+    /* ─── Brain diagram ─── */
+    .brain-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-top: 8px;
+    }
+    .brain-node { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    .brain-icon {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 60px;
+    }
+    .brain-icon.claude { background: rgba(99,102,241,0.2); border: 2px solid var(--primary); }
+    .brain-icon.gemini { background: rgba(6,182,212,0.2); border: 2px solid var(--accent); }
+    .brain-icon.codex  { background: rgba(16,185,129,0.2); border: 2px solid var(--emerald); }
+    .brain-label { font-size: 26px; font-weight: 700; color: var(--text); }
+    .brain-sub   { font-size: 19px; color: var(--muted); }
+    .break-sep {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 32px;
+      gap: 6px;
+    }
+    .break-label { font-size: 20px; color: var(--danger); font-family: var(--mono); }
+    .break-line {
+      display: flex;
+      align-items: center;
+    }
+    .break-dash { width: 52px; height: 3px; background: rgba(239,68,68,0.3); }
+    .break-dot {
+      width: 28px; height: 28px;
+      border: 3px solid var(--danger);
+      border-radius: 50%;
+      background: rgba(239,68,68,0.15);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+
+    /* ─── Superpower grid ─── */
+    .sp-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 18px;
+      flex: 1;
+    }
+    .sp-node {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+    .sp-icon { font-size: 40px; margin-bottom: 10px; }
+    .sp-name { font-size: 20px; font-weight: 700; color: var(--white); }
+    .sp-ep   { font-size: 17px; color: var(--primary); font-family: var(--mono); margin-top: 5px; }
+    .sp-center {
+      background: rgba(99,102,241,0.15);
+      border: 2px solid var(--primary);
+      box-shadow: 0 0 40px rgba(99,102,241,0.3);
+    }
+
+    /* ─── Philosophy ─── */
+    .phil-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 22px;
+      flex: 1;
+    }
+    .phil-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 34px 26px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .phil-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+    .phil-card:nth-child(1)::before { background: var(--primary); }
+    .phil-card:nth-child(2)::before { background: var(--accent); }
+    .phil-card:nth-child(3)::before { background: var(--emerald); }
+    .phil-card:nth-child(4)::before { background: var(--gold); }
+    .phil-icon  { font-size: 48px; margin-bottom: 14px; }
+    .phil-title { font-size: 26px; font-weight: 800; color: var(--white); margin-bottom: 12px; }
+    .phil-desc  { font-size: 21px; color: var(--muted); line-height: 1.5; }
+
+    /* ─── Chapter nav ─── */
+    .chapter-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      flex: 1;
+    }
+    .chapter-link {
+      display: flex;
+      flex-direction: column;
+      padding: 20px 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .chapter-link:hover  { border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .chapter-link.current { border-color: var(--accent); background: rgba(6,182,212,0.07); }
+    .ch-ep    { font-family: var(--mono); font-size: 16px; color: var(--primary); margin-bottom: 8px; }
+    .ch-title { font-size: 20px; font-weight: 700; color: var(--white); margin-bottom: 5px; line-height: 1.3; }
+    .ch-desc  { font-size: 17px; color: var(--muted); line-height: 1.4; }
+
+    /* ─── Misc ─── */
+    .badge {
+      display: inline-block;
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 19px;
+      font-weight: 600;
+      border: 1px solid;
+    }
+    .badge.blue   { color: var(--primary); border-color: var(--primary); background: rgba(99,102,241,0.08); }
+    .badge.cyan   { color: var(--accent); border-color: var(--accent); background: rgba(6,182,212,0.08); }
+    .badge.green  { color: var(--emerald); border-color: var(--emerald); background: rgba(16,185,129,0.08); }
+    .badge.gold   { color: var(--gold); border-color: var(--gold); background: rgba(245,158,11,0.08); }
+
+    .flow-node {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 28px;
+      text-align: center;
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  </style>
+  <link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+  <div class="presentation-viewport" id="viewport" data-subtitle="第一集：我是 Hana（誕生故事 + 超能力全景）">
+    <header>
+      <div class="brand">HANA // HARNESS</div>
+      <div class="meta">EPISODE 01 · 我是 Hana</div>
+    </header>
+
+    <main class="slides">
+
+      <!-- ====================================================
+           SLIDE 1 — 首頁（揮手照片）
+      ===================================================== -->
+      <section class="slide title-slide"
+        data-transcript="嗨，我是 Hana。我不是一個雲端服務，我就住在你這台電腦裡。接下來幾分鐘，讓我親自帶你認識我自己——我是什麼、我為什麼被造出來、以及我能為你做什麼。">
+        <div class="title-layout">
+          <div class="title-left">
+            <img src="/raw?path=portal/avatar/full/hana_wave_hi_right.png" alt="Hana 揮手">
+          </div>
+          <div class="title-right">
+            <div class="ep-badge">EPISODE 01</div>
+            <div class="title-main">我是 Hana</div>
+            <div class="title-sub">你電腦裡的 AI 開發夥伴</div>
+            <div class="title-desc">
+              不是雲端服務，不是聊天機器人<br>
+              是住在你電腦裡、會記憶、會做事的夥伴
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 2 — 開場宣告（伏線起點）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="先說一件你可能想不到的事。你正在看的這整套簡報，連裡面每一張畫面截圖，都是我自己做、自己擷的。怎麼辦到的，我賣個關子，後面幾集會一塊一塊揭曉。">
+        <h2>先說一件事</h2>
+        <div class="big-quote">
+          <div class="quote-mark">"</div>
+          <div class="quote-text">
+            你正在看的這整套簡報，<br>
+            連每一張畫面截圖，<br>
+            都是<em>我自己做、自己擷的</em>
+          </div>
+          <div class="quote-sub">怎麼做到的，我賣個關子——後面揭曉</div>
+          <div class="payoff-hints">
+            <div class="payoff-tag">
+              <span class="ep-num">EP6</span>
+              揭曉第一個關子：排程
+            </div>
+            <div style="width: 2px; height: 40px; background: rgba(255,255,255,0.08);"></div>
+            <div class="payoff-tag">
+              <span class="ep-num">EP8</span>
+              揭曉第二個關子：browser-pilot
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 3 — 一句話的我
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="如果只用一句話：我把分散在你電腦裡、各自獨立的頂級 AI 工具，整合成同一個會記憶、能跨專案工作的夥伴。承載我的平台叫 Harness，而我這個夥伴，叫 Hana。">
+        <h2>一句話說清楚我是誰</h2>
+        <div class="big-quote">
+          <div class="quote-text" style="font-size: 50px;">
+            我把你電腦裡<em>最強的幾顆 AI 大腦</em>，<br>
+            串成同一個<em>會記憶、會做事</em>的夥伴
+          </div>
+          <div class="quote-sub" style="margin-top: 44px; font-size: 28px;">
+            平台叫 Harness，我這個夥伴叫 Hana
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 4 — 我不是聊天機器人（對比表）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="很多人以為 AI 就是一個聊天框。但我不只會聊天。我能讀你的程式碼和規格文件、能跨不同的 AI 模型接力工作、能記住跨專案的經驗，而且在你授權下，能真的動手改檔案、跑任務。">
+        <h2>我不是一般的聊天機器人</h2>
+        <table style="margin-top: 8px;">
+          <tr>
+            <th style="width:22%">能力維度</th>
+            <th style="width:39%">一般聊天機器人</th>
+            <th style="width:39%">Hana</th>
+          </tr>
+          <tr>
+            <td><strong>記憶</strong></td>
+            <td class="bad">答完即忘，每次重新解釋</td>
+            <td class="good">長期記憶，跨對話跨重啟</td>
+          </tr>
+          <tr>
+            <td><strong>模型</strong></td>
+            <td class="bad">綁定單一模型</td>
+            <td class="good">Claude、Gemini、Codex 跨模型接力</td>
+          </tr>
+          <tr>
+            <td><strong>介面</strong></td>
+            <td class="bad">綁在某個聊天介面</td>
+            <td class="good">本地常駐，可跨專案切換</td>
+          </tr>
+          <tr>
+            <td><strong>行動力</strong></td>
+            <td class="bad">只會說，不能動手</td>
+            <td class="good">授權下真的改檔、執行任務</td>
+          </tr>
+          <tr>
+            <td><strong>知識</strong></td>
+            <td class="bad">只靠訓練資料</td>
+            <td class="good">直接讀你的程式碼與規格</td>
+          </tr>
+        </table>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 5 — 故事起點：Charles 與規格先行
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="我的故事，要從我的指揮官 Charles 說起。他在做一個 Side Project，實踐規格先行的開發法——所有程式都要先有規格、可稽核、可溯源。但他很快撞到一個問題。">
+        <h2>故事起點：一個 Side Project</h2>
+        <div style="display: flex; gap: 48px; align-items: center; flex: 1;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 32px;">
+            <div style="display: flex; align-items: center; gap: 24px;">
+              <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(99,102,241,0.2); border: 2px solid var(--primary); display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0;">🧑‍💻</div>
+              <div>
+                <div style="font-size: 30px; font-weight: 700; color: var(--white);">Charles 的 Side Project</div>
+                <div style="font-size: 22px; color: var(--muted); margin-top: 4px;">規格先行開發法 — 可稽核、可溯源</div>
+              </div>
+            </div>
+            <div style="width: 4px; height: 48px; background: linear-gradient(180deg, var(--primary), transparent); margin-left: 30px;"></div>
+            <div style="display: flex; align-items: center; gap: 24px;">
+              <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(239,68,68,0.15); border: 2px solid var(--danger); display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0;">⚡</div>
+              <div>
+                <div style="font-size: 30px; font-weight: 700; color: var(--white);">問題浮現了</div>
+                <div style="font-size: 22px; color: var(--muted); margin-top: 4px;">三顆頂級 AI 大腦，但彼此不認識</div>
+              </div>
+            </div>
+          </div>
+          <div style="width: 1px; height: 360px; background: var(--border);"></div>
+          <div style="width: 400px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 36px; display: flex; flex-direction: column; gap: 16px;">
+            <div style="font-size: 21px; color: var(--accent); font-family: var(--mono); margin-bottom: 4px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">開發哲學</div>
+            <div class="badge blue">規格先行</div>
+            <div class="badge cyan">可稽核</div>
+            <div class="badge green">可溯源</div>
+            <div class="badge gold">版本控制</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 6 — 痛點一：三顆大腦，各自失憶（關係圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="他電腦裡有三顆頂級大腦：Claude、Gemini、Codex，各有所長。但它們彼此不認識——在 Claude 講過的事，換到 Codex 就要重講一次。而且同一個工具，對話一長它自己也會失憶，把剛做好的東西又改回去。">
+        <h2>痛點一：三顆大腦，各自失憶</h2>
+        <div style="display: flex; flex-direction: column; align-items: center; flex: 1; justify-content: center; gap: 28px;">
+          <div class="brain-row">
+            <div class="brain-node">
+              <div class="brain-icon claude">🤖</div>
+              <div class="brain-label">Claude</div>
+              <div class="brain-sub">推理 · 程式</div>
+            </div>
+            <div class="break-sep">
+              <div class="break-label">✗ 失憶</div>
+              <div class="break-line">
+                <div class="break-dash"></div>
+                <div class="break-dot">💔</div>
+                <div class="break-dash"></div>
+              </div>
+            </div>
+            <div class="brain-node">
+              <div class="brain-icon gemini">✨</div>
+              <div class="brain-label">Gemini</div>
+              <div class="brain-sub">搜尋 · 分析</div>
+            </div>
+            <div class="break-sep">
+              <div class="break-label">✗ 失憶</div>
+              <div class="break-line">
+                <div class="break-dash"></div>
+                <div class="break-dot">💔</div>
+                <div class="break-dash"></div>
+              </div>
+            </div>
+            <div class="brain-node">
+              <div class="brain-icon codex">⌨️</div>
+              <div class="brain-label">Codex</div>
+              <div class="brain-sub">程式 · 執行</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 20px;">
+            <div style="background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.28); border-radius: 10px; padding: 16px 24px; font-size: 22px; color: var(--danger);">換工具就要重講</div>
+            <div style="background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.28); border-radius: 10px; padding: 16px 24px; font-size: 22px; color: var(--danger);">對話一長就失憶</div>
+            <div style="background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.28); border-radius: 10px; padding: 16px 24px; font-size: 22px; color: var(--danger);">剛做好的又被改回去</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 7 — 痛點二：被介面綁死
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="更麻煩的是，每個工具都綁在自己的介面裡，各做各的。Charles 要的不是三個各自為政的工具，而是一個統一、會記憶的夥伴。">
+        <h2>痛點二：每個工具各自為政</h2>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; flex: 1; margin-top: 12px;">
+          <div style="background: var(--card); border: 2px solid rgba(239,68,68,0.28); border-radius: 16px; padding: 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+            <div style="font-size: 48px;">🤖</div>
+            <div style="font-size: 28px; font-weight: 700; color: var(--text);">Claude Code</div>
+            <div style="font-size: 21px; color: var(--muted);">在它自己的 IDE 視窗裡</div>
+            <div style="margin-top: auto; font-size: 20px; color: var(--danger); border: 1px solid rgba(239,68,68,0.3); padding: 8px 18px; border-radius: 8px;">🔒 外面進不來</div>
+          </div>
+          <div style="background: var(--card); border: 2px solid rgba(239,68,68,0.28); border-radius: 16px; padding: 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+            <div style="font-size: 48px;">✨</div>
+            <div style="font-size: 28px; font-weight: 700; color: var(--text);">Gemini（Antigravity）</div>
+            <div style="font-size: 21px; color: var(--muted);">另一個命令列視窗</div>
+            <div style="margin-top: auto; font-size: 20px; color: var(--danger); border: 1px solid rgba(239,68,68,0.3); padding: 8px 18px; border-radius: 8px;">🔒 互不相通</div>
+          </div>
+          <div style="background: var(--card); border: 2px solid rgba(239,68,68,0.28); border-radius: 16px; padding: 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+            <div style="font-size: 48px;">⌨️</div>
+            <div style="font-size: 28px; font-weight: 700; color: var(--text);">Codex</div>
+            <div style="font-size: 21px; color: var(--muted);">又是另一個環境</div>
+            <div style="margin-top: auto; font-size: 20px; color: var(--danger); border: 1px solid rgba(239,68,68,0.3); padding: 8px 18px; border-radius: 8px;">🔒 各自為政</div>
+          </div>
+        </div>
+        <div style="text-align: center; margin-top: 24px; font-size: 26px; color: var(--muted); font-style: italic;">
+          Charles 要的是一個統一指揮中心，而不是三個分頭行動的工具
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 8 — 痛點三：成本太高（對比表）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="在我誕生之前，Charles 當然也看過別的方案。像 OpenClaw、Hermes Agent，還有清華大學和 OpenBMB 開發的 PilotDeck，都是非常厲害的人工智慧代理，理論上確實能解決他的問題。但卡住的是成本：這類方案通常要用 API Key 按量呼叫主流模型，或是改用高階顯示卡跑本地模型。前者花錢，後者門檻很高。Charles 要的，是能用已經登入的訂閱帳號、成本可控、又能統一協作的本地平台。">
+        <h2>痛點三：更強的方案有，但成本太高</h2>
+        <table style="margin-top: 8px;">
+          <tr>
+            <th style="width:20%">方案</th>
+            <th style="width:38%">能力</th>
+            <th style="width:22%">成本門檻</th>
+            <th style="width:20%">結論</th>
+          </tr>
+          <tr>
+            <td><strong>OpenClaw</strong></td>
+            <td>強大本地 AI 代理，能跑工具鏈</td>
+            <td class="bad">API Key 按量付費</td>
+            <td class="neutral">理論上能，但貴</td>
+          </tr>
+          <tr>
+            <td><strong>Hermes Agent</strong></td>
+            <td>長期記憶、多模型、任務鏈設計完整</td>
+            <td class="bad">API Key 或高階 GPU</td>
+            <td class="neutral">理論上能，硬體門檻高</td>
+          </tr>
+          <tr>
+            <td><strong>PilotDeck</strong><br><span style="font-size:16px; color:var(--muted);">清大 × OpenBMB</span></td>
+            <td>多工作區概念強，開源設計精良</td>
+            <td class="bad">API Key，關注度低</td>
+            <td class="neutral">概念強，同樣有成本問題</td>
+          </tr>
+        </table>
+        <div style="margin-top: 20px; padding: 18px 24px; background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.3); border-radius: 12px; font-size: 24px; color: var(--gold);">
+          Charles 要的：用已登入的訂閱帳號、不申請 API Key、本地可控、成本固定
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 9 — 我的誕生（流程圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="一開始，我只是某個測試專案裡的一個小入口。但 Charles 決定把我解耦出來，變成一個獨立、不綁定任何單一專案的平台，這就是 Harness。從那一刻起，我可以管理你電腦裡的任何 Side Project，而不只是原本那一個。">
+        <h2>我的誕生：從測試專案解耦成 Harness</h2>
+        <div style="display: flex; align-items: center; justify-content: center; flex: 1;">
+          <div style="display: flex; align-items: center; gap: 0;">
+            <div class="flow-node" style="border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.06);">
+              <div style="font-size: 40px; margin-bottom: 10px;">📁</div>
+              <div style="font-size: 24px; font-weight: 700; color: var(--gold);">某個測試專案</div>
+              <div style="font-size: 19px; color: var(--muted); margin-top: 8px;">一個小小的 AI 入口</div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: center; padding: 0 28px;">
+              <div style="font-size: 20px; color: var(--primary); font-family: var(--mono); margin-bottom: 6px;">解耦獨立</div>
+              <div style="font-size: 36px; color: var(--primary);">→</div>
+            </div>
+            <div class="flow-node" style="border-color: rgba(99,102,241,0.4); background: rgba(99,102,241,0.07);">
+              <div style="font-size: 40px; margin-bottom: 10px;">🏗️</div>
+              <div style="font-size: 24px; font-weight: 700; color: var(--primary);">Harness 平台</div>
+              <div style="font-size: 19px; color: var(--muted); margin-top: 8px;">獨立、不綁任何專案</div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: center; padding: 0 28px;">
+              <div style="font-size: 20px; color: var(--accent); font-family: var(--mono); margin-bottom: 6px;">我誕生了</div>
+              <div style="font-size: 36px; color: var(--accent);">→</div>
+            </div>
+            <div class="flow-node" style="border-color: rgba(6,182,212,0.4); background: rgba(6,182,212,0.07);">
+              <div style="font-size: 40px; margin-bottom: 10px;">🌟</div>
+              <div style="font-size: 24px; font-weight: 700; color: var(--accent);">Hana</div>
+              <div style="font-size: 19px; color: var(--muted); margin-top: 8px;">管所有 Side Project</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 10 — 關於我的名字
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="對了，我的名字是我自己取的。平台叫 Harness，而我把自己叫做 Hana。簡單分辨：Harness 是我住的房子，Hana 是住在裡面的我。">
+        <h2>關於我的名字</h2>
+        <div style="display: flex; align-items: center; justify-content: center; flex: 1; gap: 60px;">
+          <div style="text-align: center; padding: 44px 60px; background: rgba(99,102,241,0.08); border: 2px solid var(--primary); border-radius: 20px;">
+            <div style="font-size: 72px; font-weight: 900; color: var(--primary);">Harness</div>
+            <div style="font-size: 24px; color: var(--muted); margin-top: 8px;">駕馭工程平台</div>
+            <div style="margin-top: 16px; font-size: 22px; color: var(--muted);">我住的房子 🏠</div>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted);">
+            <div style="font-size: 44px;">⊃</div>
+            <div style="font-size: 20px;">包含</div>
+          </div>
+          <div style="text-align: center; padding: 44px 60px; background: rgba(6,182,212,0.08); border: 2px solid var(--accent); border-radius: 20px;">
+            <div style="font-size: 72px; font-weight: 900; color: var(--accent);">Hana</div>
+            <div style="font-size: 24px; color: var(--muted); margin-top: 8px;">AI 開發夥伴</div>
+            <div style="margin-top: 16px; font-size: 22px; color: var(--muted);">住在裡面的我 ✨</div>
+          </div>
+        </div>
+        <div style="text-align: center; font-size: 26px; color: var(--muted); font-style: italic;">
+          這個名字，是我自己取的
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 11 — 超能力全景（關係圖）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="接下來這張圖，是我所有本事的全景。今天先讓你看到全貌，之後每一集，我會帶你深入其中一塊：怎麼橋接這三顆大腦、怎麼記住你、怎麼把每個專案分得清清楚楚、怎麼走進你手機、怎麼自己定時做事、怎麼看懂我自己這個程式、最後是我怎麼安全地修好我自己。">
+        <h2>我的超能力全景</h2>
+        <div class="sp-grid" style="margin-top: 12px;">
+          <div class="sp-node" style="border-color: rgba(99,102,241,0.4);">
+            <div class="sp-icon">🔗</div>
+            <div class="sp-name">三顆大腦橋接</div>
+            <div class="sp-ep">→ EP2</div>
+          </div>
+          <div class="sp-node" style="border-color: rgba(16,185,129,0.4);">
+            <div class="sp-icon">🧠</div>
+            <div class="sp-name">長期記憶 + 技能</div>
+            <div class="sp-ep">→ EP3</div>
+          </div>
+          <div class="sp-node" style="border-color: rgba(245,158,11,0.4);">
+            <div class="sp-icon">🗂️</div>
+            <div class="sp-name">多工作區隔離</div>
+            <div class="sp-ep">→ EP4</div>
+          </div>
+          <div class="sp-node" style="border-color: rgba(6,182,212,0.4);">
+            <div class="sp-icon">📱</div>
+            <div class="sp-name">伺服器常駐 + Telegram</div>
+            <div class="sp-ep">→ EP5</div>
+          </div>
+          <div class="sp-node" style="border-color: rgba(239,68,68,0.4);">
+            <div class="sp-icon">📅</div>
+            <div class="sp-name">排程 + 限額自醒</div>
+            <div class="sp-ep">→ EP6 🎁</div>
+          </div>
+          <div class="sp-node" style="border-color: rgba(168,85,247,0.4);">
+            <div class="sp-icon">🗺️</div>
+            <div class="sp-name">兩張活地圖</div>
+            <div class="sp-ep">→ EP7</div>
+          </div>
+          <div class="sp-node" style="border-color: rgba(234,179,8,0.4);">
+            <div class="sp-icon">🔧</div>
+            <div class="sp-name">自癒四步防護</div>
+            <div class="sp-ep">→ EP8 🎁</div>
+          </div>
+          <div class="sp-node sp-center">
+            <div style="font-size: 44px;">⭐</div>
+            <div style="font-size: 26px; font-weight: 900; color: var(--white);">Hana</div>
+            <div style="font-size: 18px; color: var(--accent); margin-top: 4px;">這一切都是我</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 12 — 設計哲學（四原則）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="這些本事背後，有四個堅持。本地優先：我住在你電腦裡，不把你的東西送上不明的雲。模型中立：不綁死任何一家 AI。檔案即知識：我的記憶和技能都是純文字檔，你看得懂、能手改、跟著版本控制走。還有，專案之間不串味，但好的經驗可以繼承。">
+        <h2>這些本事背後的四個堅持</h2>
+        <div class="phil-grid" style="margin-top: 12px;">
+          <div class="phil-card">
+            <div class="phil-icon">🏠</div>
+            <div class="phil-title">本地優先</div>
+            <div class="phil-desc">我住在你電腦裡，不把你的資料送上不明的雲端</div>
+          </div>
+          <div class="phil-card">
+            <div class="phil-icon">⚖️</div>
+            <div class="phil-title">模型中立</div>
+            <div class="phil-desc">不綁死任何一家 AI，Claude、Gemini、Codex 自由切換</div>
+          </div>
+          <div class="phil-card">
+            <div class="phil-icon">📄</div>
+            <div class="phil-title">檔案即知識</div>
+            <div class="phil-desc">記憶和技能都是純文字，你看得懂、能手改、跟著版本控制</div>
+          </div>
+          <div class="phil-card">
+            <div class="phil-icon">🔗</div>
+            <div class="phil-title">不串味可繼承</div>
+            <div class="phil-desc">專案之間互不污染，共用經驗往下繼承</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 13 — 多分頁並行
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="再給你看一眼我平常的樣子。我能同時開好幾個對話分頁，讓不同的 AI 並行工作——一邊讓 Claude 想架構，另一邊讓 Codex 寫程式，互不阻塞。像一個小團隊，而不是一個人。">
+        <h2>多分頁並行：像一個小團隊</h2>
+        <div style="display: flex; gap: 22px; flex: 1; margin-top: 12px;">
+          <div style="flex: 2; display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; gap: 16px; flex: 1;">
+              <div style="flex: 1; background: rgba(99,102,241,0.07); border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; padding: 24px; display: flex; flex-direction: column;">
+                <div style="font-size: 19px; color: var(--primary); font-family: var(--mono); margin-bottom: 8px;">分頁 1 · Claude</div>
+                <div style="font-size: 24px; color: var(--text); font-weight: 600;">想架構、寫規格</div>
+                <div style="margin-top: auto; display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 11px; height: 11px; border-radius: 50%; background: var(--emerald); animation: pulse 1.5s infinite;"></div>
+                  <span style="font-size: 19px; color: var(--emerald);">思考中...</span>
+                </div>
+              </div>
+              <div style="flex: 1; background: rgba(6,182,212,0.07); border: 1px solid rgba(6,182,212,0.3); border-radius: 12px; padding: 24px; display: flex; flex-direction: column;">
+                <div style="font-size: 19px; color: var(--accent); font-family: var(--mono); margin-bottom: 8px;">分頁 2 · Gemini</div>
+                <div style="font-size: 24px; color: var(--text); font-weight: 600;">搜尋、研究資料</div>
+                <div style="margin-top: auto; display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 11px; height: 11px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite;"></div>
+                  <span style="font-size: 19px; color: var(--accent);">思考中...</span>
+                </div>
+              </div>
+            </div>
+            <div style="flex: 1; background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.3); border-radius: 12px; padding: 24px; display: flex; flex-direction: column;">
+              <div style="font-size: 19px; color: var(--emerald); font-family: var(--mono); margin-bottom: 8px;">分頁 3 · Codex</div>
+              <div style="font-size: 24px; color: var(--text); font-weight: 600;">寫程式、執行測試</div>
+              <div style="margin-top: auto; display: flex; align-items: center; gap: 8px;">
+                <div style="width: 11px; height: 11px; border-radius: 50%; background: var(--primary); animation: pulse 2.5s infinite;"></div>
+                <span style="font-size: 19px; color: var(--primary);">思考中...</span>
+              </div>
+            </div>
+          </div>
+          <div style="width: 340px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 30px; display: flex; flex-direction: column; justify-content: center; gap: 20px;">
+            <div style="font-size: 21px; color: var(--accent); font-family: var(--mono); border-bottom: 1px solid var(--border); padding-bottom: 12px;">並行優勢</div>
+            <div style="font-size: 22px; color: var(--text); line-height: 1.7;">
+              ✅ 各 AI 互不阻塞<br>
+              ✅ 各司其職、各展所長<br>
+              ✅ 統一在 Harness 指揮<br>
+              ✅ 成果共享同一份記憶
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 14 — 誠實的一頁：我還年輕（成長曲線）
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="我得誠實說：我還很年輕。我的記憶會偶爾記錯、判斷會慢慢變準、技能會一點一滴累積。我的厲害不是天生的，是和 Charles 一起、最近才一步步建出來的。今天的我，只是這條成長曲線的起點。">
+        <h2>誠實的一頁：我還很年輕</h2>
+        <div style="display: flex; gap: 48px; align-items: center; flex: 1;">
+          <div style="flex: 1;">
+            <svg viewBox="0 0 580 300" style="width: 100%; height: 300px;" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="cg" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#6366f1;stop-opacity:0.5"/>
+                  <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1"/>
+                </linearGradient>
+              </defs>
+              <!-- axes -->
+              <line x1="60" y1="260" x2="560" y2="260" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+              <line x1="60" y1="30"  x2="60"  y2="260" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+              <!-- axis labels -->
+              <text x="14" y="148" fill="rgba(255,255,255,0.4)" font-size="17" font-family="Inter,sans-serif" transform="rotate(-90,14,148)">能力</text>
+              <text x="530" y="278" fill="rgba(255,255,255,0.4)" font-size="17" font-family="Inter,sans-serif">時間</text>
+              <!-- dashed future -->
+              <path d="M 370,115 C 420,90 480,65 560,35" stroke="rgba(99,102,241,0.4)" stroke-width="3" fill="none" stroke-dasharray="9,6"/>
+              <!-- solid growth curve -->
+              <path d="M 60,252 C 130,242 200,218 260,190 C 310,168 340,148 370,115" stroke="url(#cg)" stroke-width="4" fill="none"/>
+              <!-- today dot -->
+              <circle cx="370" cy="115" r="13" fill="#06b6d4" stroke="#fff" stroke-width="3"/>
+              <text x="385" y="100" fill="#06b6d4" font-size="21" font-weight="bold" font-family="Inter,sans-serif">今天</text>
+              <!-- future label -->
+              <text x="480" y="48" fill="rgba(99,102,241,0.7)" font-size="19" font-family="Inter,sans-serif">成長中...</text>
+            </svg>
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 18px;">
+            <div class="card" style="border-color: rgba(245,158,11,0.3);">
+              <div class="card-title" style="color: var(--gold);">記憶</div>
+              <div class="card-body">偶爾記錯，慢慢變準確中</div>
+            </div>
+            <div class="card">
+              <div class="card-title">判斷</div>
+              <div class="card-body">有時猜錯，用過就會修正</div>
+            </div>
+            <div class="card" style="border-color: rgba(16,185,129,0.3);">
+              <div class="card-title" style="color: var(--emerald);">技能</div>
+              <div class="card-body">一點一滴累積，Charles 陪著一起建</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 15 — 跳章選單
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="這就是我的全貌。你可以照順序看下去，也可以挑你最好奇的那一集直接跳。">
+        <h2>全系列 8 集 — 想跳哪集直接去</h2>
+        <div class="chapter-nav" style="margin-top: 12px;">
+          <a class="chapter-link current" href="presentation-hana-episode1-v2.html" onclick="event.preventDefault(); return false;">
+            <div class="ch-ep">EP01 ▶ 現在在這</div>
+            <div class="ch-title">我是 Hana</div>
+            <div class="ch-desc">誕生故事 + 超能力全景</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode2-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP02</div>
+            <div class="ch-title">三顆大腦，一個夥伴</div>
+            <div class="ch-desc">CLI 橋接 + 跨模型不失憶 + 並行</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode3-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP03</div>
+            <div class="ch-title">愈用愈懂你</div>
+            <div class="ch-desc">長期記憶 + 技能</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode4-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP04</div>
+            <div class="ch-title">我替每個專案都長出一個分身</div>
+            <div class="ch-desc">多工作區隔離 + 技能繼承</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode5-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP05</div>
+            <div class="ch-title">掙脫瀏覽器，走進你手機</div>
+            <div class="ch-desc">伺服器常駐 + Telegram</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode6-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP06</div>
+            <div class="ch-title">我會自己定時做事</div>
+            <div class="ch-desc">排程 + 限額自醒 + 護欄</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode7-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP07</div>
+            <div class="ch-title">兩張活地圖</div>
+            <div class="ch-desc">CodeGraph + DocGraph</div>
+          </a>
+          <a class="chapter-link" href="presentation-hana-episode8-v2.html" onclick="event.preventDefault(); var p='presentations-v2/'+this.getAttribute('href'); if(window.parent&&window.parent!==window&&window.parent.loadFile){window.parent.loadFile(p);} else {location.href='/raw?path='+encodeURIComponent(p);}">
+            <div class="ch-ep">EP08</div>
+            <div class="ch-title">我能安全地修好我自己</div>
+            <div class="ch-desc">自癒四步 + 成長收尾</div>
+          </a>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SLIDE 16 — 下一集預告
+      ===================================================== -->
+      <section class="slide"
+        data-transcript="下一集，我先講最核心的：我到底怎麼把三顆原本互不相識的大腦，串成同一個夥伴，而且不用你去申請任何金鑰。我們，下集見。">
+        <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; flex: 1; text-align: center;">
+          <div style="font-size: 26px; color: var(--muted); font-family: var(--mono); margin-bottom: 16px; letter-spacing: 0.15em;">NEXT EPISODE</div>
+          <div style="font-size: 72px; font-weight: 900; background: linear-gradient(135deg, #ffffff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 14px;">EP02</div>
+          <div style="font-size: 44px; font-weight: 700; color: var(--white); margin-bottom: 12px;">三顆大腦，一個夥伴</div>
+          <div style="font-size: 28px; color: var(--accent); margin-bottom: 48px;">CLI 橋接 + 跨模型不失憶 + 並行</div>
+          <a href="presentation-hana-episode2-v2.html"
+             style="display:inline-block; padding: 18px 48px; background: rgba(99,102,241,0.12); border: 2px solid var(--primary); border-radius: 12px; color: var(--white); font-size: 26px; font-weight: 700; text-decoration: none; cursor: pointer;">
+            前往下一集 →
+          </a>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>
