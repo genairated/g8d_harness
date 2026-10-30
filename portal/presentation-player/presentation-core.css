@@ -74,14 +74,19 @@ td:first-child{color:#fff;font-weight:800}
 .split span{display:block;font-size:34px;line-height:1.65;color:var(--muted)}
 .split span:first-child{font-size:42px;color:#fff;font-weight:900}
 .team-row{grid-template-columns:repeat(3,1fr)}
-.controls{display:flex;align-items:center;gap:16px}
+/* 右側讓出 hana-overlay.js 固定在右下角的浮動頭像（right:24px、約 170px 寬），避免蓋住 ⛶／下一頁 */
+.controls{display:flex;align-items:center;gap:16px;flex-shrink:0;margin-right:110px}
 .btn{width:56px;height:56px;border-radius:50%;border:1px solid var(--line);background:rgba(15,23,42,.72);color:var(--text);font-size:24px;cursor:pointer}
 .btn:hover{border-color:var(--cyan);color:#fff;box-shadow:0 0 18px rgba(34,211,238,.3)}
 .btn:disabled{opacity:.25;cursor:not-allowed}
-.slide-number{font-family:var(--mono);font-size:20px;color:var(--muted)}
-.dots{display:flex;gap:10px}
-.dot{width:12px;height:12px;border-radius:999px;background:rgba(148,163,184,.32);cursor:pointer}
+.slide-number{font-family:var(--mono);font-size:20px;color:var(--muted);white-space:nowrap;flex-shrink:0}
+/* 圓點列可收縮、可換行：頁數多（實測 83／93 頁）時整排比畫面寬，會把右側控制鈕（含 ⛶ 全螢幕播放）擠出畫面外 */
+.dots{display:flex;gap:10px;flex:1 1 auto;min-width:0;margin:0 24px;flex-wrap:wrap;justify-content:center;align-content:center;row-gap:6px;max-height:60px;overflow:hidden}
+.dot{width:12px;height:12px;border-radius:999px;background:rgba(148,163,184,.32);cursor:pointer;flex-shrink:0}
 .dot.active{width:34px;background:var(--cyan);box-shadow:0 0 14px rgba(34,211,238,.55)}
+.dots:has(> .dot:nth-child(41)){gap:6px;row-gap:6px}
+.dots:has(> .dot:nth-child(41)) .dot{width:9px;height:9px}
+.dots:has(> .dot:nth-child(41)) .dot.active{width:24px}
 .tech-panel{position:absolute;top:106px;right:90px;z-index:10;width:300px;padding:16px 18px;border:1px solid var(--line);border-radius:8px;background:rgba(2,6,23,.86);backdrop-filter:blur(20px);display:flex;flex-direction:column;gap:12px}
 .tech-title{font-family:var(--mono);font-size:14px;color:var(--cyan);letter-spacing:.12em}
 .row{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:15px}
@@ -106,4 +111,54 @@ input:checked+.slider:before{transform:translateX(22px)}
 /* PRES-ANIM-01: animation hooks — data-anim / data-anim-step */
 [data-anim]{opacity:0;transform:translateY(16px);transition:opacity .4s ease,transform .4s ease}
 [data-anim].anim-visible{opacity:1;transform:translateY(0)}
-body.exporting [data-anim]{opacity:1!important;transform:none!important;transition:none!important}
+body.exporting:not(.export-cue-frames) [data-anim]{opacity:1!important;transform:none!important;transition:none!important}
+body.export-cue-frames [data-anim]{transition:none!important}
+/* ── PRES-CUE：旁白分段同步動畫的共用元件（SPEC-presentation-core.md §8）──────────── */
+/* 雷射筆：.cue-laser-circle 紅點＋脈動光圈 / .cue-laser-box 框選 / .cue-laser-underline 底線。由 core.js 動態放進 .slide。 */
+.cue-laser{position:absolute;z-index:40;pointer-events:none;animation:cueLaserIn .35s ease both}
+.cue-laser.cue-laser-out{animation:cueLaserOut .4s ease both}
+.cue-laser-circle{border-radius:50%;border:4px solid rgba(255,59,59,.9);box-shadow:0 0 24px rgba(255,59,59,.6),inset 0 0 18px rgba(255,59,59,.25)}
+.cue-laser-circle::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:4px solid rgba(255,59,59,.7);animation:cueLaserPulse 1.4s ease-out infinite}
+.cue-laser-dot{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:#ff3b3b;box-shadow:0 0 14px 4px rgba(255,59,59,.85)}
+.cue-laser-box{border:4px solid rgba(255,59,59,.92);border-radius:10px;box-shadow:0 0 26px rgba(255,59,59,.55),inset 0 0 22px rgba(255,59,59,.18)}
+.cue-laser-underline{height:7px;border-radius:4px;background:linear-gradient(90deg,rgba(255,59,59,.95),rgba(255,120,80,.95));box-shadow:0 0 16px rgba(255,59,59,.7);transform-origin:left center;animation:cueLaserUnderline .5s ease both}
+@keyframes cueLaserIn{from{opacity:0;transform:scale(1.35)}to{opacity:1;transform:scale(1)}}
+@keyframes cueLaserOut{from{opacity:1}to{opacity:0}}
+@keyframes cueLaserPulse{0%{transform:scale(1);opacity:.85}100%{transform:scale(1.55);opacity:0}}
+@keyframes cueLaserUnderline{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+/* 輪播容器：子元素疊在同一格，一次只顯示 .cue-on 那張，淡入淡出 */
+.cue-slides{position:relative;display:grid}
+.cue-slides>*{grid-area:1/1;opacity:0;transition:opacity .6s ease;pointer-events:none}
+.cue-slides>.cue-on{opacity:1;pointer-events:auto}
+.cue-slides img{width:100%;height:100%;object-fit:contain;border-radius:8px;border:1px solid var(--line)}
+/* 數字滾動：等寬數字避免抖動 */
+[data-count-to]{font-variant-numeric:tabular-nums}
+/* SVG 逐段畫出：.cue-draw（群組或路徑）由 core.js 設定 stroke-dasharray / dashoffset */
+.cue-draw path,.cue-draw line,.cue-draw polyline,.cue-draw polygon,path.cue-draw,line.cue-draw,polyline.cue-draw{stroke-linecap:round}
+/* 前後對照：.cue-compare > .cue-before + .cue-after；--pos=after 從左邊算起被遮住的比例 */
+.cue-compare{position:relative;overflow:hidden;border-radius:8px;border:1px solid var(--line);--pos:100%}
+.cue-compare>.cue-before,.cue-compare>.cue-after{display:block;width:100%;height:100%}
+.cue-compare>.cue-after{position:absolute;inset:0;clip-path:inset(0 0 0 var(--pos));transition:clip-path 1s cubic-bezier(.65,0,.35,1)}
+.cue-compare img{width:100%;height:100%;object-fit:cover;display:block}
+.cue-compare-handle{position:absolute;top:0;bottom:0;left:var(--pos);width:4px;margin-left:-2px;background:#fff;box-shadow:0 0 14px rgba(34,211,238,.9);transition:left 1s cubic-bezier(.65,0,.35,1);z-index:2}
+.cue-compare-handle::after{content:"\2194";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:#0f172a;border:2px solid var(--cyan);color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center}
+.cue-compare.cue-instant>.cue-after,.cue-compare.cue-instant>.cue-compare-handle{transition:none}
+.cue-compare .cue-label{position:absolute;top:14px;z-index:3;font-size:22px;font-weight:800;padding:6px 14px;border-radius:6px;background:rgba(2,6,23,.8)}
+.cue-compare .cue-label.l{left:14px}.cue-compare .cue-label.r{right:14px}
+/* 時間軸：.cue-timeline > .tl-item*；core.js 會補 .tl-fill 進度條並設 --tl-progress */
+.cue-timeline{position:relative;display:flex;justify-content:space-between;gap:12px;padding-top:46px;--tl-progress:0%}
+.cue-timeline::before,.cue-timeline>.tl-fill{content:"";position:absolute;top:18px;left:0;height:6px;border-radius:3px}
+.cue-timeline::before{right:0;background:rgba(148,163,184,.25)}
+.cue-timeline>.tl-fill{width:var(--tl-progress);background:linear-gradient(90deg,var(--blue),var(--cyan));box-shadow:0 0 14px rgba(34,211,238,.6);transition:width .9s ease}
+.cue-timeline .tl-item{position:relative;flex:1;text-align:center;font-size:24px;color:var(--muted);opacity:.45;transition:opacity .5s,color .5s}
+.cue-timeline .tl-item::before{content:"";position:absolute;top:-38px;left:50%;width:22px;height:22px;margin-left:-11px;border-radius:50%;background:#1e293b;border:3px solid rgba(148,163,184,.5);transition:all .5s}
+.cue-timeline .tl-item.tl-done{opacity:.85;color:#cbd5e1}
+.cue-timeline .tl-item.tl-done::before{background:var(--cyan);border-color:var(--cyan)}
+.cue-timeline .tl-item.tl-current{opacity:1;color:#fff;font-weight:800}
+.cue-timeline .tl-item.tl-current::before{background:var(--amber);border-color:#fde68a;box-shadow:0 0 0 8px rgba(245,158,11,.25)}
+/* 暫估角標：尚未確認的數字，掛在數字旁 */
+.est-badge{display:inline-block;vertical-align:super;margin-left:8px;padding:2px 10px;font-size:.38em;font-weight:800;letter-spacing:.06em;line-height:1.5;color:#1c1917;background:var(--amber);border-radius:999px;box-shadow:0 0 12px rgba(245,158,11,.5)}
+.est-badge:empty::before{content:"暫估"}
+.est-badge:empty[data-label]::before{content:attr(data-label)}
+/* 匯出最終畫面時不畫雷射筆（它是講解時的指示，不是內容） */
+body.exporting:not(.export-keep-laser) .cue-laser{display:none!important}

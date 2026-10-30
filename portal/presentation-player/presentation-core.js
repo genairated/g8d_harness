@@ -179,6 +179,262 @@
       });
     }
 
+    // ── 5b. 旁白分段 cue（PRES-CUE，SPEC-presentation-core.md §8）─────────
+    // 投影片內放 <script type="application/json" data-cues>[ {say, step, laser, show, count,
+    // draw, compare, timeline, pause}, … ]</script>。每個 cue：先做動作 → 唸 say → 停 pause → 下一個。
+    // 沒有 data-cues 的頁面完全走舊流程（唸整段 data-transcript）。
+    // 狀態可「重建」：任何時候都能 reset 後瞬間套用 cue 0..k（左鍵回上一個 cue、匯出最終畫面都靠它）。
+    function parseCues(slide) {
+      var tag = slide.querySelector('script[data-cues]');
+      if (!tag) return null;
+      try {
+        var arr = JSON.parse(tag.textContent || '[]');
+        if (!Array.isArray(arr) || !arr.length) return null;
+        return arr.filter(function (c) { return c && typeof c === 'object'; });
+      } catch (e) {
+        console.warn('[presentation-core] data-cues JSON 解析失敗，此頁退回舊流程：', e.message);
+        return null;
+      }
+    }
+    function slideCues(slide) {
+      if (slide._cues === undefined) slide._cues = parseCues(slide);
+      return slide._cues;
+    }
+    function asList(v) { return v == null ? [] : (Array.isArray(v) ? v : [v]); }
+    function qsAll(slide, sel) {
+      if (!sel) return [];
+      try { return [].slice.call(slide.querySelectorAll(sel)); } catch (e) { console.warn('[presentation-core] cue 選擇器無效：', sel); return []; }
+    }
+    function pct(v, def) { var n = parseFloat(v); return isFinite(n) ? n : def; }
+
+    // 量測元素相對於 slide 的「未縮放」座標。走 offsetParent 鏈（不受 viewport scale 與進場 transform 影響）；
+    // SVG 元素沒有 offset* → 改用 getBoundingClientRect 再除以實際縮放倍率。
+    function relRect(el, slide) {
+      if (el === slide) return { x: 0, y: 0, w: slide.offsetWidth, h: slide.offsetHeight };
+      if (el instanceof HTMLElement && el.offsetParent) {
+        var x = 0, y = 0, n = el;
+        while (n && n !== slide) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+        if (n === slide) return { x: x, y: y, w: el.offsetWidth, h: el.offsetHeight };
+      }
+      var r = el.getBoundingClientRect(), s = slide.getBoundingClientRect();
+      var k = slide.offsetWidth ? (s.width / slide.offsetWidth) || 1 : 1;
+      return { x: (r.left - s.left) / k, y: (r.top - s.top) / k, w: r.width / k, h: r.height / k };
+    }
+
+    // 雷射筆：紅點＋脈動光圈（circle）／框選（box）／底線（underline）。同頁可多個；下一個 cue 時淡出。
+    function clearLasers(slide, instant) {
+      [].slice.call(slide.querySelectorAll('.cue-laser')).forEach(function (el) {
+        if (instant) { el.remove(); return; }
+        el.classList.add('cue-laser-out');
+        setTimeout(function () { el.remove(); }, 420);
+      });
+    }
+    function placeLaser(slide, spec) {
+      if (typeof spec === 'string') spec = { target: spec };
+      var type = spec.type || 'circle';
+      var host = spec.target ? slide.querySelector(spec.target) : slide;
+      if (!host) { console.warn('[presentation-core] laser 找不到目標：', spec.target); return; }
+      var r = relRect(host, slide);
+      if (spec.box) { // 相對目標的百分比框
+        r = { x: r.x + r.w * pct(spec.box.x, 0) / 100, y: r.y + r.h * pct(spec.box.y, 0) / 100,
+              w: r.w * pct(spec.box.w, 100) / 100, h: r.h * pct(spec.box.h, 100) / 100 };
+      }
+      var el = document.createElement('div');
+      el.className = 'cue-laser cue-laser-' + type;
+      if (type === 'circle') {
+        var d = Math.max(56, Math.min(260, Math.max(r.w, r.h) * 0.9));
+        el.style.left = (r.x + r.w / 2 - d / 2) + 'px'; el.style.top = (r.y + r.h / 2 - d / 2) + 'px';
+        el.style.width = d + 'px'; el.style.height = d + 'px';
+        el.innerHTML = '<i class="cue-laser-dot"></i>';
+      } else if (type === 'underline') {
+        el.style.left = r.x + 'px'; el.style.top = (r.y + r.h + 4) + 'px'; el.style.width = r.w + 'px';
+      } else { // box
+        var pad = 8;
+        el.style.left = (r.x - pad) + 'px'; el.style.top = (r.y - pad) + 'px';
+        el.style.width = (r.w + pad * 2) + 'px'; el.style.height = (r.h + pad * 2) + 'px';
+      }
+      slide.appendChild(el);
+    }
+
+    // 輪播容器 .cue-slides：子元素一次只亮一張（1 起算），淡入淡出。
+    function setShow(slide, spec) {
+      if (typeof spec === 'string') spec = { target: spec, index: 1 };
+      qsAll(slide, spec.target).forEach(function (box) {
+        var kids = [].slice.call(box.children);
+        var n = Math.max(1, Math.min(kids.length, parseInt(spec.index, 10) || 1));
+        kids.forEach(function (k, i) { k.classList.toggle('cue-on', i === n - 1); });
+      });
+    }
+    function resetShows(slide) {
+      [].slice.call(slide.querySelectorAll('.cue-slides')).forEach(function (box) {
+        [].slice.call(box.children).forEach(function (k, i) { k.classList.toggle('cue-on', i === 0); });
+      });
+    }
+
+    // 數字滾動 [data-count-to]：可選 data-count-from / data-count-decimals / data-count-prefix / data-count-suffix。
+    function fmtCount(el, v) {
+      var dec = parseInt(el.dataset.countDecimals || '0', 10) || 0;
+      var s = Number(v).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      return (el.dataset.countPrefix || '') + s + (el.dataset.countSuffix || '');
+    }
+    function setCount(el, final) {
+      if (el._countTimer) { cancelAnimationFrame(el._countTimer); el._countTimer = null; }
+      el.textContent = fmtCount(el, final ? pct(el.dataset.countTo, 0) : pct(el.dataset.countFrom, 0));
+    }
+    function runCount(el, ms) {
+      var from = pct(el.dataset.countFrom, 0), to = pct(el.dataset.countTo, 0), t0 = performance.now();
+      ms = ms || 1400;
+      if (el._countTimer) cancelAnimationFrame(el._countTimer);
+      (function tick(now) {
+        var p = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmtCount(el, from + (to - from) * e);
+        el._countTimer = p < 1 ? requestAnimationFrame(tick) : null;
+      })(t0);
+    }
+    function countTargets(slide, spec) {
+      var sel = typeof spec === 'string' ? spec : spec && spec.target;
+      return qsAll(slide, sel).reduce(function (acc, el) {
+        return acc.concat(el.hasAttribute('data-count-to') ? [el] : [].slice.call(el.querySelectorAll('[data-count-to]')));
+      }, []);
+    }
+
+    // SVG 逐段畫出：目標可為 path/line/polyline… 或群組（取其內所有幾何）；多個目標依序錯開畫出。
+    var DRAW_SEL = 'path,line,polyline,polygon,circle,rect,ellipse';
+    function drawGeoms(el) {
+      return el.matches && el.matches(DRAW_SEL) ? [el] : [].slice.call(el.querySelectorAll(DRAW_SEL));
+    }
+    function setDraw(g, drawn, animMs, delayMs) {
+      var len = 0;
+      try { len = g.getTotalLength ? g.getTotalLength() : 0; } catch (e) {}
+      if (!len) len = 2000;
+      g.style.strokeDasharray = len;
+      if (animMs) {
+        g.style.transition = 'none'; g.style.strokeDashoffset = len;
+        g.getBoundingClientRect(); // 強制套用起點再開 transition
+        g.style.transition = 'stroke-dashoffset ' + animMs + 'ms ease ' + (delayMs || 0) + 'ms';
+        g.style.strokeDashoffset = 0;
+      } else {
+        g.style.transition = 'none';
+        g.style.strokeDashoffset = drawn ? 0 : len;
+      }
+    }
+    function resetDraws(slide) {
+      [].slice.call(slide.querySelectorAll('.cue-draw')).forEach(function (el) {
+        drawGeoms(el).forEach(function (g) { setDraw(g, false); });
+      });
+    }
+    function runDraw(slide, spec, instant) {
+      var sel = typeof spec === 'string' ? spec : spec && spec.target;
+      var ms = (spec && spec.duration) || 900;
+      var i = 0;
+      qsAll(slide, sel).forEach(function (el) {
+        drawGeoms(el).forEach(function (g) { setDraw(g, true, instant ? 0 : ms, instant ? 0 : (i++) * Math.round(ms * 0.6)); });
+      });
+    }
+
+    // 前後對照滑桿 .cue-compare（子元素 .cue-before / .cue-after）：--pos 0~100（%），after 從右側蓋上。
+    function ensureCompareHandle(box) {
+      if (!box.querySelector('.cue-compare-handle')) {
+        var h = document.createElement('i'); h.className = 'cue-compare-handle'; box.appendChild(h);
+      }
+    }
+    function setCompare(slide, spec, instant) {
+      qsAll(slide, spec.target || '.cue-compare').forEach(function (box) {
+        ensureCompareHandle(box);
+        box.classList.toggle('cue-instant', !!instant);
+        box.style.setProperty('--pos', pct(spec.pos, 50) + '%');
+      });
+    }
+    function resetCompares(slide) {
+      [].slice.call(slide.querySelectorAll('.cue-compare')).forEach(function (box) {
+        ensureCompareHandle(box);
+        box.classList.add('cue-instant');
+        box.style.setProperty('--pos', pct(box.dataset.pos, 100) + '%');
+      });
+    }
+
+    // 時間軸 .cue-timeline（子元素 .tl-item）：at=N → 前 N-1 格 done、第 N 格 current，進度條推到該格。
+    function setTimeline(slide, spec) {
+      qsAll(slide, spec.target || '.cue-timeline').forEach(function (box) {
+        var items = [].slice.call(box.querySelectorAll('.tl-item'));
+        var at = Math.max(0, Math.min(items.length, parseInt(spec.at, 10) || 0));
+        items.forEach(function (it, i) {
+          it.classList.toggle('tl-done', i < at - 1);
+          it.classList.toggle('tl-current', i === at - 1);
+        });
+        var fill = box.querySelector('.tl-fill');
+        if (!fill) { fill = document.createElement('i'); fill.className = 'tl-fill'; box.insertBefore(fill, box.firstChild); }
+        var p = items.length > 1 ? Math.max(0, at - 1) / (items.length - 1) * 100 : (at ? 100 : 0);
+        box.style.setProperty('--tl-progress', p + '%');
+      });
+    }
+    function resetTimelines(slide) { setTimeline(slide, { at: 0 }); }
+
+    function revealStepUpTo(slide, n) {
+      [].slice.call(slide.querySelectorAll('[data-anim-step]')).forEach(function (el) {
+        el.classList.toggle('anim-visible', (parseInt(el.dataset.animStep, 10) || 1) <= n);
+      });
+      slide._animStep = n;
+    }
+
+    function resetCueState(slide) {
+      if (!slideCues(slide)) return;
+      clearLasers(slide, true);
+      revealStepUpTo(slide, 0);
+      resetShows(slide);
+      [].slice.call(slide.querySelectorAll('[data-count-to]')).forEach(function (el) { setCount(el, false); });
+      resetDraws(slide);
+      resetCompares(slide);
+      resetTimelines(slide);
+      slide._cueIdx = -1;
+    }
+    // 套用單一 cue 的「畫面動作」（不含發聲）。instant=true → 不跑動畫直接到終態（重建／匯出用）。
+    function applyCueAction(slide, cue, instant) {
+      clearLasers(slide, instant);
+      if (cue.step != null) revealStepUpTo(slide, Math.max(slide._animStep || 0, parseInt(cue.step, 10) || 0));
+      asList(cue.show).forEach(function (s) { setShow(slide, s); });
+      asList(cue.count).forEach(function (s) {
+        countTargets(slide, s).forEach(function (el) { instant ? setCount(el, true) : runCount(el, s && s.duration); });
+      });
+      asList(cue.draw).forEach(function (s) { runDraw(slide, s, instant); });
+      asList(cue.compare).forEach(function (s) { setCompare(slide, typeof s === 'number' ? { pos: s } : s, instant); });
+      asList(cue.timeline).forEach(function (s) { setTimeline(slide, typeof s === 'number' ? { at: s } : s); });
+      if (!instant) asList(cue.laser).forEach(function (s) { placeLaser(slide, s); });
+    }
+    // 重建到第 k 個 cue 的狀態：reset 後 0..k-1 瞬間套用、第 k 個依 animateLast 決定是否跑動畫。
+    function rebuildCues(slide, k, animateLast) {
+      var cues = slideCues(slide);
+      if (!cues) return;
+      resetCueState(slide);
+      k = Math.min(k, cues.length - 1);
+      for (var i = 0; i <= k; i++) applyCueAction(slide, cues[i], !(animateLast && i === k));
+      if (k >= 0 && !animateLast) asList(cues[k].laser).forEach(function (s) { placeLaser(slide, s); });
+      slide._cueIdx = k;
+    }
+    // 沒有 cue 的頁：數字 [data-count-to] 在進場時自動滾動，SVG .cue-draw 自動畫出（讓元件不寫 cue 也能用）。
+    function autoAnimateNonCue(slide) {
+      if (slideCues(slide)) return;
+      [].slice.call(slide.querySelectorAll('[data-count-to]')).forEach(function (el) { setCount(el, false); runCount(el); });
+      resetDraws(slide);
+      [].slice.call(slide.querySelectorAll('.cue-draw')).forEach(function (el, i) {
+        drawGeoms(el).forEach(function (g) { setDraw(g, true, 900, i * 500); });
+      });
+      resetTimelines(slide); resetShows(slide); resetCompares(slide);
+    }
+    function finalizeSlide(slide) { // 匯出用：全部 cue 執行完的最終畫面
+      var cues = slideCues(slide);
+      revealAllAnims(slide);
+      if (cues) { rebuildCues(slide, cues.length - 1, false); clearLasers(slide, true); }
+      else {
+        [].slice.call(slide.querySelectorAll('[data-count-to]')).forEach(function (el) { setCount(el, true); });
+        [].slice.call(slide.querySelectorAll('.cue-draw')).forEach(function (el) { drawGeoms(el).forEach(function (g) { setDraw(g, true); }); });
+      }
+    }
+    function cueTranscript(slide) {
+      var cues = slideCues(slide);
+      return cues ? cues.map(function (c) { return c.say || ''; }).join('') : '';
+    }
+
     // ── 6. 投影片切換 ───────────────────────────────────────────────
     slides.forEach(function (_, i) {
       var d = document.createElement('div');
@@ -198,12 +454,16 @@
       slideNumber.textContent = 'Slide ' + (currentSlide + 1) + ' of ' + totalSlides;
       progressBar.style.width = (totalSlides > 1 ? (currentSlide / (totalSlides - 1)) * 100 : 100) + '%';
       transcriptText.innerHTML = '<p>' + slideTranscript(currentSlide) + '</p>';
-      if (!_animSkip) triggerSlideAnims(slides[currentSlide]);
+      if (!_animSkip) {
+        triggerSlideAnims(slides[currentSlide]);
+        if (slideCues(slides[currentSlide])) rebuildCues(slides[currentSlide], 0, true); // 進場即套用第一個 cue 的畫面
+        else autoAnimateNonCue(slides[currentSlide]);
+      }
       resetAutoPlayTimer();
       if ((voicePlayToggle.checked || isPresentationMode) && audioUnlocked) setTimeout(speakCurrentSlide, 350);
     }
     // 逐字稿來源：優先 data-transcript，相容舊 deck 的 data-notes
-    function slideTranscript(i) { var s = slides[i]; return (s.dataset.transcript || s.dataset.notes || ''); }
+    function slideTranscript(i) { var s = slides[i]; return (s.dataset.transcript || s.dataset.notes || cueTranscript(s)); }
     // 朗讀前淨化：把會被 TTS 唸出的分隔符號（半/全形 / \ |）換成空白，避免唸成「斜線」。
     // 只作用於「發聲文字」，不影響抽屜顯示的逐字稿；單次 regex/張，效能可忽略。
     // 委派給共用的發聲正規化器（符號 + 同音字表）；未載入時退回原本的符號淨化。
@@ -215,31 +475,117 @@
       if (i < 0 || i >= totalSlides) return;
       stopSpeech();
       resetSlideAnims(slides[currentSlide]);
+      resetCueState(slides[currentSlide]);
       currentSlide = i;
       updateSlideUI();
     }
+    function voiceActive() { return (voicePlayToggle.checked || isPresentationMode) && audioUnlocked; }
     function nextSlide() {
       var slide = slides[currentSlide];
-      if ((slide._animStep || 0) < getMaxAnimStep(slide)) {
+      var cues = slideCues(slide);
+      if (cues) {
+        // PRES-CUE 手動步進：右鍵／空白＝下一個 cue；有語音就從那個 cue 接著唸，沒語音就只看動畫。
+        var k = (slide._cueIdx == null ? -1 : slide._cueIdx) + 1;
+        if (k < cues.length) {
+          clearAutoPlayTimer();
+          if (voiceActive()) runCues(k); else { stopSpeech(); applyCueAction(slide, cues[k], false); slide._cueIdx = k; }
+          return;
+        }
+      } else if ((slide._animStep || 0) < getMaxAnimStep(slide)) {
         advanceAnimStep(slide);
         return;
       }
       currentSlide < totalSlides - 1 ? goToSlide(currentSlide + 1) : (clearAutoPlayTimer(), stopSpeech());
     }
     function prevSlide() {
+      var cur = slides[currentSlide];
+      if (slideCues(cur) && (cur._cueIdx || 0) > 0) { // 左鍵＝回上一個 cue 的狀態（不換頁、不唸）
+        stopSpeech(); clearAutoPlayTimer();
+        rebuildCues(cur, cur._cueIdx - 1, false);
+        return;
+      }
       if (currentSlide <= 0) return;
       stopSpeech();
-      resetSlideAnims(slides[currentSlide]);
+      resetSlideAnims(cur);
+      resetCueState(cur);
       currentSlide -= 1;
       revealAllAnims(slides[currentSlide]);
+      if (slideCues(slides[currentSlide])) rebuildCues(slides[currentSlide], slides[currentSlide]._cues.length - 1, false);
       _animSkip = true;
       updateSlideUI();
       _animSkip = false;
     }
 
     // ── 7. TTS ──────────────────────────────────────────────────────
+    // PRES-CUE 播放鏈：cue k 動作 → 唸 say → 停 pause（預設 600ms）→ cue k+1 …；全部唸完停 1.5 秒換頁。
+    // cueRun 是「這一輪」的令牌：stopSpeech() 會換掉它，舊一輪的 onend／計時器看到令牌不符就自動作廢。
+    var cueRun = null;
+    function cueGapMs(cue) { var p = parseInt(cue.pause, 10); return isFinite(p) && p >= 0 ? p : 600; }
+    function runCues(startIdx) {
+      var slide = slides[currentSlide], cues = slideCues(slide);
+      if (!cues) return;
+      stopSpeech();
+      var run = cueRun = { timer: null };
+      btnPlaySpeech.textContent = '播放中';
+      function step(k) {
+        if (run !== cueRun) return;
+        if (k >= cues.length) {
+          cueRun = null;
+          btnPlaySpeech.textContent = '播放語音';
+          if ((autoPlayToggle.checked || isPresentationMode) && currentSlide < totalSlides - 1) startShortCountdown(1500);
+          return;
+        }
+        var cue = cues[k];
+        if (slide._cueIdx !== k) { applyCueAction(slide, cue, false); slide._cueIdx = k; }
+        else if (k === startIdx && !slide.querySelector('.cue-laser:not(.cue-laser-out)')) { asList(cue.laser).forEach(function (s) { placeLaser(slide, s); }); }
+        function afterSay() {
+          if (run !== cueRun) return;
+          (function wait(ms) {
+            run.timer = setTimeout(function () {
+              if (run !== cueRun) return;
+              if (isSpeechPaused) return wait(200); // 停頓中按了暫停：等繼續
+              step(k + 1);
+            }, ms);
+          })(cueGapMs(cue));
+        }
+        var text = ttsSanitize(cue.say || '');
+        if (!text || !synth) { afterSay(); return; }
+        var u = new SpeechSynthesisUtterance(text);
+        currentUtterance = u;
+        if (selectedVoice) u.voice = selectedVoice;
+        u.lang = selectedVoice ? selectedVoice.lang : 'zh-TW';
+        u.rate = parseFloat(voiceSpeed.value || '1.2');
+        u.onend = function () { if (u === currentUtterance) afterSay(); };
+        u.onerror = function (e) {
+          if (e.error === 'interrupted' || e.error === 'canceled') return;
+          if (u === currentUtterance) afterSay(); // 單段發聲失敗不卡死整頁
+        };
+        synth.speak(u); // hana-overlay.js 的 hook 照常套用全域語音＋頭像 talk/idle（每段一次）
+      }
+      step(startIdx);
+    }
+    // 沒有語音、但開了自動換頁：cue 依字數估時間自動推進（約每字 0.22 秒÷語速，最少 1.5 秒）＋ pause。
+    function runCuesSilent(startIdx) {
+      var slide = slides[currentSlide], cues = slideCues(slide);
+      if (!cues) return;
+      stopSpeech();
+      var run = cueRun = { timer: null };
+      var rate = parseFloat(voiceSpeed.value || '1.2') || 1.2;
+      (function step(k) {
+        if (run !== cueRun) return;
+        if (k >= cues.length) { cueRun = null; if (currentSlide < totalSlides - 1) startShortCountdown(1500); return; }
+        if (slide._cueIdx !== k) { applyCueAction(slide, cues[k], false); slide._cueIdx = k; }
+        var ms = Math.max(1500, Math.round((cues[k].say || '').length * 220 / rate)) + cueGapMs(cues[k]);
+        (function wait(t) {
+          run.timer = setTimeout(function () { if (run !== cueRun) return; if (isSpeechPaused) return wait(200); step(k + 1); }, t);
+        })(ms);
+      })(startIdx);
+    }
+
     function speakCurrentSlide() {
       if (!synth) return;
+      var cs = slides[currentSlide];
+      if (slideCues(cs)) { runCues(Math.max(0, cs._cueIdx || 0)); return; }
       stopSpeech();
       var text = ttsSanitize(slideTranscript(currentSlide));
       if (!text) return;
@@ -262,8 +608,9 @@
     }
     function togglePauseSpeech() {
       if (!synth) return;
-      if (synth.speaking && !isSpeechPaused) {
-        synth.pause(); isSpeechPaused = true;
+      if ((synth.speaking || cueRun) && !isSpeechPaused) {
+        if (synth.speaking) synth.pause();
+        isSpeechPaused = true;
         if (btnPauseSpeech) btnPauseSpeech.textContent = '繼續';
         if (mainPauseBtn) mainPauseBtn.textContent = '⏵';
       } else if (isSpeechPaused) {
@@ -273,6 +620,7 @@
       }
     }
     function stopSpeech() {
+      if (cueRun) { clearTimeout(cueRun.timer); cueRun = null; }
       if (synth) synth.cancel();
       currentUtterance = null; isSpeechPaused = false;
       btnPlaySpeech.textContent = '播放語音';
@@ -283,9 +631,11 @@
     // ── 8. 自動換頁 ─────────────────────────────────────────────────
     function resetAutoPlayTimer() {
       clearAutoPlayTimer();
-      if (currentSlide === totalSlides - 1) return;
+      var cs = slides[currentSlide];
+      if (currentSlide === totalSlides - 1 && !slideCues(cs)) return;
       if (!(autoPlayToggle.checked || isPresentationMode)) return;
       if ((voicePlayToggle.checked || isPresentationMode) && audioUnlocked) return; // 有語音時靠 onend 推進
+      if (slideCues(cs)) { runCuesSilent(Math.max(0, cs._cueIdx || 0)); return; } // PRES-CUE：無語音也照 cue 節奏推進
       startShortCountdown(10000);
     }
     function startShortCountdown(ms) {
@@ -421,6 +771,18 @@
       }
     }
     window.__hanaGotoDeck = gotoDeck;
+
+    // PRES-CUE 對外介面（匯出 pptx／錄影 mp4／自測用；render-service/screenshot.js 會呼叫）。
+    window.__presCore = {
+      cues: function (i) { var c = slides[i] && slideCues(slides[i]); return c ? JSON.parse(JSON.stringify(c)) : null; },
+      finalizeSlide: function (i) { if (slides[i]) finalizeSlide(slides[i]); },     // 全部 cue 執行完的最終畫面（不含雷射筆）
+      cueState: function (i, k) { // 瞬間重建到第 k 個 cue（含該 cue 的雷射筆；非 step 的進場元素一律顯示）
+        var s = slides[i]; if (!s) return;
+        [].slice.call(s.querySelectorAll('[data-anim]:not([data-anim-step])')).forEach(function (el) { el.classList.add('anim-visible'); });
+        rebuildCues(s, k, false);
+      },
+      current: function () { var s = slides[currentSlide]; return { slide: currentSlide, cue: s._cueIdx == null ? -1 : s._cueIdx, step: s._animStep || 0, playing: !!cueRun }; },
+    };
 
     // 「下一集」連結（舊命名格式 presentation-hana-episode*.html，v1/v2 deck 用）：iframe 模式用
     // parent.loadFile；raw 模式更新 query；否則直接跳轉。v3 deck 的跳章選單改呼叫 window.__hanaGotoDeck。

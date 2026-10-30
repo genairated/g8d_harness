@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRES-CUE 示範：邊講邊動</title>
+<style>
+  /* deck 專屬內容樣式（core.css 之前載入；共用元件樣式都在 core.css，這裡只放版面） */
+  .demo-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;margin-top:20px}
+  .demo-card{border:1px solid var(--line,rgba(148,163,184,.2));border-radius:8px;background:rgba(2,6,23,.62);padding:30px;font-size:30px;color:#e5edf8}
+  .demo-card b{display:block;font-size:40px;color:#fff;margin-bottom:10px}
+  .shot{height:520px;border-radius:10px;padding:28px;display:flex;flex-direction:column;gap:18px;font-size:30px;color:#0f172a}
+  .shot .bar{height:44px;border-radius:6px;background:rgba(15,23,42,.18)}
+  .shot .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;flex:1}
+  .shot .grid3 i{border-radius:8px;background:rgba(15,23,42,.14)}
+  .shot.s1{background:linear-gradient(135deg,#e0f2fe,#bae6fd)}
+  .shot.s2{background:linear-gradient(135deg,#dcfce7,#bbf7d0)}
+  .shot.s3{background:linear-gradient(135deg,#fef3c7,#fde68a)}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:10px}
+  .kpi{border:1px solid var(--line,rgba(148,163,184,.2));border-radius:8px;background:rgba(2,6,23,.62);padding:34px;text-align:center}
+  .kpi .num{font-size:88px;font-weight:900;color:#fff;line-height:1.1;white-space:nowrap}
+  .kpi .lbl{font-size:28px;color:var(--muted,#9fb0c6);margin-top:10px}
+  .flow svg{width:100%;height:560px}
+  .flow .box{fill:rgba(34,211,238,.1);stroke:#22d3ee;stroke-width:4}
+  .flow .seg{fill:none;stroke:#34d399;stroke-width:6}
+  .flow text{fill:#fff;font-size:34px;font-weight:800;text-anchor:middle;font-family:'Noto Sans TC',sans-serif}
+  .cmp{height:600px}
+  .cmp .pane{height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:18px;font-size:44px;font-weight:900}
+  .cmp .cue-before .pane{background:linear-gradient(135deg,#3f1d2b,#1f1020);color:#fecdd3}
+  .cmp .cue-after .pane{background:linear-gradient(135deg,#0c3b2e,#06231b);color:#bbf7d0}
+  .cmp .pane small{font-size:30px;font-weight:500;opacity:.85}
+</style>
+<link rel="stylesheet" href="/raw?path=portal/presentation-player/presentation-core.css">
+</head>
+<body>
+<div class="presentation-viewport" id="viewport" data-subtitle="PRES-CUE 示範：旁白分段同步動畫">
+  <header>
+    <div class="brand">HANA / HARNESS</div>
+    <div class="meta">PRES-CUE · 邊講邊動示範</div>
+  </header>
+  <main class="slides">
+
+    <!-- 1. 標題頁：step 逐步揭露 + 雷射筆圈標題 -->
+    <section class="slide title-slide" id="s-title"
+      data-transcript="這份示範告訴你，簡報可以邊講邊動。每一句旁白，都會帶出畫面上對應的動作。">
+      <div class="kicker" data-anim data-anim-step="1">PRES-CUE DEMO</div>
+      <h1 id="t-main" data-anim data-anim-step="1">簡報也能邊講邊動</h1>
+      <p data-anim data-anim-step="2">每一句旁白，帶出一個畫面動作</p>
+      <script type="application/json" data-cues>
+      [
+        {"say":"這份示範告訴你，簡報可以邊講邊動。","step":1,"laser":{"target":"#t-main","type":"underline"}},
+        {"say":"每一句旁白，都會帶出畫面上對應的動作。","step":2,"pause":900}
+      ]
+      </script>
+    </section>
+
+    <!-- 2. 雷射筆：circle / box（相對座標框）/ underline，同頁多個 -->
+    <section class="slide" id="s-laser"
+      data-transcript="先看雷射筆。它可以圈出重點，可以框住一個區塊的局部，也可以在一行字底下畫線，而且同一時間可以標好幾個地方。">
+      <div class="kicker">ACTION · laser</div>
+      <h1>雷射筆：圈、框、畫底線</h1>
+      <div class="demo-row">
+        <div class="demo-card" id="c-a"><b>圈重點</b>紅點加上會呼吸的光圈</div>
+        <div class="demo-card" id="c-b"><b>框局部</b>用百分比指定要框的那一塊</div>
+        <div class="demo-card" id="c-c"><b>畫底線</b>強調一行關鍵字</div>
+      </div>
+      <script type="application/json" data-cues>
+      [
+        {"say":"先看雷射筆。它可以圈出重點，","laser":{"target":"#c-a b","type":"circle"}},
+        {"say":"可以框住一個區塊的局部，","laser":{"target":"#c-b","type":"box","box":{"x":0,"y":45,"w":100,"h":55}}},
+        {"say":"也可以在一行字底下畫線，","laser":{"target":"#c-c b","type":"underline"}},
+        {"say":"而且同一時間可以標好幾個地方。","laser":[{"target":"#c-a","type":"box"},{"target":"#c-c","type":"box"}],"pause":1000}
+      ]
+      </script>
+    </section>
+
+    <!-- 3. 同頁多張截圖輪播 + 雷射筆框局部 -->
+    <section class="slide" id="s-show"
+      data-transcript="同一頁可以放好幾張截圖，旁白講到哪一張，就切到哪一張。第一張是清單頁，第二張是編輯頁，第三張是報表頁，報表右上角就是這次要看的數字。">
+      <div class="kicker">ACTION · show</div>
+      <h1>同頁截圖輪播</h1>
+      <div class="cue-slides" id="shots">
+        <div class="shot s1"><div class="bar"></div>① 清單頁<div class="grid3"><i></i><i></i><i></i></div></div>
+        <div class="shot s2"><div class="bar"></div>② 編輯頁<div class="grid3"><i></i><i></i><i></i></div></div>
+        <div class="shot s3" id="shot3"><div class="bar"></div>③ 報表頁<div class="grid3"><i></i><i></i><i></i></div></div>
+      </div>
+      <script type="application/json" data-cues>
+      [
+        {"say":"同一頁可以放好幾張截圖，旁白講到哪一張，就切到哪一張。","show":{"target":"#shots","index":1}},
+        {"say":"第一張是清單頁，","show":{"target":"#shots","index":1},"pause":300},
+        {"say":"第二張是編輯頁，","show":{"target":"#shots","index":2},"pause":300},
+        {"say":"第三張是報表頁，","show":{"target":"#shots","index":3},"pause":300},
+        {"say":"報表右上角就是這次要看的數字。","laser":{"target":"#shot3","type":"box","box":{"x":66,"y":20,"w":32,"h":78}},"pause":1000}
+      ]
+      </script>
+    </section>
+
+    <!-- 4. 數字滾動 + 暫估角標 -->
+    <section class="slide" id="s-count"
+      data-transcript="數字可以滾動出場。工單處理量一年超過十二萬筆，人工作業時間少了百分之六十二，節省成本大約三百八十萬，這個數字還在確認，所以掛上暫估的標記。">
+      <div class="kicker">ACTION · count</div>
+      <h1>數字滾動</h1>
+      <div class="kpis">
+        <div class="kpi"><div class="num" id="n-orders" data-count-to="128450">0</div><div class="lbl">年度工單處理量（筆）</div></div>
+        <div class="kpi"><div class="num" id="n-time" data-count-to="62" data-count-suffix="%">0%</div><div class="lbl">人工作業時間減少</div></div>
+        <div class="kpi"><div class="num"><span id="n-cost" data-count-to="380" data-count-prefix="NT$" data-count-suffix="萬">NT$0萬</span><span class="est-badge"></span></div><div class="lbl">年度節省成本</div></div>
+      </div>
+      <script type="application/json" data-cues>
+      [
+        {"say":"數字可以滾動出場。工單處理量一年超過十二萬筆，","count":"#n-orders"},
+        {"say":"人工作業時間少了百分之六十二，","count":"#n-time"},
+        {"say":"節省成本大約三百八十萬，","count":{"target":"#n-cost","duration":1800}},
+        {"say":"這個數字還在確認，所以掛上暫估的標記。","laser":{"target":"#n-cost","type":"circle"},"pause":1000}
+      ]
+      </script>
+    </section>
+
+    <!-- 5. SVG 流程圖逐段畫出 -->
+    <section class="slide flow" id="s-draw"
+      data-transcript="流程圖可以一段一段畫出來。先是收單，接著派工，最後完工回報，整條線就串起來了。">
+      <div class="kicker">ACTION · draw</div>
+      <h1>流程圖逐段畫出</h1>
+      <svg viewBox="0 0 1600 560">
+        <g class="cue-draw" id="d-n1"><rect class="box" x="40" y="200" width="360" height="160" rx="14"/></g>
+        <text x="220" y="292">收單</text>
+        <path class="seg cue-draw" id="d-s1" d="M400 280 L620 280"/>
+        <g class="cue-draw" id="d-n2"><rect class="box" x="620" y="200" width="360" height="160" rx="14"/></g>
+        <text x="800" y="292">派工</text>
+        <path class="seg cue-draw" id="d-s2" d="M980 280 L1200 280"/>
+        <g class="cue-draw" id="d-n3"><rect class="box" x="1200" y="200" width="360" height="160" rx="14"/></g>
+        <text x="1380" y="292">完工回報</text>
+      </svg>
+      <script type="application/json" data-cues>
+      [
+        {"say":"流程圖可以一段一段畫出來。先是收單，","draw":"#d-n1"},
+        {"say":"接著派工，","draw":["#d-s1","#d-n2"]},
+        {"say":"最後完工回報，","draw":["#d-s2","#d-n3"]},
+        {"say":"整條線就串起來了。","laser":{"target":"#d-s2","type":"underline"},"pause":1000}
+      ]
+      </script>
+    </section>
+
+    <!-- 6. 前後對照滑桿 -->
+    <section class="slide" id="s-compare"
+      data-transcript="改善前後可以用滑桿對照。這是導入前，紙本加上手抄。滑桿推過去，導入後變成掃碼即時回報。最後停在中間，兩邊一起比。">
+      <div class="kicker">ACTION · compare</div>
+      <h1>前後對照</h1>
+      <div class="cue-compare cmp" id="cmp" data-pos="100">
+        <div class="cue-before"><div class="pane">導入前<small>紙本工單＋人工抄寫</small></div></div>
+        <div class="cue-after"><div class="pane">導入後<small>掃碼即時回報</small></div></div>
+        <span class="cue-label l">BEFORE</span><span class="cue-label r">AFTER</span>
+      </div>
+      <script type="application/json" data-cues>
+      [
+        {"say":"改善前後可以用滑桿對照。這是導入前，紙本加上手抄。","compare":{"target":"#cmp","pos":100}},
+        {"say":"滑桿推過去，導入後變成掃碼即時回報。","compare":{"target":"#cmp","pos":0}},
+        {"say":"最後停在中間，兩邊一起比。","compare":{"target":"#cmp","pos":50},"pause":1000}
+      ]
+      </script>
+    </section>
+
+    <!-- 7. 時間軸推進 -->
+    <section class="slide" id="s-timeline"
+      data-transcript="專案歷程可以用時間軸一格一格推進。需求訪談、系統設計、開發測試，到上線，最後是維運。">
+      <div class="kicker">ACTION · timeline</div>
+      <h1>時間軸推進</h1>
+      <div class="cue-timeline" id="tl" style="margin-top:60px">
+        <div class="tl-item">需求訪談</div>
+        <div class="tl-item">系統設計</div>
+        <div class="tl-item">開發測試</div>
+        <div class="tl-item">上線</div>
+        <div class="tl-item">維運</div>
+      </div>
+      <script type="application/json" data-cues>
+      [
+        {"say":"專案歷程可以用時間軸一格一格推進。需求訪談、","timeline":{"target":"#tl","at":1}},
+        {"say":"系統設計、","timeline":{"target":"#tl","at":2},"pause":200},
+        {"say":"開發測試，","timeline":{"target":"#tl","at":3},"pause":200},
+        {"say":"到上線，","timeline":{"target":"#tl","at":4},"pause":200},
+        {"say":"最後是維運。","timeline":{"target":"#tl","at":5},"pause":1000}
+      ]
+      </script>
+    </section>
+
+    <!-- 8. 舊寫法（無 data-cues）：行為與以前完全相同，整段唸完換頁 -->
+    <section class="slide" id="s-legacy"
+      data-transcript="最後這一頁沒有寫分段，就跟以前一樣，整段唸完再換頁。新舊寫法可以混在同一份簡報裡。">
+      <div class="kicker">LEGACY · data-transcript only</div>
+      <h1>舊寫法照常運作</h1>
+      <p data-anim>沒有 data-cues 的頁面，整段唸完再換頁</p>
+      <p data-anim>新舊寫法可以混在同一份簡報</p>
+    </section>
+
+  </main>
+</div>
+<script src="/raw?path=portal/presentation-player/presentation-core.js"></script>
+</body>
+</html>
