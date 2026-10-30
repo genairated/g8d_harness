@@ -18,7 +18,13 @@ if ($up) {
     Request-HarnessRestart -Port $PROD_PORT -Reason "stop" | Out-Null
     Start-Sleep -Seconds 1
 }
-Stop-HarnessOnPort $PROD_PORT   # safety net (and the path when no supervisor was running)
+$freed = Stop-HarnessOnPort $PROD_PORT   # safety net (and the path when no supervisor was running)
+if (-not $freed) {
+    Say ("[X] :{0} 仍被佔用，停止失敗：{1}" -f $PROD_PORT, (Get-LastPortStopError)) "Red"
+    Say ("    本次執行權限：{0}。若伺服器是以較高權限啟動的，請改用系統管理員身分重跑，或先跑 ./Fix_Harness_AutoStart.ps1。" -f $(if (Test-IsElevated) { "系統管理員" } else { "一般使用者" })) "Yellow"
+    if (-not $hadSupervisor) { Clear-StopFlag }
+    exit 1
+}
 
 # If nobody is looping, clear our own flag so a future direct launch isn't confused.
 if (-not $hadSupervisor) { Clear-StopFlag }

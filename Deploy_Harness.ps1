@@ -1,4 +1,4 @@
-# Deploy_Harness.ps1
+﻿# Deploy_Harness.ps1
 # Self-heal deploy: turn the current DEV code into a new immutable release and go live with it,
 # safely. If the new version fails to come up, automatically roll back to the previous one.
 #
@@ -56,6 +56,26 @@ if ($LASTEXITCODE -ne 0) {
 }
 Say "      OK" "DarkGray"
 
+# 2b. Menu guardrail: sidebar labels must use lucide icons only (no emoji) ----
+Say "[2b/7] menu icon guardrail ..."
+node (Join-Path $releaseDir "portal\checks\menu-no-emoji.js") (Join-Path $releaseDir "portal\index.html")
+if ($LASTEXITCODE -ne 0) {
+    Say "[X] Menu guardrail failed (emoji in menu label). Aborting (no changes to production)." "Red"
+    Remove-Item -Recurse -Force $releaseDir -ErrorAction SilentlyContinue
+    exit 1
+}
+Say "      OK" "DarkGray"
+
+# 2c. View guardrail: every portal/views/*.js must have a reachable entry point --
+Say "[2c/7] view entry guardrail ..."
+node (Join-Path $releaseDir "portal\checks\view-has-menu.js") (Join-Path $releaseDir "portal\index.html")
+if ($LASTEXITCODE -ne 0) {
+    Say "[X] View guardrail failed (a view has no menu/route entry). Aborting (no changes to production)." "Red"
+    Remove-Item -Recurse -Force $releaseDir -ErrorAction SilentlyContinue
+    exit 1
+}
+Say "      OK" "DarkGray"
+
 # 3. Smoke test on a separate port + throwaway HARNESS_HOME --------------------
 Say "[3/7] Smoke test on :$SMOKE_PORT (isolated data) ..."
 $smokeHome = Join-Path ([System.IO.Path]::GetTempPath()) ("harness-smoke-" + [System.Guid]::NewGuid().ToString("N").Substring(0, 8))
@@ -63,13 +83,13 @@ New-Item -ItemType Directory -Force -Path $smokeHome | Out-Null
 $smokeProc = $null
 $smokeOk = $false
 try {
-    Stop-HarnessOnPort $SMOKE_PORT
+    Stop-HarnessOnPort $SMOKE_PORT | Out-Null
     $smokeProc = Start-HarnessRelease -Version $next -Port $SMOKE_PORT -HarnessHome $smokeHome
     $boot = Test-HarnessHealth -Port $SMOKE_PORT -TimeoutSec 25
     if ($boot) { $smokeOk = $true; Say ("      healthy (bootId {0})" -f $boot) "DarkGray" }
 } finally {
     if ($smokeProc -and -not $smokeProc.HasExited) { Stop-Process -Id $smokeProc.Id -Force -ErrorAction SilentlyContinue }
-    Stop-HarnessOnPort $SMOKE_PORT
+    Stop-HarnessOnPort $SMOKE_PORT | Out-Null
     Remove-Item -Recurse -Force $smokeHome -ErrorAction SilentlyContinue
 }
 if (-not $smokeOk) {
@@ -87,6 +107,21 @@ Set-CurrentVersion $next
 # it manages the server process directly. Returns the new bootId once :3400 answers again.
 Say "[5/6] Going live on :$PROD_PORT ..."
 $prodBoot = Switch-LiveVersion -Version $next -Port $PROD_PORT -HarnessHome $HOME_DIR -Reason ("deploy-" + $next)
+
+# BLOCKED: no supervisor owns the process AND the old server could not be stopped (almost always an
+# ELEVATION mismatch - the server was started by the autostart task with "Highest" privileges while
+# this deploy runs unelevated). Nothing about production changed, so put current.json back and say
+# EXACTLY what to do. Never report this as "the new version crashed": it never got to run.
+if ($prodBoot -eq "BLOCKED") {
+    if ($prev) { Set-CurrentVersion $prev }
+    $why = Get-LastPortStopError
+    Write-Host "----------------------------------------------------------" -ForegroundColor DarkGray
+    Say ("[X] 無法停止目前佔用 :{0} 的舊伺服器，{1} 沒有上線（production 仍是 {2}，資料未受影響）。" -f $PROD_PORT, $next, $prev) "Red"
+    if ($why) { Say ("    原因：{0}" -f $why) "Yellow" }
+    Say ("    本次部署權限：{0}" -f $(if (Test-IsElevated) { "系統管理員" } else { "一般使用者" })) "DarkGray"
+    Say "    處理方式：以系統管理員身分執行一次 ./Fix_Harness_AutoStart.ps1（它會把開機排程降成一般權限並重新接管），之後重跑本腳本。" "Cyan"
+    exit 1
+}
 
 # SUPERVISOR mode: the restart was SIGNALED; the supervisor owns bringing it up AND has its own
 # crash-loop fallback to last-known-good. Switch-LiveVersion returns the new bootId (saw it), "STAGED"

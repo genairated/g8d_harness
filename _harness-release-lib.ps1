@@ -151,13 +151,38 @@ function Wait-PortFree {
 }
 
 # Kill whatever is listening on a TCP port (used to stop the running production server).
+# Returns $true ONLY if the port is actually free afterwards. A kill can fail for real reasons - the
+# important one being a target running at a HIGHER integrity level (the autostart task used to launch
+# the server elevated, so a normal-privilege deploy could not touch it). Swallowing that failure was
+# a bug: the deploy then bound to a busy port, the new version died with EADDRINUSE, and the deploy
+# "rolled back" a version that had never actually run. Report the truth; never pretend.
 function Stop-HarnessOnPort {
     param([int]$Port)
+    $failed = @()
     try {
         $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop
-        foreach ($c in $conns) { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue }
+        foreach ($c in $conns) {
+            $owner = [int]$c.OwningProcess
+            try { Stop-Process -Id $owner -Force -ErrorAction Stop }
+            catch { $failed += ("PID {0}: {1}" -f $owner, $_.Exception.Message) }
+        }
         Start-Sleep -Milliseconds 600
-    } catch { }
+    } catch { }   # nothing listening -> already free
+    $free = Wait-PortFree -Port $Port -TimeoutSec 8
+    if ($free) { $script:LastPortStopError = $null }
+    elseif ($failed.Count -gt 0) { $script:LastPortStopError = ($failed -join "; ") }
+    else { $script:LastPortStopError = ("something is still listening on :{0}" -f $Port) }
+    return $free
+}
+
+function Get-LastPortStopError { return $script:LastPortStopError }
+
+# Is THIS process elevated? Used to EXPLAIN a failed kill honestly instead of guessing.
+function Test-IsElevated {
+    try {
+        $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        return (New-Object System.Security.Principal.WindowsPrincipal($id)).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { return $false }
 }
 
 # --- Supervisor model -------------------------------------------------------------------------
@@ -175,20 +200,58 @@ function Test-StopFlag { return (Test-Path (Get-StopFlagPath)) }
 function Get-SupervisorFlagPath { return (Join-Path (Get-ReleasesDir) "supervisor.flag") }
 function Set-SupervisorFlag { Ensure-ReleasesDir | Out-Null; Set-Content -Path (Get-SupervisorFlagPath) -Value ("{0}" -f $PID) }
 function Clear-SupervisorFlag { $p = Get-SupervisorFlagPath; if (Test-Path $p) { Remove-Item -Force $p -ErrorAction SilentlyContinue } }
-# A supervisor is "present" only if the flag's PID is ALIVE and is a PowerShell process. A flag left
-# behind by a crashed/Ctrl+C'd supervisor is STALE — if we trusted it, a deploy would tell the server
-# to gracefully exit "the supervisor will revive me" when nobody will, and the server stays dead.
+
+# GROUND TRUTH (not a flag file): find a live PowerShell process whose command line is running
+# Start_Harness.ps1. Prefer one that also mentions THIS harness root (several harness copies can
+# coexist on one machine); fall back to any match, since the supervisor may have been launched with a
+# relative path from the root directory.
+function Find-SupervisorProcess {
+    try { $procs = @(Get-CimInstance Win32_Process -Filter "Name='pwsh.exe' OR Name='powershell.exe'" -ErrorAction Stop) }
+    catch { return $null }
+    $me = $PID
+    $cands = @()
+    foreach ($p in $procs) {
+        if ([int]$p.ProcessId -eq $me) { continue }
+        $cl = $p.CommandLine
+        if (-not $cl) { continue }
+        if ($cl -notmatch [regex]::Escape("Start_Harness.ps1")) { continue }
+        $cands += $p
+    }
+    if ($cands.Count -eq 0) { return $null }
+    $root = $script:HarnessRoot
+    if ($root) {
+        foreach ($p in $cands) { if ($p.CommandLine -match [regex]::Escape($root)) { return [int]$p.ProcessId } }
+    }
+    return [int]$cands[0].ProcessId
+}
+
+# Is a supervisor alive?
+#   - flag PID alive and is PowerShell                                -> yes
+#   - flag missing/unreadable/stale BUT a real supervisor is found     -> yes, and REPAIR the flag
+#   - no flag and no supervisor process                               -> no (only then drop the flag)
+#
+# WHY THIS SHAPE: the previous version deleted the flag whenever it could not confirm the PID - a
+# transient query failure, or a lower-privilege caller unable to inspect an elevated process, was
+# enough. That deletion is IRREVERSIBLE and silent, so ONE false negative permanently convinced every
+# later deploy that nobody owned the server. Deploys then took the "kill it myself" path, could not
+# kill an elevated server, bound a busy port, and rolled back forever. A read of system state must
+# never destroy the state it is reading.
 function Test-SupervisorFlag {
     $p = Get-SupervisorFlagPath
-    if (-not (Test-Path $p)) { return $false }
     $pidText = $null
-    try { $pidText = (Get-Content -Path $p -Raw -ErrorAction Stop).Trim() } catch { }
+    if (Test-Path $p) { try { $pidText = (Get-Content -Path $p -Raw -ErrorAction Stop).Trim() } catch { } }
     $supPid = 0
-    if (-not [int]::TryParse($pidText, [ref]$supPid) -or $supPid -le 0) { Clear-SupervisorFlag; return $false }
-    $proc = Get-Process -Id $supPid -ErrorAction SilentlyContinue
-    if (-not $proc) { Clear-SupervisorFlag; return $false }                       # PID dead → stale
-    if ($proc.ProcessName -notmatch 'pwsh|powershell') { Clear-SupervisorFlag; return $false }  # PID reused
-    return $true
+    if ($pidText -and [int]::TryParse($pidText, [ref]$supPid) -and $supPid -gt 0) {
+        $proc = Get-Process -Id $supPid -ErrorAction SilentlyContinue
+        if ($proc -and ($proc.ProcessName -match 'pwsh|powershell')) { return $true }
+    }
+    $realPid = Find-SupervisorProcess
+    if ($realPid) {
+        try { Ensure-ReleasesDir | Out-Null; Set-Content -Path $p -Value ("{0}" -f $realPid) } catch { }
+        return $true
+    }
+    if (Test-Path $p) { Clear-SupervisorFlag }   # genuinely stale
+    return $false
 }
 
 # Start a release in the FOREGROUND and block until it exits; return the exited Process (.ExitCode).
@@ -253,14 +316,15 @@ function Switch-LiveVersion {
         # mode we NEVER return $null — we return the new bootId if we see it, else "STAGED" (trust it).
         $resp = Request-HarnessRestart -Port $Port -Reason $Reason
         if ($null -ne $resp -and $resp.deferred) { return "DEFERRED" }   # restart queued behind a live turn
-        if ($null -eq $resp) { Stop-HarnessOnPort $Port }               # server not answering → free the port so the loop relaunches
+        if ($null -eq $resp) { Stop-HarnessOnPort $Port | Out-Null }     # server not answering → free the port so the loop relaunches
         $nb = Wait-HarnessRestarted -Port $Port -OldBootId $old -TimeoutSec 90   # poll only to REPORT
         if ($nb) { return $nb }
         return "STAGED"
     }
-    # No supervisor: we own the process directly.
-    Stop-HarnessOnPort $Port
-    Wait-PortFree -Port $Port -TimeoutSec 15 | Out-Null
+    # No supervisor: we own the process directly. If the old server CANNOT be stopped, do NOT launch
+    # into a busy port (that produced a bogus "new version failed" + rollback). Return "BLOCKED" so the
+    # caller can say exactly what is wrong, and leave production running whatever it is running.
+    if (-not (Stop-HarnessOnPort $Port)) { return "BLOCKED" }
     Start-HarnessRelease -Version $Version -Port $Port -HarnessHome $HarnessHome | Out-Null
     return (Test-HarnessHealth -Port $Port -TimeoutSec 25)
 }

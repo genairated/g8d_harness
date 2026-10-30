@@ -80,7 +80,10 @@ if ($missing.Count -gt 0) {
 $url = "http://localhost:$PROD_PORT"
 
 # Already running (e.g. a supervisor in another console)? Just open the browser.
-$existing = Test-HarnessHealth -Port $PROD_PORT -TimeoutSec 2
+# 20s, not 2s: this guard is the ONLY thing standing between a slow/waking machine and the
+# Stop-HarnessOnPort call further down, which would kill a healthy server and restart it. A genuinely
+# dead harness costs us 20 extra seconds here; a false negative costs a needless full restart.
+$existing = Test-HarnessHealth -Port $PROD_PORT -TimeoutSec 20
 if ($existing) {
     Say ("[i] A harness is already running on :{0} (bootId {1}). Opening browser." -f $PROD_PORT, $existing) "Yellow"
     Start-Process $url
@@ -135,8 +138,9 @@ try {
         # Before binding, make sure the port is actually free — on Windows a just-exited server (or an
         # orphaned CLI child) can hold :PORT for a moment, and binding too soon throws EADDRINUSE and
         # the new version crashes on boot → crash-loop → supervisor gives up. Clear + wait first.
-        Stop-HarnessOnPort $PROD_PORT
-        if (-not (Wait-PortFree -Port $PROD_PORT -TimeoutSec 15)) { Say ("[!] :{0} still busy after 15s; launching anyway." -f $PROD_PORT) "Yellow" }
+        if (-not (Stop-HarnessOnPort $PROD_PORT)) {
+            Say ("[!] :{0} 仍被佔用（{1}）；仍會嘗試啟動，若失敗將由本迴圈重試。" -f $PROD_PORT, (Get-LastPortStopError)) "Yellow"
+        }
 
         Say ("[*] Launching {0} on :{1} ..." -f $current, $PROD_PORT)
         $t0 = Get-Date
