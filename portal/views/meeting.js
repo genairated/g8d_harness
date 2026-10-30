@@ -65,8 +65,8 @@ const PANEL_HTML = `
           <!-- 匯入表單（音檔/字幕 → 會議分析；預設折疊，點「匯入」展開）-->
           <div id="mtg-import-form" class="hidden mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
             <input id="mtg-imp-title" type="text" placeholder="標題（可留空）" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-100" />
-            <label class="text-[11px] text-slate-500 dark:text-slate-400 flex flex-col gap-0.5">選擇檔案（mp3/mp4/m4a/wav/vtt/srt）
-              <input id="mtg-imp-file" type="file" accept=".mp3,.mp4,.m4a,.wav,.vtt,.srt" class="text-xs text-slate-600 dark:text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:bg-violet-100 file:text-violet-700 dark:file:bg-violet-900/40 dark:file:text-violet-300" />
+            <label class="text-[11px] text-slate-500 dark:text-slate-400 flex flex-col gap-0.5">選擇檔案（mp3/mp4/m4a/wav/vtt/srt/docx/txt）
+              <input id="mtg-imp-file" type="file" accept=".mp3,.mp4,.m4a,.wav,.vtt,.srt,.docx,.txt" class="text-xs text-slate-600 dark:text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:bg-violet-100 file:text-violet-700 dark:file:bg-violet-900/40 dark:file:text-violet-300" />
             </label>
             <div class="text-[10px] text-slate-400 text-center">— 或 大檔改填本地路徑（免上傳） —</div>
             <input id="mtg-imp-path" type="text" placeholder="本地絕對路徑，例：D:/會議/錄音.mp4" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100" />
@@ -114,6 +114,18 @@ const PANEL_HTML = `
               <div class="flex items-center gap-2">
                 <span id="mtg-status" class="text-xs px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500"></span>
                 <button id="mtg-stop-btn" class="hidden px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors flex items-center gap-1.5"><i data-lucide="square" class="h-3.5 w-3.5"></i>停止錄製</button>
+              </div>
+            </div>
+            <!-- MTG-ABRT-01：錄製中斷警告列。以前錯誤是被吃掉的（行程在背景死掉、畫面一直顯示「錄製中」），
+                 這裡給它一個跑不掉的位置；meta.status=aborted/error 時由 mtgUpdateAlert() 點亮。 -->
+            <div id="mtg-alert" class="hidden mb-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-4 py-3">
+              <div class="flex items-start gap-2">
+                <i data-lucide="alert-triangle" class="h-4 w-4 text-rose-600 dark:text-rose-400 mt-0.5 flex-shrink-0"></i>
+                <div class="min-w-0 flex-1">
+                  <p id="mtg-alert-title" class="text-sm font-bold text-rose-700 dark:text-rose-300"></p>
+                  <p id="mtg-alert-detail" class="text-xs text-rose-600/90 dark:text-rose-400 mt-0.5 break-words whitespace-pre-wrap"></p>
+                </div>
+                <button id="mtg-alert-close" title="關閉" class="flex-shrink-0 text-rose-400 hover:text-rose-600 text-sm leading-none px-1">✕</button>
               </div>
             </div>
             <!-- MTG-CVW-02: 原始／校正後切換（僅 meta.correction.status='done' 時顯示） -->
@@ -253,6 +265,40 @@ const PANEL_HTML = `
         </div>
       </div>
 
+      <!-- MTGT-3: 逐字稿預覽彈窗（docx/txt 匯入專用；音檔/字幕匯入不走這個彈窗）── -->
+      <div id="mtg-preview-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 shadow-xl p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2"><i data-lucide="file-text" class="h-4 w-4"></i>逐字稿預覽</h3>
+            <button id="mtg-prev-cancel-x-btn" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><i data-lucide="x" class="h-4 w-4"></i></button>
+          </div>
+          <label class="text-[11px] text-slate-500 dark:text-slate-400 flex flex-col gap-0.5">樣板
+            <select id="mtg-prev-template" class="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100">
+              <option value="none">不套用樣板</option>
+            </select>
+          </label>
+          <div id="mtg-prev-status" class="text-xs text-slate-500 dark:text-slate-400"></div>
+          <div id="mtg-prev-table-wrap" class="hidden overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <table class="w-full text-xs">
+              <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
+                <tr><th class="px-2 py-1.5 text-left">講者</th><th class="px-2 py-1.5 text-left">時間</th><th class="px-2 py-1.5 text-left">內容</th></tr>
+              </thead>
+              <tbody id="mtg-prev-tbody"></tbody>
+            </table>
+          </div>
+          <div id="mtg-prev-fail" class="hidden space-y-1.5">
+            <p class="text-xs font-semibold text-rose-600 dark:text-rose-400">此樣板解析失敗</p>
+            <pre id="mtg-prev-raw" class="text-[11px] whitespace-pre-wrap bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-800 p-2 max-h-48 overflow-y-auto text-slate-600 dark:text-slate-300"></pre>
+          </div>
+          <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button id="mtg-prev-confirm-btn" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold transition-colors">確認匯入</button>
+            <button id="mtg-prev-learn-btn" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors">樣板解析</button>
+            <button id="mtg-prev-direct-btn" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">直接產生摘要</button>
+            <button id="mtg-prev-cancel-btn" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-auto">取消</button>
+          </div>
+        </div>
+      </div>
+
     </section>`;
 
 function call(name, ...args) {
@@ -264,6 +310,7 @@ function wireEvents() {
 
   $('#mtg-search').addEventListener('input', () => call('mtgFilterHistory'));
   $('#mtg-new-btn').addEventListener('click', () => call('mtgToggleNewForm'));
+  $('#mtg-alert-close').addEventListener('click', () => { const b = document.getElementById('mtg-alert'); if (b) b.classList.add('hidden'); });
   $('#mtg-import-toggle-btn').addEventListener('click', () => call('mtgToggleImportForm'));
   $('#mtg-topic').addEventListener('change', function () { call('onAudioTopicSelect', this, 'mtg-lang'); });
   $('#mtg-start-btn').addEventListener('click', () => call('mtgStart'));
@@ -292,6 +339,14 @@ function wireEvents() {
   $('#mtg-cancel-sumedit-btn').addEventListener('click', () => call('mtgCancelSumEdit'));
   $('#mtg-add-action-btn').addEventListener('click', () => call('mtgAddAction'));
   $('#mtg-refresh-history-btn').addEventListener('click', () => call('mtgLoadChangeHistory'));
+
+  // MTGT-3: 逐字稿預覽彈窗
+  $('#mtg-prev-template').addEventListener('change', () => call('mtgRunPreview'));
+  $('#mtg-prev-confirm-btn').addEventListener('click', () => call('mtgConfirmImportFromPreview'));
+  $('#mtg-prev-learn-btn').addEventListener('click', () => call('mtgPreviewLearn'));
+  $('#mtg-prev-direct-btn').addEventListener('click', () => call('mtgConfirmImportFromPreview', 'none'));
+  $('#mtg-prev-cancel-btn').addEventListener('click', () => call('mtgClosePreviewModal'));
+  $('#mtg-prev-cancel-x-btn').addEventListener('click', () => call('mtgClosePreviewModal'));
 }
 
 export function mount(root, ctx) {

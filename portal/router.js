@@ -24,15 +24,63 @@
     return { view: decodeURIComponent(m[1]), sub: m[2] ? decodeURIComponent(m[2]) : null };
   }
 
+  // WSXW (SPEC-workspace-settings.md §29/§32-8): /app/xurl/<key> — "embed + external" plugins.
+  // This is NOT a view module route: it just drops a full-size <iframe> pointed at the plugin's
+  // externalUrl into #view-root. `key` resolves name-first-then-slug against /api/status's plugins
+  // (same single source sidebar.js and settings.js already read, D20/D24).
+  async function renderXurl(key, root) {
+    root.innerHTML = '<div class="flex-1 flex items-center justify-center text-slate-400 text-sm p-6">載入中…</div>';
+    try {
+      const r = await fetch('/api/status');
+      const data = await r.json();
+      const list = (data && data.plugins) || [];
+      const pl = list.find(p => p.name === key) || list.find(p => p.slug === key);
+      const url = pl && pl.externalUrl;
+      if (!pl || !url || !/^https?:\/\//i.test(url)) {
+        root.innerHTML = '<div class="flex-1 flex items-center justify-center text-slate-400 text-sm p-6 text-center">找不到這個外掛的外部網址，或網址格式不正確。</div>';
+        return;
+      }
+      root.innerHTML = '';
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:0;';
+      root.appendChild(iframe);
+    } catch (e) {
+      console.error('[router] xurl load error:', e);
+      root.innerHTML = '<div class="flex-1 flex items-center justify-center text-slate-400 text-sm p-6 text-center">載入外部網址時發生錯誤。</div>';
+    }
+  }
+
   async function render(pathname) {
     const parsed = parsePath(pathname);
     if (!parsed) return;
+    if (parsed.view === 'xurl' && parsed.sub) {
+      const viewKey = 'xurl/' + parsed.sub;
+      if (viewKey === currentView) return;
+      if (currentUnmount) { try { currentUnmount(); } catch (e) { console.error('[router] unmount error:', e); } }
+      const root = document.getElementById('view-root');
+      if (!root) return;
+      if (typeof window.showPanel === 'function') window.showPanel('__view_root__');
+      root.classList.remove('hidden');
+      currentUnmount = () => { root.innerHTML = ''; };
+      currentView = viewKey;
+      currentModule = null;
+      renderXurl(parsed.sub, root);
+      return;
+    }
     // Plugin route (SPEC-plugin-contract.md §2/§3): /app/x/<name> — the plugin's view module is
     // served at /views/x/<name>.js (see server.js's dedicated static handler), not /views/<view>.js.
     const isPlugin = parsed.view === 'x' && !!parsed.sub;
     const viewKey = isPlugin ? ('x/' + parsed.sub) : parsed.view;
     if (viewKey === currentView) return; // already showing this view — no-op, see currentView comment above
-    const moduleUrl = isPlugin ? ('/views/x/' + parsed.sub + '.js') : ('/views/' + parsed.view + '.js');
+    // A plugin's view module is loaded with import(), which — unlike window.fetch — cannot carry the
+    // X-Workspace header, so the per-tab workspace travels as ?workspace= in the module URL instead.
+    // Without it the server resolves the plugin against its STARTUP default workspace, so opening any
+    // plugin from a tab pointed at a different workspace 404s ("no view module for route").
+    const wsEnc = isPlugin ? encodeURIComponent(sessionStorage.getItem('current_workspace') || '') : '';
+    const moduleUrl = isPlugin
+      ? ('/views/x/' + parsed.sub + '.js' + (wsEnc ? '?workspace=' + wsEnc : ''))
+      : ('/views/' + parsed.view + '.js');
 
     try {
       const mod = await import(moduleUrl);

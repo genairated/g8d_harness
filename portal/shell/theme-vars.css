@@ -1,0 +1,37 @@
+/* 平台設計系統的顏色／圓角變數（單一來源）。
+ *
+ * 為什麼要獨立成一支檔：這組變數原本內嵌在 index.html 的 <style> 裡，於是「不含平台外框」
+ * 的獨立外掛頁（/x/<plugin>，WSXT2）完全拿不到它們 —— 外掛 CSS 寫 var(--surface)／var(--border)
+ * 只會解析成空值，畫面看起來就是「跑版」（沒底色、沒邊框、沒圓角）。
+ * 現在 index.html 與獨立外掛頁都 <link> 這支，兩邊永遠一致，不會再有一邊改一邊沒跟上的問題。
+ *
+ * 深色模式是由 <html class="dark"> 切換（index.html 與獨立頁的開場 script 都這樣做）。
+ */
+
+:root {
+  --brand: #2563eb;
+  --brand-cyan: #06b6d4;
+  --bg: #f4f7ff;
+  --surface: #fafcff;
+  --border: rgba(37, 99, 235, 0.35);
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --radius: 12px;
+  --user-msg-bg: rgba(59, 130, 246, 0.15);
+  --user-msg-text: #1e3a8a;
+  --user-msg-border: rgba(59, 130, 246, 0.25);
+}
+
+html.dark {
+  --brand: #2563eb;
+  --brand-cyan: #06b6d4;
+  --bg: #0a0e1a;
+  --surface: #101a2e;
+  --border: rgba(59, 130, 246, 0.35);
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --radius: 12px;
+  --user-msg-bg: rgba(59, 130, 246, 0.2);
+  --user-msg-text: #dbeafe;
+  --user-msg-border: rgba(59, 130, 246, 0.35);
+}

@@ -34,8 +34,18 @@ class SinkManager {
 }
 
 // ── Minimal 5-field cron field parser ────────────────────────────────────
-// Supported: number, *, */N
+// Supported: number, *, */N, A-B（範圍）, A,B,C（清單，遞迴解析每段）, A-B/N（範圍內每隔 N）
+// 標準 Vixie cron 子集，見 specs/SPEC-scheduler.md §2.1.1。無效輸入一律回退成 [min]。
 function parseCronField(expr, min, max) {
+  if (expr.indexOf(',') !== -1) {
+    const parts = expr.split(',');
+    const set = new Set();
+    for (const p of parts) {
+      for (const v of parseCronField(p, min, max)) set.add(v);
+    }
+    if (!set.size) return [min];
+    return Array.from(set).sort((a, b) => a - b);
+  }
   if (expr === '*') {
     const r = []; for (let i = min; i <= max; i++) r.push(i); return r;
   }
@@ -43,6 +53,21 @@ function parseCronField(expr, min, max) {
     const step = parseInt(expr.slice(2), 10);
     if (!step || step <= 0) return [min];
     const r = []; for (let i = min; i <= max; i += step) r.push(i); return r;
+  }
+  const rangeStepMatch = expr.match(/^(\d+)-(\d+)\/(\d+)$/);
+  if (rangeStepMatch) {
+    const lo = parseInt(rangeStepMatch[1], 10);
+    const hi = parseInt(rangeStepMatch[2], 10);
+    const step = parseInt(rangeStepMatch[3], 10);
+    if (lo > hi || lo < min || hi > max || !step || step <= 0) return [min];
+    const r = []; for (let i = lo; i <= hi; i += step) r.push(i); return r;
+  }
+  const rangeMatch = expr.match(/^(\d+)-(\d+)$/);
+  if (rangeMatch) {
+    const lo = parseInt(rangeMatch[1], 10);
+    const hi = parseInt(rangeMatch[2], 10);
+    if (lo > hi || lo < min || hi > max) return [min];
+    const r = []; for (let i = lo; i <= hi; i++) r.push(i); return r;
   }
   const v = parseInt(expr, 10);
   if (!isNaN(v) && v >= min && v <= max) return [v];
@@ -109,7 +134,25 @@ class SchedulerManager {
     this.sinkManager        = new SinkManager();
     this._fireJob           = null;
     this._timer             = null;
+    this._onChange          = null;   // SLV-1: optional change-notification listener, default no-op
     this._ensure();
+  }
+
+  // SLV-1: register a listener invoked on run-start / run-update (incl. run-end, since the final
+  // status write also goes through updateRun()). Payload: { reason, scheduleId, runId, workspace }.
+  // Never throws if unset; a throwing listener is swallowed so it can't break scheduler operation.
+  setChangeListener(fn) {
+    this._onChange = (typeof fn === 'function') ? fn : null;
+  }
+
+  _emitChange(reason, scheduleId, runId) {
+    if (!this._onChange) return;
+    let workspace = null;
+    try {
+      const s = this.getSchedule(scheduleId);
+      workspace = s ? (s.workspace || null) : null;
+    } catch (e) {}
+    try { this._onChange({ reason, scheduleId, runId, workspace }); } catch (e) {}
   }
 
   _ensure() {
@@ -139,11 +182,12 @@ class SchedulerManager {
   createSchedule(data) {
     const list = this.loadSchedules();
     const now  = new Date();
+    const resolvedTrigger = data.trigger || { type: 'cron', expr: '0 * * * *' };
     const s = {
       id:        'sched_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
       name:      data.name      || '未命名排程',
       enabled:   data.enabled   !== false,
-      trigger:   data.trigger   || { type: 'cron', expr: '0 * * * *' },
+      trigger:   resolvedTrigger,
       task:      data.task      || { kind: 'prompt', prompt: '' },
       model:     data.model     || 'claude::sonnet',
       workspace: data.workspace || null,
@@ -153,9 +197,19 @@ class SchedulerManager {
       ),
       delivery:           _normalizeDelivery(data.delivery),
       chainNext:          data.chainNext || null,   // SCHED-CHAIN: 本排程真正 success 後自動接續的排程 id（可為 null）
+      // CBG-1: 由對話觸發的「一次性背景任務」標記 + 來源對話識別。chatTask=true 時 GET /api/schedules
+      // 要把它濾掉（不混進排程清單），但仍是一筆完整的 Schedule（沿用既有排程器執行，D4）。
+      // CBGV-3（SPEC-chat-background-task.md §3.6.2）：週期性（cron）排程永遠不能被藏起來——即使
+      // 呼叫端誤傳 chatTask:true，只要 trigger 是 cron 就強制降為 false，避免指揮官主動要的定時任務
+      // 消失在排程清單裡。這裡用 trigger.type（而非 data.trigger）取值，因為上面已經套過預設值。
+      chatTask:           (data.chatTask === true && resolvedTrigger.type !== 'cron'),
+      origin:             data.origin || null,       // { kind:'chat', sessionId, workspace }
       // SCHED-DEPLOY (D1-D4): 本排程 run 成功後由 server（不是模型）執行 Deploy_Harness.ps1。
       // server.js 的 POST/PUT /api/schedules 已驗證過 shape/D2 不變式，這裡再兜底一次 boolean 化。
-      postRun:            { deploy: !!(data.postRun && data.postRun.deploy === true) },
+      postRun:            Object.assign({ deploy: !!(data.postRun && data.postRun.deploy === true) },
+                            // SCHED-DEPLOY-NEXT §4.8：已由 server 驗證（存在、非自己、deploy=true 才有）
+                            (data.postRun && data.postRun.deploy === true && typeof data.postRun.nextAfterDeploy === 'string' && data.postRun.nextAfterDeploy)
+                              ? { nextAfterDeploy: data.postRun.nextAfterDeploy } : {}),
       lastDeployStatus:   null,   // 'success' | 'failed' | 'unknown' | null
       lastDeployAt:       null,
       createdAt:          now.toISOString(),
@@ -218,11 +272,15 @@ class SchedulerManager {
       previousRunId:  opts.previousRunId  || null,
       artifactIds:    [],
       error:          null,
+      // TGC10-02: which conversation manually triggered this run, e.g. {channel:'telegram',chatId,
+      // sessionId} — null for auto ticks/resumes and manual triggers that didn't pass one.
+      origin:         opts.origin || null,
     };
     fs.writeFileSync(
       path.join(this.runsDir, scheduleId, runId + '.json'),
       JSON.stringify(run, null, 2)
     );
+    this._emitChange('run-start', scheduleId, runId);
     return { run, runDir };
   }
 
@@ -232,6 +290,9 @@ class SchedulerManager {
       const run = JSON.parse(fs.readFileSync(runPath, 'utf8'));
       Object.assign(run, patch);
       fs.writeFileSync(runPath, JSON.stringify(run, null, 2));
+      // SLV-1: covers both mid-run state/progress updates AND run-end (the final status write
+      // — status/finishedAt — also goes through this same function).
+      this._emitChange('run-update', scheduleId, runId);
       return run;
     } catch (e) {
       console.error('[Scheduler] updateRun error:', e.message);
@@ -398,7 +459,9 @@ class SchedulerManager {
     }
   }
 
-  _fireSchedule(schedule, trigger) {
+  // TGC10-02: `origin` only ever arrives via triggerNow → manual; _tick()'s auto calls never pass
+  // it, so opts.origin stays undefined → run.origin = null there, identical to pre-TGC10 behavior.
+  _fireSchedule(schedule, trigger, origin) {
     if (!this._fireJob) {
       console.warn('[Scheduler] fireJob callback not set — skipping');
       return;
@@ -411,6 +474,7 @@ class SchedulerManager {
       model: schedule.model,
       resolvedPrompt,
       trigger: trigger || 'auto',   // 自動觸發（_tick）不帶值 → 'auto'；手動經 triggerNow 帶 'manual'
+      origin,                        // manual-trigger conversation origin, or undefined
     });
 
     // Fire async, handle errors internally
@@ -432,12 +496,17 @@ class SchedulerManager {
     if (idx < 0) return;
     list[idx].lastRunAt     = new Date().toISOString();
     list[idx].lastRunStatus = status;
-    if (status === 'success') {
+    if (status === 'success' || status === 'partial') {
+      // SSTAT-P: `partial` zeroes the counter like `success` — the agent DID ship real work
+      // (it just also flagged something to confirm), so it should count as progress and not
+      // push the schedule toward the circuit breaker. This is deliberately different from
+      // `blocked` below, which did no work at all and therefore neither zeroes nor increments.
       list[idx].consecutiveFailures = 0;
-    } else if (status !== 'limited-waiting' && status !== 'blocked' && status !== 'noop') {
+    } else if (status !== 'limited-waiting' && status !== 'blocked' && status !== 'noop' && status !== 'aborted') {
       // limited-waiting / blocked / noop are not real failures — don't count toward the circuit
       // breaker. blocked (SSTAT-02) = ran clean but deliberately did nothing (guardrail/approval):
       // it neither succeeded (don't zero the counter) nor broke (don't push toward the breaker).
+      // aborted (SCH-STOP) = 指揮官人為叫停，不是排程本身壞掉——同理不該推高熔斷計數。
       list[idx].consecutiveFailures = (list[idx].consecutiveFailures || 0) + 1;
     }
     this.saveSchedules(list);
@@ -556,7 +625,7 @@ class SchedulerManager {
     const run = this.getRun(scheduleId, runId);
     if (!run || run.delivery) return;
     this.updateRun(scheduleId, runId, {
-      delivery: { sinks: sinks && sinks.length ? sinks : ['web'], status, summary: summary || '', scheduleName: scheduleName || '', deliveredSinks: [] },
+      delivery: { sinks: sinks && sinks.length ? sinks : ['web'], status, summary: summary || '', scheduleName: scheduleName || '', deliveredSinks: [], origin: run.origin || null },
     });
   }
 
@@ -575,6 +644,9 @@ class SchedulerManager {
         scheduleId,   scheduleName: d.scheduleName || '',
         runId,        status: d.status, summary: d.summary || '',
         createdAt:    run.finishedAt || new Date().toISOString(),
+        // TGC10-03: manual-trigger origin (if any) so a sink can route back to the triggering
+        // conversation instead of broadcasting. null for auto runs / triggers without one.
+        origin:       d.origin || null,
       };
       // AWAIT the actual send: web resolves immediately (sync file write); telegram resolves only
       // after Telegram accepts the HTTP. Persist deliveredSinks PER-SINK on success, so a sink that
@@ -657,13 +729,15 @@ class SchedulerManager {
   }
 
   // Manual trigger for API /api/schedules/:id/run
-  triggerNow(scheduleId) {
+  // TGC10-02: `origin` ({channel,chatId,sessionId}) identifies which conversation triggered this —
+  // undefined for the plain "立即執行" button / any caller that doesn't pass one (unchanged behavior).
+  triggerNow(scheduleId, origin) {
     const s = this.getSchedule(scheduleId);
     if (!s) return null;
     // SCHED-15: 防重入 — 已有執行中的 run 就不再觸發（前端按鈕也會 disabled，這是後端雙保險）。
     const running = this.getRunningRun(scheduleId);
     if (running) return { ok: false, error: 'already-running', runId: running.id };
-    this._fireSchedule(s, 'manual');
+    this._fireSchedule(s, 'manual', origin);
     return { ok: true, scheduleId };
   }
 

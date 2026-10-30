@@ -34,17 +34,52 @@
         // dynamic-sections area as the folder-tree sections above but rendered as single nav buttons
         // (a plugin contributes one view, not a browsable tree). Disabled (untrusted) plugins still
         // render so the reason is visible, per §6.
+        // WSX2 (SPEC-workspace-settings.md §8.4): manifest.plugins.hidden entries still arrive here
+        // flagged `hidden:true` (settings.js needs the full list) — the sidebar is the one place
+        // that actually skips them.
         (statusData.plugins || []).forEach((pl, i) => {
+          if (pl.hidden) return;
           const disabled = !pl.enabled;
           const btn = document.createElement('button');
           btn.className = 'w-full flex items-center space-x-2.5 px-3 py-2 text-[13px] font-semibold rounded-lg transition-all '
             + (disabled ? 'opacity-40 cursor-not-allowed text-slate-400' : 'text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/40 dark:hover:bg-slate-800/40');
           btn.title = disabled ? (pl.disabledReason || '未信任') : (pl.title || pl.name);
           btn.disabled = disabled;
-          if (!disabled) btn.addEventListener('click', () => window.router && window.router.navigate('/app/x/' + pl.name));
+          // WSXW (SPEC-workspace-settings.md §25/§29): the two-dimension model — openIn
+          // (embed|tab) × target (internal|external), 2x2 crossed. Server (/api/status,
+          // applyPluginManifestOrder) already migrates any legacy openMode-only harness.json into
+          // openIn/target, so this file only ever reads the new fields.
+          const openIn = pl.openIn === 'tab' ? 'tab' : 'embed';
+          const target = pl.target === 'external' ? 'external' : 'internal';
+          // WSXU2 (SPEC-workspace-settings.md §22): routes are computed server-side by /api/status
+          // (single source of truth, D20/D24 slug-vs-name resolution) — read pl.routes.* instead of
+          // concatenating '/x/' + pl.name ourselves. Fall back to the old string-building when
+          // routes is missing (stale cached /api/status payload, older server not yet deployed) so
+          // this never white-screens.
+          const embedRoute = (pl.routes && pl.routes.embed) || ('/app/x/' + pl.name);
+          const standaloneRoute = (pl.routes && pl.routes.standalone) || ('/x/' + pl.name);
+          const embedExternalRoute = (pl.routes && pl.routes.embedExternal) || ('/app/xurl/' + pl.name);
+          const isExternalIcon = target === 'external';
+          if (!disabled) btn.addEventListener('click', () => {
+            if (target === 'external') {
+              if (!pl.externalUrl) {
+                if (typeof window.showToast === 'function') window.showToast('尚未設定外部網址', 'error');
+                return;
+              }
+              // §25: embed+external -> in-page iframe route; tab+external -> a real new tab, no
+              // ?workspace= (D29 note: the external site doesn't understand our workspace param).
+              if (openIn === 'embed') { window.router && window.router.navigate(embedExternalRoute); return; }
+              window.open(pl.externalUrl, '_blank');
+              return;
+            }
+            if (openIn === 'embed') { window.router && window.router.navigate(embedRoute); return; }
+            const ws = sessionStorage.getItem('current_workspace') || '';
+            window.open(standaloneRoute + '?workspace=' + encodeURIComponent(ws), '_blank');
+          });
           btn.innerHTML = `
             <i data-lucide="${dgEsc(pl.icon || 'puzzle')}" class="h-4 w-4 flex-shrink-0"></i>
-            <span class="tracking-wide sb-collapse-hide truncate">${dgEsc(pl.title || pl.name)}</span>`;
+            <span class="tracking-wide sb-collapse-hide truncate">${dgEsc(pl.title || pl.name)}</span>
+            ${(openIn !== 'embed' || isExternalIcon) ? '<i data-lucide="external-link" class="h-3.5 w-3.5 flex-shrink-0 opacity-60"></i>' : ''}`;
           dyn.appendChild(btn);
         });
       }

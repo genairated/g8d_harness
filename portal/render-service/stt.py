@@ -45,6 +45,14 @@ if sys.platform == "win32":
     _bins = [b for b in _bins if os.path.isdir(b)]
     if _bins:
         os.environ["PATH"] = os.pathsep.join(_bins) + os.pathsep + os.environ.get("PATH", "")
+        # ctypes 不吃 PATH（Python 3.8 起改用 LOAD_LIBRARY_SEARCH_DEFAULT_DIRS），
+        # 所以下面 _cuda_runtime_ready() 的探測要另外把目錄掛進 DLL 搜尋路徑，
+        # 否則 DLL 明明裝好了仍會誤判成「缺元件」而白白退回 CPU。
+        for _b in _bins:
+            try:
+                os.add_dll_directory(_b)
+            except OSError:
+                pass
 
 # ── 模型快取（singleton per size）──────────────────────────────────────────
 # WhisperModel 載入要 ~3-20s；同 size 在行程內只載一次。會議錄製是長駐行程，
@@ -60,12 +68,35 @@ MODEL_DOWNLOAD_ROOT = os.environ.get("HANA_STT_MODEL_DIR", r"D:\Models\huggingfa
 _DEVICE = None  # (device, compute_type) 快取，避免每次都重新偵測
 
 
+def _cuda_runtime_ready():
+    """ctranslate2 的 cuda 後端要到第一次 encode() 才去載 cublas/cudnn，載不到不只是丟例外——
+    實測會把整個行程打死（會議錄製的症狀＝錄十幾秒就無聲中止、逐字稿全空、畫面永遠沒字）。
+    偵測到 GPU 不代表跑得動：driver 有、但 venv 裡沒裝 nvidia-cublas-cu12/nvidia-cudnn-cu12
+    （例如重建 venv 時只裝了 torch 的 +cpu 版）就是這個情形。
+    這裡先用 ctypes 把它會用到的 DLL 實際載一次；載不起來就當作沒有 GPU，退回 CPU+int8
+    （原本驗證過的組態，small 的 RTF≈0.37，即時錄製跟得上）——寧可慢，也不要中途死掉。"""
+    if sys.platform != "win32":
+        return True
+    import ctypes
+    for _dll in ("cublas64_12.dll", "cudnn64_9.dll"):
+        try:
+            _full = next((os.path.join(_b, _dll) for _b in _bins
+                          if os.path.isfile(os.path.join(_b, _dll))), _dll)
+            # winmode=0 → 用預設搜尋順序解相依（含 PATH），與 ctranslate2 原生載入一致
+            ctypes.WinDLL(_full, winmode=0)
+        except OSError as e:
+            print("[stt] GPU 偵測到但 CUDA 執行庫缺 %s，改用 CPU（int8）：%s" % (_dll, e),
+                  file=sys.stderr)
+            return False
+    return True
+
+
 def _detect_device():
     global _DEVICE
     if _DEVICE is None:
         try:
             import ctranslate2
-            if ctranslate2.get_cuda_device_count() > 0:
+            if ctranslate2.get_cuda_device_count() > 0 and _cuda_runtime_ready():
                 _DEVICE = ("cuda", "float16")
             else:
                 _DEVICE = ("cpu", "int8")

@@ -35,6 +35,10 @@ const PANEL_HTML = `
           </label>
         </div>
         <div id="pm-project-list" class="flex-1 overflow-y-auto p-2 space-y-1 text-sm text-slate-400">載入中…</div>
+        <!-- PMHR2: workspace-wide resource pool entry (§14.5) -->
+        <div class="p-2 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <button id="pm-resources-btn" class="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5">👥 人員</button>
+        </div>
       </div>
 
       <!-- Right: main area -->
@@ -56,6 +60,11 @@ const PANEL_HTML = `
                 <button id="pm-view-list" class="px-2.5 py-1 rounded-md transition-all">清單</button>
                 <button id="pm-view-kanban" class="px-2.5 py-1 rounded-md transition-all">看板</button>
                 <button id="pm-view-gantt" class="px-2.5 py-1 rounded-md transition-all">甘特圖</button>
+              </div>
+              <!-- PMFILTER: 依人員篩選（清單／看板／甘特圖共用）— SPEC-project-management.md §6.6 -->
+              <div class="relative" id="pm-assignee-filter">
+                <button id="pm-assignee-filter-btn" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs font-medium transition-colors flex items-center gap-1" title="依人員篩選任務（可複選、含未指派）"><i data-lucide="users" class="h-3.5 w-3.5"></i><span id="pm-assignee-filter-label">人員：全部</span><i data-lucide="chevron-down" class="h-3 w-3"></i></button>
+                <div id="pm-assignee-filter-menu" class="hidden absolute right-0 top-full mt-1 z-50 w-52 max-h-72 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg p-2 text-xs"></div>
               </div>
               <button id="pm-auto-arrange-btn" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs font-medium transition-colors flex items-center gap-1" title="依開始/結束時間，由上而下重新排序"><i data-lucide="arrow-down-wide-narrow" class="h-3.5 w-3.5"></i>自動排列</button>
               <button id="pm-export-btn" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs font-medium transition-colors flex items-center gap-1" title="匯出 Excel（總覽／清單／甘特圖）"><i data-lucide="download" class="h-3.5 w-3.5"></i>匯出 Excel</button>
@@ -89,7 +98,9 @@ const PANEL_HTML = `
               <span id="pm-multi-count" class="text-xs text-slate-400"></span>
             </div>
             <div class="flex items-center gap-2">
-              <span class="text-xs text-slate-400">觀測日</span>
+              <label class="inline-flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer select-none" title="顯示／隱藏可拖曳的觀測線">
+                <input type="checkbox" id="pm-multi-obs-toggle" class="rounded border-slate-300 dark:border-slate-600"> 觀測線
+              </label>
               <span id="pm-multi-observe-date" class="text-xs font-mono font-semibold text-slate-600 dark:text-slate-300"></span>
               <button id="pm-multi-recenter-btn" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors flex items-center gap-1"><i data-lucide="undo-2" class="h-3 w-3"></i>回到畫面中央</button>
               <button class="pm-fullscreen-btn p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors" title="全螢幕"><i data-lucide="maximize" class="h-3.5 w-3.5"></i></button>
@@ -121,6 +132,9 @@ function wireEvents() {
   $('#pm-auto-arrange-btn').addEventListener('click', () => call('pmAutoArrange'));
   $('#pm-export-btn').addEventListener('click', () => call('pmExportExcel'));
   $('#pm-multi-recenter-btn').addEventListener('click', () => call('pmMultiRecenter'));
+  $('#pm-multi-obs-toggle').addEventListener('change', (e) => call('pmMultiToggleObs', e.target.checked));
+  $('#pm-resources-btn').addEventListener('click', () => call('pmOpenResourceModal'));
+  $('#pm-assignee-filter-btn').addEventListener('click', () => call('pmToggleAssigneeMenu'));
   container.querySelectorAll('.pm-fullscreen-btn').forEach((btn) => {
     btn.addEventListener('click', () => call('pmToggleFullscreen'));
   });
@@ -143,6 +157,7 @@ export function mount(root, ctx) {
 
   wireEvents();
   if (typeof window.pmUpdateToggleUI === 'function') window.pmUpdateToggleUI();
+  if (typeof window.pmLoadResources === 'function') window.pmLoadResources();
   if (typeof window.pmLoadProjects === 'function') window.pmLoadProjects();
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
@@ -151,6 +166,10 @@ export function unmount() {
   // 離開 pm 面板：teardown 多專案甘特圖 overlay 的 scroll/drag/mousemove 監聽（含掛在 document 上的），
   // 否則 pmMulti.listeners 會累積、且拖曳觀測線等監聽會在其他 view 上持續反應滑鼠事件。
   if (typeof window.pmMultiDeactivate === 'function') window.pmMultiDeactivate();
+  // 單一專案甘特圖的觀測線同樣有掛在 document 上的 mousemove/mouseup，一併收掉。
+  if (typeof window.pmObsCleanup === 'function') window.pmObsCleanup();
+  // 人員篩選下拉在開啟時會掛一個 document mousedown（點外面關閉），離開面板要收掉。
+  if (typeof window.pmCloseAssigneeMenu === 'function') window.pmCloseAssigneeMenu();
   if (container) { container.classList.add('hidden'); container.innerHTML = ''; }
   container = null;
 }

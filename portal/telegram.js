@@ -16,10 +16,16 @@ const notesStore = require('./notes');   // SN2: /note, /notes — shared with s
 const audioTopics = require('./audio-topics');   // AT2-d: F5 voice picks the chat's workspace default topic
 
 // C4: simple task-intent heuristic — true = likely a mutating task
-// Matches common zh/en action verbs that imply file/system changes.
-const TASK_RE_ZH = /[改修增刪建部執跑寫更移重複]/;
+// TGC7-04: first exclude query-toned phrasing, then check for action-verb PHRASES (not single
+// chars — a lone char like "跑" false-matched "跑完沒？"). Query tone always wins → chat path.
+const TASK_QUERY_RE = /(看一下|查一下|確認一下|為什麼|是不是|有沒有|完成了嗎|好了沒|狀態|進度|嗎[?？]?$|[?？]$)/;
+const TASK_RE_ZH = /(修改|修正|修復|改成|改一下|調整|新增|刪除|建立|部署|執行|撰寫|寫一個|寫入|更新|重構|移除|搬移|複製|安裝|設定)/;
 const TASK_RE_EN = /\b(create|modify|edit|delete|deploy|run|exec(?:ute)?|write|update|remove|fix|build|refactor|add|change)\b/i;
-function looksLikeTask(text) { return TASK_RE_ZH.test(text) || TASK_RE_EN.test(text); }
+function looksLikeTask(text) {
+  const t = String(text || '');
+  if (TASK_QUERY_RE.test(t)) return false;
+  return TASK_RE_ZH.test(t) || TASK_RE_EN.test(t);
+}
 
 class TelegramBot {
   constructor(harnessHome, schedulerManager, opts) {
@@ -43,8 +49,13 @@ class TelegramBot {
     this._authorizedChatIds = new Set();
     this._offset            = 0;
     this._polling           = false;
-    this._contexts          = {};         // C3: String(chatId) -> { root, label }
-    this._pendingConfirms   = new Map();  // C4: key -> { chatId, text, workspaceRoot, label, ts }
+    this._contexts          = {};         // C3: String(chatId) -> { root, label, sessions }
+    this._pendingConfirms   = new Map();  // C4: key -> { chatId, text, workspaceRoot, label, ts, sessionId }
+    // TGC8: web-chat-session plumbing (opts, all optional — degrade to "功能未設定" if absent)
+    this._listChatSessionsFn = opts.listChatSessionsFn || null; // (root) => [{sessionId,title,updatedAt,messages}]
+    this._createChatSessionFn = opts.createChatSessionFn || null; // (root, title) => sessionId
+    this._recapSessionFn     = opts.recapSessionFn || null;      // (root, sessionId) => Promise<string>
+    this._backCursor         = new Map();  // TGC8-05: String(chatId) -> { sessionId, page }
 
     // Generic extension points for optional plugins (no built-in command depends on these).
     //   _extraCallbackHandlers: async (data, chatId, bot) => boolean  — claim an inline-button callback
@@ -66,6 +77,7 @@ class TelegramBot {
       if (cfg.authorizedChatIds)     this._authorizedChatIds = new Set(cfg.authorizedChatIds);
       if (cfg.pollingOffset != null) this._offset = cfg.pollingOffset;
       if (cfg.contexts && typeof cfg.contexts === 'object') this._contexts = cfg.contexts;
+      if (cfg.model === 'opus' || cfg.model === 'sonnet') this._model = cfg.model;
     } catch (e) { console.error('[Telegram] config load error:', e.message); }
   }
 
@@ -77,11 +89,22 @@ class TelegramBot {
       cfg.authorizedChatIds = [...this._authorizedChatIds];
       cfg.pollingOffset     = this._offset;
       cfg.contexts          = this._contexts;
+      if (this._model) cfg.model = this._model;
       fs.writeFileSync(this._secretsPath, JSON.stringify(cfg, null, 2));
     } catch (e) { console.error('[Telegram] config save error:', e.message); }
   }
 
   isConfigured() { return !!this._token; }
+
+  // TG-MODEL: 自由對話／派任務用的模型，預設 opus（指揮官拍板：短對話為主，思考品質優先於 token 成本）。
+  // 內部摘要（_tgRecapSession）不吃這個，固定用 sonnet（見呼叫點）。
+  getModel() { return this._model || 'opus'; }
+  setModel(m) {
+    if (m !== 'opus' && m !== 'sonnet') return { ok: false, error: '只接受 opus 或 sonnet。' };
+    this._model = m;
+    this._saveConfig();
+    return { ok: true };
+  }
 
   // The single bound commander chat, for server-side triggers that aren't replying to an
   // inbound update and so have no chatId of their own (same lookup as handleWebMessage's
@@ -103,8 +126,73 @@ class TelegramBot {
   getContext(chatId)            { return this._contexts[String(chatId)] || null; }
   getAllContexts()              { return this._contexts; }
   setContext(chatId, root, label) {
-    this._contexts[String(chatId)] = { root, label: label || root };
+    // TGC8-01: preserve the per-workspace session cursor map across a workspace switch —
+    // it used to be a flat overwrite, which would silently wipe `.sessions` on every /use.
+    const key  = String(chatId);
+    const prev = this._contexts[key] || {};
+    this._contexts[key] = { root, label: label || root, sessions: prev.sessions || {} };
     this._saveConfig();
+  }
+
+  // ── TGC8-01: sticky "对话游标" — chatId × normalised workspace root -> activeSessionId ─────
+  getActiveSessionId(chatId, root) {
+    const c = this._contexts[String(chatId)];
+    if (!c || !c.sessions) return null;
+    return c.sessions[this._normWs(root)] || null;
+  }
+
+  setActiveSessionId(chatId, root, sessionId) {
+    const key = String(chatId);
+    if (!this._contexts[key]) this._contexts[key] = { root, label: path.basename(root || '') };
+    if (!this._contexts[key].sessions) this._contexts[key].sessions = {};
+    this._contexts[key].sessions[this._normWs(root)] = sessionId;
+    this._saveConfig();
+  }
+
+  // Resolve (or lazily create) the active session for this chat's current workspace context.
+  // Used by both the typed-text and voice free-chat entry points so they share one cursor.
+  _resolveActiveSession(chatId) {
+    const ctx = this.getContext(chatId);
+    const workspaceRoot = (ctx && ctx.root) || this._harnessHome;
+    let sessionId = this.getActiveSessionId(chatId, workspaceRoot);
+    if (!sessionId) {
+      sessionId = 'session_' + Date.now();
+      this.setActiveSessionId(chatId, workspaceRoot, sessionId);
+    }
+    return { ctx, workspaceRoot, sessionId };
+  }
+
+  // TGC8-06: 接錯本防呆 — one line telling the commander which chat session is now active.
+  _sessionStatusLine(chatId, workspaceRoot) {
+    const sessionId = this.getActiveSessionId(chatId, workspaceRoot);
+    if (!sessionId) return '現在接：（尚無對話，直接打字即自動建立新對話）';
+    let title = sessionId;
+    if (this._listChatSessionsFn) {
+      try {
+        const s = this._listChatSessionsFn(workspaceRoot).find(function (x) { return x.sessionId === sessionId; });
+        if (s && s.title) title = s.title;
+      } catch (e) {}
+    }
+    return '現在接：' + title;
+  }
+
+  // TGC8-04/05: 標題＋最後更新時間＋最近 3 則各一兩句 — 絕不倒全文。
+  _buildSummaryCard(session) {
+    const title   = (session && session.title) || '新對話';
+    const updated = (session && session.updatedAt) ? session.updatedAt.slice(0, 16).replace('T', ' ') : '（尚無訊息）';
+    let card = '現在接：' + title + '\n更新時間：' + updated;
+    const msgs = (session && Array.isArray(session.messages)) ? session.messages : [];
+    if (!msgs.length) {
+      card += '\n（這本對話還沒有內容，直接打字開始吧）';
+    } else {
+      card += '\n\n最近內容：';
+      msgs.slice(-3).forEach(function (m) {
+        const who  = m.role === 'user' ? '指揮官' : 'Hana';
+        const text = (typeof m.content === 'string' ? m.content : '').replace(/\s+/g, ' ').slice(0, 200);
+        card += '\n• ' + who + '：' + text + (text.length >= 200 ? '…' : '');
+      });
+    }
+    return card;
   }
 
   // ── Telegram HTTPS API ────────────────────────────────────────────────────
@@ -279,6 +367,14 @@ class TelegramBot {
       // telegram delivered once Telegram has actually accepted the message. If a deploy-restart aborts
       // the in-flight send, the await never resolves, deliveredSinks isn't updated for telegram, and
       // B4 (flushPendingDeliveries) re-sends it on boot. A send failure rejects → stays undelivered → retried.
+      // TGC10-03: a run manually triggered from a Telegram conversation carries payload.origin
+      // ({channel:'telegram',chatId,sessionId}) — route the completion notice back to that one chat
+      // instead of broadcasting. Auto-triggered runs (and manual triggers without an origin, e.g. the
+      // web "立即執行" button) have no origin → unchanged sendToAll broadcast.
+      const o = payload.origin;
+      if (o && o.channel === 'telegram' && o.chatId) {
+        return self.sendMessage(o.chatId, self._formatNotification(payload));
+      }
       return self.sendToAll(self._formatNotification(payload));
     });
     console.log('[Telegram] sink registered');
@@ -289,7 +385,27 @@ class TelegramBot {
     if (payload.kind === 'note_reminder') {
       return '⏰ 便條到期：' + payload.text + ' · ' + payload.workspaceLabel;
     }
-    const icon = payload.status === 'success' ? '✅' : (payload.status === 'failed' ? '❌' : (payload.status === 'blocked' ? '⚠️' : '⏳'));
+    // KD5-2: 知識精華彙整提案就緒——workspaceLabel 標明是哪個工作區，counts 只算該工作區自己的 proposal.json。
+    if (payload.kind === 'distill_ready') {
+      let msg = '🧪 【' + payload.workspaceLabel + '】彙整提案已就緒，' + payload.pendingCount + ' 條待裁決';
+      if (payload.disputedCount > 0) msg += '／' + payload.disputedCount + ' 條等你回覆';
+      return msg;
+    }
+    // MTG-ABRT-01: 會議錄製中斷——人不在畫面前也要知道「這場沒錄到」，不然只能事後翻檔案。
+    if (payload.kind === 'meeting_aborted') {
+      let msg = '⛔ 【' + payload.workspaceLabel + '】會議錄製中斷：' + payload.title;
+      if (payload.reason) msg += '\n原因：' + payload.reason;
+      return msg;
+    }
+    // MQ-13: model quota health transition — distinct payload shape (not a schedule run).
+    if (payload.kind === 'model_quota_health') {
+      const icon = payload.type === 'model_quota_degraded' ? '🔴' : '🟢';
+      return icon + ' ' + payload.summary;
+    }
+    // SSTAT-P: partial (✅ 完成·待確認) uses the same ✅ as success — payload.summary (deliverSummary
+    // from server.js) already carries the "✅ 完成·待確認：<reason>" text so the reason still lands
+    // on the phone without opening the app.
+    const icon = (payload.status === 'success' || payload.status === 'partial') ? '✅' : (payload.status === 'failed' ? '❌' : (payload.status === 'blocked' ? '⚠️' : '⏳'));
     let text = icon + ' 排程完成：' + payload.scheduleName + '\n狀態：' + payload.status;
     if (payload.summary) text += '\n摘要：' + payload.summary;
     return text;
@@ -373,6 +489,11 @@ class TelegramBot {
           { command: 'meeting',   description: '查詢今日或指定日期的會議（/meeting 或 /meeting 6/25）' },
           { command: 'note',      description: '記一張便條（/note 內容 due:MM/DD color:顏色，或 /note list）' },
           { command: 'notes',     description: '列出目前工作區未完成便條' },
+          { command: 'chats',     description: '列出最近對話（/chats 3 切換到第 3 本）' },
+          { command: 'newchat',   description: '開一本新對話（/newchat 標題）' },
+          { command: 'whichchat', description: '現在接的是哪一本對話' },
+          { command: 'back',      description: '往前翻對話（一次 3 則）' },
+          { command: 'recap',     description: '把目前對話濃縮成一段摘要' },
           { command: 'clear',     description: '清空控制台日誌' },
           { command: 'delete',    description: '刪除某則日誌（/delete 序號）' },
           { command: 'help',      description: '顯示指令說明' },
@@ -583,7 +704,9 @@ class TelegramBot {
     if (looksLikeTask(text)) return this._confirmTask(chatId, text);
     if (!this._chatFn) return;
     try {
-      const reply = await this._chatFn(text, this.getConsoleLog(10), this.getContext(chatId));
+      // TGC8-02: voice free-chat shares the same session cursor as typed free-chat.
+      const { ctx, sessionId } = this._resolveActiveSession(chatId);
+      const reply = await this._chatFn(text, this.getConsoleLog(), ctx, chatId, sessionId);
       const safe = String(reply || '（無回應）');
       this._logConsole({ role: 'bot', chatId, text: safe });
       await this.sendMessage(chatId, safe);
@@ -647,7 +770,7 @@ class TelegramBot {
         return;
       }
       this._pendingConfirms.delete(key);
-      await this._executeTask(chatId, pending.text, pending.workspaceRoot, pending.label);
+      await this._executeTask(chatId, pending.text, pending.workspaceRoot, pending.label, pending.sessionId);
 
     } else if (data.startsWith('cancel:')) {
       const key = data.slice('cancel:'.length);
@@ -661,8 +784,10 @@ class TelegramBot {
       const proj     = projects.find(function (p) { return p.root === root; });
       const label    = proj ? (proj.name || path.basename(root)) : path.basename(root);
       this.setContext(chatId, root, label);
+      // TGC8-06: 接錯本防呆 — 工作區切換後附上目前接的是哪本對話。
+      const statusLine = this._sessionStatusLine(chatId, root);
       this._logConsole({ role: 'bot', chatId, text: '已切換至 ' + label });
-      await this.sendMessage(chatId, '📍 目前脈絡切換至：' + label + '\n(' + root + ')');
+      await this.sendMessage(chatId, '📍 目前脈絡切換至：' + label + '\n(' + root + ')\n' + statusLine);
 
     } else if (data.startsWith('meeting:')) {
       // /meeting — view meeting detail
@@ -672,7 +797,7 @@ class TelegramBot {
   }
 
   // C4: execute a confirmed task in the target workspace
-  async _executeTask(chatId, text, workspaceRoot, label) {
+  async _executeTask(chatId, text, workspaceRoot, label, sessionId) {
     const displayLabel = label || (workspaceRoot ? path.basename(workspaceRoot) : '預設');
     await this.sendMessage(chatId, '⚙️ 開始在「' + displayLabel + '」執行任務...');
     this._logConsole({ role: 'system', chatId, text: '[開始任務] 標的:' + displayLabel + ' | ' + text.slice(0, 200) });
@@ -685,9 +810,14 @@ class TelegramBot {
     }
 
     try {
-      const result = await this._taskFn(text, workspaceRoot);
+      // TGC8-03: front-context now comes from the workspace's active CHAT SESSION (same source
+      // as free chat), not the console log — `context`/`chatId` are kept as a fallback for callers
+      // that don't (yet) resolve a sessionId, per taskFn's own graceful-degrade contract.
+      const result = await this._taskFn(text, workspaceRoot, this.getConsoleLog(), chatId, sessionId);
       const safe   = String(result || '（完成，無輸出）');
-      this._logConsole({ role: 'bot', chatId, text: '[任務完成] ' + safe.slice(0, 300) });
+      // TGC7-03: log full reply (no 300-char truncation) — truncation only happens at the
+      // Telegram send layer below (3500-char message cap), not at the log-write layer.
+      this._logConsole({ role: 'bot', chatId, text: '[任務完成] ' + safe });
       await this.sendMessage(chatId, '✅ 任務完成 @ ' + displayLabel + '\n\n' + safe.slice(0, 3500));
     } catch (e) {
       const reply = '❌ 任務執行失敗：' + String(e.message).slice(0, 300);
@@ -752,6 +882,12 @@ class TelegramBot {
     if (cmd === '/notes')     return this._cmdNotes(chatId);
     if (cmd === '/clear')     return this._cmdClear(chatId);
     if (cmd === '/delete')    return this._cmdDelete(chatId, parts[1]);
+    if (cmd === '/chats')     return this._cmdChats(chatId, parts.slice(1).join(' '));
+    if (cmd === '/newchat')   return this._cmdNewChat(chatId, parts.slice(1).join(' '));
+    if (cmd === '/whichchat') return this._cmdWhichChat(chatId);
+    if (cmd === '/back')      return this._cmdBack(chatId, parts[1]);
+    if (cmd === '/recap')     return this._cmdRecap(chatId);
+    if (cmd === '/model')     return this._cmdModel(chatId, parts[1]);
     if (cmd === '/help')      return this._cmdHelp(chatId);
     return this._chat(chatId, text);
   }
@@ -978,7 +1114,7 @@ class TelegramBot {
       reply = '今天' + scope + '還沒有排程任務執行。';
     } else {
       const lines = runs.map(function (r) {
-        const icon = r.status === 'success' ? '✅' : (r.status === 'failed' ? '❌' : (r.status === 'blocked' ? '⚠️' : '⏳'));
+        const icon = (r.status === 'success' || r.status === 'partial') ? '✅' : (r.status === 'failed' ? '❌' : (r.status === 'blocked' ? '⚠️' : '⏳'));
         const t = (r.startedAt || '').slice(0, 16).replace('T', ' ');
         return icon + ' ' + (r.scheduleId || '').slice(0, 20) + ' — ' + r.status + ' @ ' + t;
       });
@@ -1069,7 +1205,8 @@ class TelegramBot {
     if (!match) return this._showProjectPicker(chatId, '找不到「' + argTrim + '」，請從清單選擇：');
     const label = match.name || path.basename(match.root);
     this.setContext(chatId, match.root, label);
-    const reply = '📍 已切換至：' + label + '\n路徑：' + match.root;
+    // TGC8-06: 接錯本防呆 — 工作區切換後附上目前接的是哪本對話。
+    const reply = '📍 已切換至：' + label + '\n路徑：' + match.root + '\n' + this._sessionStatusLine(chatId, match.root);
     this._logConsole({ role: 'bot', chatId, text: reply });
     return this.sendMessage(chatId, reply);
   }
@@ -1086,6 +1223,22 @@ class TelegramBot {
     try {
       await this._apiPost('sendMessage', { chat_id: chatId, text: prompt || '請選擇工作區：', reply_markup: { inline_keyboard: rows } });
     } catch (e) { console.error('[Telegram] showProjectPicker error:', e.message); }
+  }
+
+  // TG-MODEL: /model — show or switch the model used for chatFn/taskFn (opus/sonnet).
+  async _cmdModel(chatId, arg) {
+    const argTrim = (arg || '').trim().toLowerCase();
+    if (!argTrim) {
+      const reply = '🧠 目前使用模型：' + this.getModel() + '\n\n用 /model opus 或 /model sonnet 切換。';
+      this._logConsole({ role: 'bot', chatId, text: reply });
+      return this.sendMessage(chatId, reply);
+    }
+    const r = this.setModel(argTrim);
+    const reply = r.ok
+      ? '✅ 已切換至 ' + argTrim + '。之後的對話與任務都會用這個模型。'
+      : '⚠️ ' + r.error;
+    this._logConsole({ role: 'bot', chatId, text: reply });
+    return this.sendMessage(chatId, reply);
   }
 
   async _cmdClear(chatId) {
@@ -1114,15 +1267,138 @@ class TelegramBot {
       '/meeting [日期] — 查詢當日或指定日期的會議',
       '/note <內容> [due:MM/DD] [color:顏色] — 記一張便條（或 /note list 查詢）',
       '/notes — 列出目前工作區未完成便條',
+      '/chats [編號] — 列出目前工作區最近對話（或切換到某本）',
+      '/newchat [標題] — 開一本新對話',
+      '/whichchat — 現在接的是哪一本對話',
+      '/back [n] — 往前翻對話（一次 3 則）',
+      '/recap — 把目前這本對話濃縮成一段摘要',
+      '/model [opus|sonnet] — 查詢或切換對話／任務用的模型（預設 opus）',
       '/clear — 清空控制台日誌',
       '/delete <序號> — 刪除某則日誌',
       '/help — 顯示此說明',
       '',
       '直接發送文字：',
-      '• 問答 / 唯讀 → 直接回應',
+      '• 問答 / 唯讀 → 直接回應（併入網頁對話本）',
       '• 改檔 / 執行 → 確認後再派工',
     ].join('\n');
     return this.sendMessage(chatId, reply);
+  }
+
+  // ── TGC8-04: /chats [n] — list recent sessions in the current workspace, or switch to #n ──
+  async _cmdChats(chatId, argStr) {
+    const ctx = this.getContext(chatId);
+    const workspaceRoot = (ctx && ctx.root) || this._harnessHome;
+    if (!this._listChatSessionsFn) return this.sendMessage(chatId, '⚠️ 對話列表功能未設定。');
+
+    let sessions = [];
+    try { sessions = this._listChatSessionsFn(workspaceRoot); }
+    catch (e) { return this.sendMessage(chatId, '⚠️ 讀取對話清單失敗：' + e.message.slice(0, 200)); }
+    const top = sessions.slice(0, 10);
+
+    const n = parseInt((argStr || '').trim(), 10);
+    if (!isNaN(n)) {
+      const picked = top[n - 1];
+      if (!picked) return this.sendMessage(chatId, '⚠️ 找不到編號 ' + n + '（目前只有 ' + top.length + ' 本）。');
+      this.setActiveSessionId(chatId, workspaceRoot, picked.sessionId);
+      this._logConsole({ role: 'bot', chatId, text: '[切換對話] ' + (picked.title || picked.sessionId) });
+      return this.sendMessage(chatId, this._buildSummaryCard(picked));
+    }
+
+    if (!top.length) return this.sendMessage(chatId, '📂 這個工作區還沒有任何對話記錄，直接打字就會自動開一本。');
+    const activeId = this.getActiveSessionId(chatId, workspaceRoot);
+    const lines = top.map(function (s, i) {
+      const mark = (s.sessionId === activeId) ? ' ← 目前' : '';
+      const t    = s.updatedAt ? s.updatedAt.slice(0, 16).replace('T', ' ') : '';
+      return (i + 1) + '. ' + (s.title || '（無標題）') + '（' + t + '）' + mark;
+    });
+    const label = ctx ? ctx.label : path.basename(workspaceRoot);
+    return this.sendMessage(chatId, '📂 最近對話（' + label + '）：\n' + lines.join('\n') + '\n\n用 /chats <編號> 切換');
+  }
+
+  // ── TGC8-04: /newchat [標題] — start a fresh session in the current workspace ──────────────
+  async _cmdNewChat(chatId, argStr) {
+    const ctx = this.getContext(chatId);
+    const workspaceRoot = (ctx && ctx.root) || this._harnessHome;
+    if (!this._createChatSessionFn) return this.sendMessage(chatId, '⚠️ 新增對話功能未設定。');
+    const title = (argStr || '').trim() || null;
+    let sessionId;
+    try { sessionId = this._createChatSessionFn(workspaceRoot, title); }
+    catch (e) { return this.sendMessage(chatId, '⚠️ 建立對話失敗：' + e.message.slice(0, 200)); }
+    this.setActiveSessionId(chatId, workspaceRoot, sessionId);
+    this._backCursor.delete(String(chatId));
+    this._logConsole({ role: 'bot', chatId, text: '[新對話] ' + (title || sessionId) });
+    return this.sendMessage(chatId, this._buildSummaryCard({ sessionId, title: title || '新對話', updatedAt: new Date().toISOString(), messages: [] }));
+  }
+
+  // ── TGC8-04: /whichchat — which session is currently active for this workspace ────────────
+  async _cmdWhichChat(chatId) {
+    const ctx = this.getContext(chatId);
+    const workspaceRoot = (ctx && ctx.root) || this._harnessHome;
+    const sessionId = this.getActiveSessionId(chatId, workspaceRoot);
+    if (!sessionId) return this.sendMessage(chatId, '📍 ' + (ctx ? ctx.label : path.basename(workspaceRoot)) + '　目前還沒有作用中的對話，打字就會自動建立一本。');
+    let session = null;
+    if (this._listChatSessionsFn) {
+      try { session = this._listChatSessionsFn(workspaceRoot).find(function (s) { return s.sessionId === sessionId; }); }
+      catch (e) {}
+    }
+    if (!session) return this.sendMessage(chatId, '📍 目前對話：' + sessionId + '（找不到內容，可能剛建立）');
+    return this.sendMessage(chatId, this._buildSummaryCard(session));
+  }
+
+  // ── TGC8-05: /back [n] — page backwards through the active session, 3 messages at a time ──
+  async _cmdBack(chatId, argStr) {
+    const ctx = this.getContext(chatId);
+    const workspaceRoot = (ctx && ctx.root) || this._harnessHome;
+    const sessionId = this.getActiveSessionId(chatId, workspaceRoot);
+    if (!sessionId) return this.sendMessage(chatId, '📍 目前沒有作用中的對話可回顧。');
+    if (!this._listChatSessionsFn) return this.sendMessage(chatId, '⚠️ 回顧功能未設定。');
+
+    let session;
+    try { session = this._listChatSessionsFn(workspaceRoot).find(function (s) { return s.sessionId === sessionId; }); }
+    catch (e) { return this.sendMessage(chatId, '⚠️ 讀取對話失敗：' + e.message.slice(0, 200)); }
+    const msgs = (session && Array.isArray(session.messages)) ? session.messages : [];
+    if (!msgs.length) return this.sendMessage(chatId, '📍 這本對話還沒有內容。');
+
+    const totalPages = Math.ceil(msgs.length / 3);
+    const key = String(chatId);
+    let cur = this._backCursor.get(key);
+    if (!cur || cur.sessionId !== sessionId) cur = { sessionId, page: 0 };
+    const argN = parseInt((argStr || '').trim(), 10);
+    let page = !isNaN(argN) ? argN : cur.page + 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    cur.page = page;
+    this._backCursor.set(key, cur);
+
+    // page 1 = the most recent 3 messages, page 2 = the 3 before those, etc.
+    const endIdx   = msgs.length - (page - 1) * 3;
+    const startIdx = Math.max(0, endIdx - 3);
+    const lines = msgs.slice(startIdx, endIdx).map(function (m) {
+      const who  = m.role === 'user' ? '指揮官' : 'Hana';
+      const text = (typeof m.content === 'string' ? m.content : '').replace(/\s+/g, ' ').slice(0, 200);
+      return '• ' + who + '：' + text + (text.length >= 200 ? '…' : '');
+    });
+    const reply = '⏪ 第 ' + page + '/' + totalPages + ' 頁（共 ' + msgs.length + ' 則）：\n' + lines.join('\n')
+      + (page < totalPages ? '\n\n用 /back 繼續往前翻' : '\n\n（已到最早）');
+    return this.sendMessage(chatId, reply.slice(0, 3500));
+  }
+
+  // ── TGC8-05: /recap — condense the whole active session into one summary ──────────────────
+  async _cmdRecap(chatId) {
+    const ctx = this.getContext(chatId);
+    const workspaceRoot = (ctx && ctx.root) || this._harnessHome;
+    const sessionId = this.getActiveSessionId(chatId, workspaceRoot);
+    if (!sessionId) return this.sendMessage(chatId, '📍 目前沒有作用中的對話可濃縮。');
+    if (!this._recapSessionFn) return this.sendMessage(chatId, '⚠️ 濃縮摘要功能未設定。');
+    await this.sendMessage(chatId, '🧠 濃縮中...');
+    try {
+      const summary = await this._recapSessionFn(workspaceRoot, sessionId);
+      const safe = String(summary || '（沒有可濃縮的內容）').slice(0, 3500);
+      this._logConsole({ role: 'bot', chatId, text: '[recap] ' + safe.slice(0, 200) });
+      return this.sendMessage(chatId, '🧾 對話濃縮：\n' + safe);
+    } catch (e) {
+      return this.sendMessage(chatId, '⚠️ 濃縮失敗：' + String(e.message).slice(0, 200));
+    }
   }
 
   // ── Chat + C4 intent routing ──────────────────────────────────────────────
@@ -1137,9 +1413,12 @@ class TelegramBot {
       return this.sendMessage(chatId, reply);
     }
     try {
-      const context = this.getConsoleLog(10);
-      const ctx     = this.getContext(chatId);
-      const reply   = await this._chatFn(text, context, ctx);
+      // TGC8-02: 自由打字併入網頁對話本 — chatFn 現在載入/接續 chat_<sessionId>.json、走
+      // buildChatPrompt 同一套人設/長期記憶/對話歷史外殼，而不是只帶零散的控制台日誌片段。
+      // `context`（控制台日誌）與 `chatId` 仍照傳，供 chatFn 內部的相容/除錯路徑使用。
+      const context = this.getConsoleLog();
+      const { ctx, sessionId } = this._resolveActiveSession(chatId);
+      const reply   = await this._chatFn(text, context, ctx, chatId, sessionId);
       const safe    = String(reply || '（無回應）');
       this._logConsole({ role: 'bot', chatId, text: safe });
       return this.sendMessage(chatId, safe);
@@ -1168,7 +1447,11 @@ class TelegramBot {
     }
 
     const key = 'task_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    this._pendingConfirms.set(key, { chatId, text, workspaceRoot: ctx.root, label: ctx.label, ts: Date.now() });
+    // TGC8-03: carry the workspace's active chat session id through to _executeTask so the task
+    // prompt's front-context comes from the same conversation as free chat (session cursor is
+    // read-only here — a task never creates a new session, it just borrows whichever is active).
+    const sessionId = this.getActiveSessionId(chatId, ctx.root);
+    this._pendingConfirms.set(key, { chatId, text, workspaceRoot: ctx.root, label: ctx.label, ts: Date.now(), sessionId });
 
     // Evict confirms older than 5 minutes
     const now = Date.now();

@@ -55,9 +55,14 @@ function render() {
     + '<label class="text-xs font-semibold text-slate-500 dark:text-slate-400">大腦模型:</label>'
     + '<select id="chat-model-select" class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-sm cursor-pointer"><option value="">載入可用模型中…</option></select>'
     + '<select id="chat-effort-select" title="推理強度" class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-sm cursor-pointer"><option value="default">預設</option></select>'
+    + '<select id="chat-style-select" title="回覆風格" class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-sm cursor-pointer"><option value="default">風格：預設</option></select>'
     + '<button id="limit-status-btn" title="各模型可用/限流狀態（依實際呼叫結果更新）" class="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 shadow-sm transition-colors">'
     + '<span id="limit-status-dot" class="h-2 w-2 rounded-full bg-slate-300"></span><span id="limit-status-label">額度</span></button>'
     + '</div>'
+    // TGC9-01 (SPEC-telegram.md §17.4): manual refresh — Telegram free-typing now writes into the
+    // same chat_<sessionId>.json this tab reads (TGC8), but this tab won't notice on its own; the
+    // commander explicitly asked for a manual pull, not auto-polling.
+    + '<button id="chat-refresh-btn" title="重新讀取這本對話（例如剛用 Telegram 補講了幾句）" class="text-xs text-slate-400 hover:text-cyan-600 transition-colors flex items-center space-x-1 mr-3"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i><span>刷新對話</span></button>'
     + '<button id="chat-clear-btn" class="text-xs text-slate-400 hover:text-red-500 transition-colors flex items-center space-x-1"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i><span>清除當前對話</span></button>'
     + '</div>'
     + '<div id="chat-tab-bar" class="flex items-end gap-1 px-3 pt-1.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/30 overflow-x-auto flex-shrink-0"></div>'
@@ -110,9 +115,11 @@ function render() {
     + '</section>';
 
   container.querySelector('#chat-new-btn').addEventListener('click', () => window.startNewChat());
+  container.querySelector('#chat-refresh-btn').addEventListener('click', () => window.refreshActiveChatTab());
   container.querySelector('#chat-clear-btn').addEventListener('click', () => window.clearCurrentChat());
   container.querySelector('#chat-model-select').addEventListener('change', (e) => window.onChatModelChange(e.target.value));
   container.querySelector('#chat-effort-select').addEventListener('change', (e) => window.onChatEffortChange(e.target.value));
+  container.querySelector('#chat-style-select').addEventListener('change', (e) => window.onChatStyleChange(e.target.value));
   container.querySelector('#limit-status-btn').addEventListener('click', (e) => window.toggleLimitPanel(e));
   container.querySelector('#chat-input-textarea').addEventListener('keydown', (e) => window.handleChatInputKey(e));
   container.querySelector('#chat-input-textarea').addEventListener('input', (e) => window.onChatInput(e.target));
@@ -150,16 +157,16 @@ export function mount(root, ctx) {
   const vscodeEl = document.getElementById('btn-vscode'); if (vscodeEl) vscodeEl.href = '#';
   const savedEl = document.getElementById('last-saved'); if (savedEl) savedEl.classList.add('hidden');
   const backEl = document.getElementById('btn-back'); if (backEl) backEl.classList.add('hidden');
-  // The floating Hana avatar widget is redundant inside the full-page chat view — showPanel() used
-  // to special-case this by comparing against the (now-removed) 'chat-panel' id; that branch is
-  // legacy-panel-specific, so this view owns hiding/restoring it itself.
-  const widget = document.getElementById('hana-float-widget'); if (widget) widget.classList.add('avatar-hidden');
+  // AVT-FIX：整頁對話裡頭像照常顯示（麥克風/筆記/問題回報/設定都還要用），只隱藏「頭像對話」入口
+  // （整頁本身就是對話）。不再整個藏頭像。
+  const widget = document.getElementById('hana-float-widget'); if (widget) widget.classList.add('hana-no-chat');
 
   render();
 
   // Re-run the chat-DOM-dependent parts of the page's one-time init() — those ran before this
   // panel's elements existed (chat-panel used to be static markup; now it's built above).
   if (typeof window.loadChatModels === 'function') window.loadChatModels();
+  if (typeof window.loadChatStyles === 'function') window.loadChatStyles();
   if (typeof window.initSttModel === 'function') window.initSttModel();
   if (typeof window.loadAudioTopics === 'function') window.loadAudioTopics();
 
@@ -177,7 +184,7 @@ export function mount(root, ctx) {
 }
 
 export function unmount() {
-  const widget = document.getElementById('hana-float-widget'); if (widget) widget.classList.remove('avatar-hidden');
+  const widget = document.getElementById('hana-float-widget'); if (widget) widget.classList.remove('hana-no-chat');
   // Deliberately does NOT abort in-flight jobs/polling — background chat jobs are meant to survive
   // navigating away (that's the whole point of job reattach); index.html's pollJob()/tickChatTimers()
   // already no-op gracefully when their target DOM elements are gone.

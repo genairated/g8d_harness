@@ -14,10 +14,15 @@ const { SchedulerManager } = require('./scheduler');
 const { createTelegramBot } = require('./telegram');
 const docRegistry = require('./document-registry');
 const notesStore = require('./notes');
+const deployNext = require('./deploy-next'); // SCHED-DEPLOY-NEXT (SPEC-schedule-deploy-control.md §4.8)
 const pmStore = require('./pm');
 const { buildPmWorkbook } = require('./pm-export');
 const whiteboardsStore = require('./whiteboards');
 const audioTopics = require('./audio-topics');
+const uidesignStore = require('./uidesign');
+const modelQuota = require('./model-quota');
+const issuesStore = require('./issues'); // §IR — SPEC-issue-report.md 回報給 Hana
+const usageTracker = require('./usage-tracker'); // §UA — SPEC-usage-analytics.md，記錄層，不動 modelQuota 任何一行
 
 // Keep the portal alive even if a spawned CLI / node-pty throws asynchronously.
 // Without this, one bad child process could take down the whole server and make
@@ -181,6 +186,28 @@ function resolveWorkspace(req) {
     knowledgeDir,
     commandsDir
   };
+}
+
+// Decks live under <workspace>/presentations/. A deck authored inside a client workspace stays in
+// that workspace; decks made in the harness itself still resolve through the HARNESS_HOME fallback.
+// PXW-01/06 (SPEC-presentation-export.md §6/§8): workspace (X-Workspace / ?workspace=) FIRST, then
+// HARNESS_HOME. Returns { root, file } for the hit, or { root:null, tried:[…both paths…] } so the
+// 404 can name exactly where we looked. `suffix` is '.html' for decks, '.blocks.json' for block decks.
+function locateDeck(req, deckName, suffix = '.html') {
+  const tried = [];
+  const roots = [];
+  try { roots.push(resolveWorkspace(req).root); } catch (e) {}
+  if (!roots.some(r => path.resolve(r).toLowerCase() === path.resolve(HARNESS_HOME).toLowerCase())) roots.push(HARNESS_HOME);
+  for (const root of roots) {
+    const file = path.join(root, 'presentations', deckName + suffix);
+    tried.push(file);
+    if (fs.existsSync(file)) return { root, file, tried };
+  }
+  return { root: null, file: null, tried };
+}
+function deckNotFound(res, label, tried) {
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: false, error: `找不到 ${label}（已找過：${tried.join('、')}）`, tried }));
 }
 
 // Notes (Stickies) persistence lives in ./notes.js (shared with telegram.js + scheduler.js);
@@ -407,6 +434,157 @@ apiRouter.put('/api/manifest', (req, res) => {
         }
         out.tools = tools;
       }
+      // WSX2 (§8.4): order/hidden are plugin *names* — never validated against the actual
+      // discovered plugin list (a plugin may belong to a workspace that isn't currently mounted),
+      // just deduped/trimmed like any other string-list field.
+      if (patch.plugins !== undefined) {
+        if (typeof patch.plugins !== 'object' || patch.plugins === null || Array.isArray(patch.plugins)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins must be an object' })); return;
+        }
+        const plugins = { order: [], hidden: [], openMode: {}, slug: {}, openIn: {}, target: {}, externalUrl: {} };
+        for (const f of ['order', 'hidden']) {
+          if (patch.plugins[f] === undefined) continue;
+          if (!Array.isArray(patch.plugins[f]) || patch.plugins[f].some(x => typeof x !== 'string')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.' + f + ' must be an array of strings' })); return;
+          }
+          const seen = new Set();
+          const cleaned = [];
+          for (const raw of patch.plugins[f]) {
+            const v = raw.trim();
+            if (!v || seen.has(v)) continue;
+            seen.add(v); cleaned.push(v);
+          }
+          plugins[f] = cleaned;
+        }
+        // WSXT1 (§14): openMode.<name> must be one of embed/tab/standalone — strict like order/hidden,
+        // so the settings UI never silently writes a broken value.
+        if (patch.plugins.openMode !== undefined) {
+          if (typeof patch.plugins.openMode !== 'object' || patch.plugins.openMode === null || Array.isArray(patch.plugins.openMode)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.openMode must be an object' })); return;
+          }
+          const openMode = {};
+          for (const k of Object.keys(patch.plugins.openMode)) {
+            const v = patch.plugins.openMode[k];
+            if (!PLUGIN_OPEN_MODES.has(v)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.openMode.' + k + ' must be one of embed|tab|standalone' })); return;
+            }
+            openMode[k] = v;
+          }
+          plugins.openMode = openMode;
+        }
+        // WSXU (§21 D24): slug.<name> must match the D24 format, and values must be unique within
+        // the same PUT — strict like order/hidden/openMode, so the settings UI never silently
+        // writes a broken/ambiguous value.
+        if (patch.plugins.slug !== undefined) {
+          if (typeof patch.plugins.slug !== 'object' || patch.plugins.slug === null || Array.isArray(patch.plugins.slug)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.slug must be an object' })); return;
+          }
+          const slug = {};
+          const seenSlugValues = new Map();
+          for (const k of Object.keys(patch.plugins.slug)) {
+            const v = patch.plugins.slug[k];
+            if (v === '' || v === undefined || v === null) continue; // empty = no alias, per §20
+            if (typeof v !== 'string' || !PLUGIN_SLUG_RE.test(v)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.slug.' + k + ' must match ^[a-z0-9][a-z0-9-]{0,39}$' })); return;
+            }
+            if (seenSlugValues.has(v)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.slug value "' + v + '" is duplicated (used by both "' + seenSlugValues.get(v) + '" and "' + k + '")' })); return;
+            }
+            seenSlugValues.set(v, k);
+            slug[k] = v;
+          }
+          plugins.slug = slug;
+        }
+        // WSXW (§28 D26/D30/D31): openIn.<name> must be embed|tab, target.<name> must be
+        // internal|external, externalUrl.<name> must be a valid http(s) URL (D30) — strict like
+        // openMode/slug, so the settings UI never silently writes a broken value.
+        if (patch.plugins.openIn !== undefined) {
+          if (typeof patch.plugins.openIn !== 'object' || patch.plugins.openIn === null || Array.isArray(patch.plugins.openIn)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.openIn must be an object' })); return;
+          }
+          const openIn = {};
+          for (const k of Object.keys(patch.plugins.openIn)) {
+            const v = patch.plugins.openIn[k];
+            if (!PLUGIN_OPEN_INS.has(v)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.openIn.' + k + ' must be one of embed|tab' })); return;
+            }
+            openIn[k] = v;
+          }
+          plugins.openIn = openIn;
+        }
+        if (patch.plugins.target !== undefined) {
+          if (typeof patch.plugins.target !== 'object' || patch.plugins.target === null || Array.isArray(patch.plugins.target)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.target must be an object' })); return;
+          }
+          const target = {};
+          for (const k of Object.keys(patch.plugins.target)) {
+            const v = patch.plugins.target[k];
+            if (!PLUGIN_TARGETS.has(v)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.target.' + k + ' must be one of internal|external' })); return;
+            }
+            target[k] = v;
+          }
+          plugins.target = target;
+        }
+        if (patch.plugins.externalUrl !== undefined) {
+          if (typeof patch.plugins.externalUrl !== 'object' || patch.plugins.externalUrl === null || Array.isArray(patch.plugins.externalUrl)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.externalUrl must be an object' })); return;
+          }
+          const externalUrl = {};
+          for (const k of Object.keys(patch.plugins.externalUrl)) {
+            const v = patch.plugins.externalUrl[k];
+            if (v === '' || v === undefined || v === null) continue; // empty = unset
+            if (!isValidExternalUrl(v)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.externalUrl.' + k + ' must start with http:// or https:// and be at most 500 chars' })); return;
+            }
+            externalUrl[k] = v;
+          }
+          plugins.externalUrl = externalUrl;
+        }
+        // WSXW (§26 D31): target=external requires a non-empty externalUrl — never persist a
+        // plugin that would open a blank tab / empty iframe.
+        for (const k of Object.keys(plugins.target)) {
+          if (plugins.target[k] === 'external' && !plugins.externalUrl[k]) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'plugins.target.' + k + ' is external but plugins.externalUrl.' + k + ' is missing' })); return;
+          }
+        }
+        out.plugins = plugins;
+      }
+
+      // SBC-5 (SPEC-sidebar-card-carousel.md §7): rotateSeconds must be 0 or an integer 3..120;
+      // quotaRefreshSeconds must be 0 or an integer 30..3600. Reject the whole payload (400, no
+      // write) on a bad value — same "all or nothing" policy as every other field above.
+      if (patch.sidebarCards !== undefined) {
+        if (typeof patch.sidebarCards !== 'object' || patch.sidebarCards === null || Array.isArray(patch.sidebarCards)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'sidebarCards must be an object' })); return;
+        }
+        const sc = { rotateSeconds: 8, quotaRefreshSeconds: 300, hidden: [], order: [] };
+        if (patch.sidebarCards.rotateSeconds !== undefined) {
+          if (!isValidRotateSeconds(patch.sidebarCards.rotateSeconds)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'sidebarCards.rotateSeconds must be 0 or an integer between 3 and 120' })); return;
+          }
+          sc.rotateSeconds = patch.sidebarCards.rotateSeconds;
+        }
+        if (patch.sidebarCards.quotaRefreshSeconds !== undefined) {
+          if (!isValidQuotaRefreshSeconds(patch.sidebarCards.quotaRefreshSeconds)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'sidebarCards.quotaRefreshSeconds must be 0 or an integer between 30 and 3600' })); return;
+          }
+          sc.quotaRefreshSeconds = patch.sidebarCards.quotaRefreshSeconds;
+        }
+        if (patch.sidebarCards.hidden !== undefined) {
+          if (!Array.isArray(patch.sidebarCards.hidden) || patch.sidebarCards.hidden.some(x => typeof x !== 'string')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'sidebarCards.hidden must be an array of strings' })); return;
+          }
+          sc.hidden = patch.sidebarCards.hidden;
+        }
+        if (patch.sidebarCards.order !== undefined) {
+          if (!Array.isArray(patch.sidebarCards.order) || patch.sidebarCards.order.some(x => typeof x !== 'string')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'sidebarCards.order must be an array of strings' })); return;
+          }
+          sc.order = patch.sidebarCards.order;
+        }
+        out.sidebarCards = sc;
+      }
 
       const manifestPath = path.join(root, 'harness.json');
       // Merge onto whatever raw harness.json already exists so untouched top-level keys (e.g.
@@ -450,6 +628,32 @@ apiRouter.get('/api/commands', (req, res) => {
   res.end(JSON.stringify({ commands: cmds }));
 });
 
+// API: output styles (SPEC-output-style.md §5) — list global+project styles for the chat dropdown,
+// and switch the active one. Backs both the UI select and the `/output-style` skill.
+apiRouter.get('/api/output-styles', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  const styles = listOutputStyles(wctx).map(s => ({ name: s.name, description: s.description, scope: s.scope, active: s.active }));
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ styles }));
+});
+apiRouter.post('/api/output-style', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const { name, scope } = JSON.parse(body || '{}');
+      if (!name) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Missing name' })); return; }
+      setOutputStyle(name, scope === 'global' ? 'global' : 'project', wctx);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
 // API: lightweight liveness/version ping. The frontend polls this; a changed bootId means the
 // server was restarted onto a new version (a deploy) → the page reloads to get the new code.
 apiRouter.get('/api/ping', (req, res) => {
@@ -476,6 +680,15 @@ apiRouter.post('/api/chat/flush', (req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true, flushed }));
 });
+// CMQ-6: GET /api/chat/queue?sessionId= — 這個工作區裡各對話的訊息佇列（排隊中／執行中／已完成）。
+// 工作區來自 X-Workspace 標頭（resolveWorkspace）；別的工作區的佇列完全不會出現。
+apiRouter.get('/api/chat/queue', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  let sessionId = null;
+  try { sessionId = new URL(req.url, 'http://localhost').searchParams.get('sessionId'); } catch (e) {}
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ queue: chatQueue.list(wctx.root, sessionId || null) }));
+});
 ['SIGINT', 'SIGTERM'].forEach((sig) => {
   process.on(sig, () => {
     try { const n = flushPendingChatTurns(); if (n) console.log(`[Chat] ${sig} — flushed ${n} in-flight turn(s) to disk.`); } catch (e) {}
@@ -496,6 +709,89 @@ apiRouter.get('/api/limits', (req, res) => {
   res.end(JSON.stringify({ models: list }));
 });
 
+// SBC-2 (SPEC-sidebar-card-carousel.md §6.1): process-wide single snapshot of GET /api/model-quota,
+// shared by every workspace/browser/tab so the sidebar carousel rotating through quota cards never
+// causes a new query per page-flip. `model-quota.js` itself is untouched — this cache sits purely in
+// server.js, in front of modelQuota.fetchAllQuota().
+let quotaSnapshot = null; // { data, fetchedAt: <ms epoch>, degraded: boolean }
+let quotaInFlight = null; // shared in-flight Promise<data> while a refetch is already running
+const QUOTA_MIN_MAX_AGE_SEC = 30; // server-enforced floor — a misconfigured maxAgeSec can never hammer upstream faster than this
+const QUOTA_DEFAULT_MAX_AGE_SEC = 300; // back-compat default for callers (old frontend) that never pass ?maxAgeSec
+async function getQuotaSnapshot(maxAgeSec, force) {
+  const now = Date.now();
+  const effectiveMaxAgeSec = Math.max(QUOTA_MIN_MAX_AGE_SEC, (typeof maxAgeSec === 'number' && isFinite(maxAgeSec)) ? maxAgeSec : QUOTA_DEFAULT_MAX_AGE_SEC);
+  // SPEC-model-quota.md §9 D11/D12 (MQR-3): a snapshot whose last fetch contained any broken/stale
+  // provider is not trustworthy for the full TTL — cap its reuse window at the 30s floor so a
+  // transient network hiccup can't leave a red/yellow card glued on screen for up to 5 minutes.
+  const cacheWindowSec = (quotaSnapshot && quotaSnapshot.degraded) ? Math.min(effectiveMaxAgeSec, QUOTA_MIN_MAX_AGE_SEC) : effectiveMaxAgeSec;
+  if (!force && quotaSnapshot && (now - quotaSnapshot.fetchedAt) < cacheWindowSec * 1000) {
+    return { data: quotaSnapshot.data, fetchedAt: quotaSnapshot.fetchedAt, cached: true };
+  }
+  // Concurrency guard: if a refetch is already underway (triggered by another request that arrived
+  // just before this one), piggyback on it instead of firing a second upstream query.
+  if (quotaInFlight) {
+    const data = await quotaInFlight;
+    return { data, fetchedAt: quotaSnapshot ? quotaSnapshot.fetchedAt : now, cached: true };
+  }
+  quotaInFlight = modelQuota.fetchAllQuota();
+  try {
+    const data = await quotaInFlight;
+    const degraded = Array.isArray(data.providers) && data.providers.some((p) => p.health === 'broken' || p.health === 'stale');
+    quotaSnapshot = { data, fetchedAt: Date.now(), degraded };
+    return { data, fetchedAt: quotaSnapshot.fetchedAt, cached: false };
+  } finally {
+    quotaInFlight = null;
+  }
+}
+
+// API: Model quota dashboard — active/proactive query (SPEC-model-quota.md §3), independent of
+// /api/limits above (that one stays reactive/passive; this one reads local CLI state on demand).
+// SBC-2: now backed by the process-wide cache above — ?maxAgeSec=N (floor 30s) / ?force=1 control
+// freshness; response carries `cached`/`fetchedAt` so the frontend can show "N 分鐘前更新".
+apiRouter.get('/api/model-quota', async (req, res) => {
+  try {
+    const parsedUrl = url.parse(req.url, true);
+    const q = parsedUrl.query || {};
+    const maxAgeSec = q.maxAgeSec !== undefined ? parseInt(q.maxAgeSec, 10) : undefined;
+    const force = q.force === '1' || q.force === 'true';
+    const snap = await getQuotaSnapshot(maxAgeSec, force);
+    const data = Object.assign({}, snap.data, { cached: snap.cached, fetchedAt: new Date(snap.fetchedAt).toISOString() });
+    // MQ-12/13: persist health snapshot + notify only on ok→broken ("just broke") and broken→ok
+    // ("recovered") transitions (D5, no notification fatigue). MQ-14: wrapped separately so a
+    // notify failure never breaks this response; delivery itself is fire-and-forget (SinkManager
+    // does not await/throw synchronously) and reuses the existing web+telegram sink pipeline.
+    // SBC-2: only run this on an actual fetch (cached:false) — a cache HIT means the data hasn't
+    // changed since the last time this already ran, so re-running it per request would just be
+    // wasted disk I/O (and, in theory, able to double-fire a transition if timing lined up oddly).
+    if (!snap.cached) try {
+      const snapshotPath = path.join(GLOBAL_KNOWLEDGE_DIR, 'model-quota-health.json');
+      const transitions = modelQuota.updateHealthSnapshot(data.providers, snapshotPath);
+      for (const t of transitions) {
+        const summary = t.kind === 'degraded'
+          ? `${t.label} 額度查詢異常：${t.message || '原因不明'}`
+          : `${t.label} 額度查詢已恢復正常。`;
+        schedulerManager.sinkManager.deliver(['web', 'telegram'], {
+          id: 'notif_quota_' + t.id + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'model_quota_health',
+          type: t.kind === 'degraded' ? 'model_quota_degraded' : 'model_quota_recovered',
+          providerId: t.id,
+          providerLabel: t.label,
+          message: t.message || null,
+          summary,
+          createdAt: t.since,
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[model-quota] health notify error:', notifyErr.message);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: (err && err.message) || String(err) }));
+  }
+});
+
 // API: Get TTS voice configuration
 apiRouter.get('/api/voice-config', (req, res) => {
   const configPath = path.join(GLOBAL_KNOWLEDGE_DIR, 'voice-config.json');
@@ -509,6 +805,329 @@ apiRouter.get('/api/voice-config', (req, res) => {
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(config));
+});
+
+// BST4-2: GET /api/bpmn-styles — 全域自訂 BPMN 風格檔（global-knowledge/bpmn-styles/<id>.json），
+// 比照 voice-config.json 的讀法（單純讀檔，不建索引）。目錄不存在／檔案壞掉一律視為「沒有自訂風格」，
+// 不報 500，讓前端可以安心呼叫。回傳陣列，前端負責與內建包合併（同 id 以這裡回傳的為準）。
+apiRouter.get('/api/bpmn-styles', (req, res) => {
+  const dir = path.join(GLOBAL_KNOWLEDGE_DIR, 'bpmn-styles');
+  const packs = [];
+  try {
+    if (fs.existsSync(dir)) {
+      for (const f of fs.readdirSync(dir)) {
+        if (!f.endsWith('.json')) continue;
+        try {
+          const pack = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+          if (pack && pack.id) packs.push(pack);
+        } catch (e) {
+          console.error('[Harness] Error reading custom bpmn style', f, e.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Harness] Error listing bpmn-styles dir:', e.message);
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ packs }));
+});
+
+// BST4-3: POST /api/bpmn-styles — 存一份自訂風格（global-knowledge/bpmn-styles/<id>.json）。
+// id 只允許小寫英數與 -/_（同時當檔名用，必須擋住路徑穿越）；內建 id 不可覆寫成檔案以外的東西——
+// 使用者真要覆寫內建包也允許（規格 §6.2：同 id 以使用者檔為準，刪掉 json 即復原）。
+const BPMN_STYLE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+apiRouter.post('/api/bpmn-styles', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const pack = JSON.parse(body || '{}');
+      const id = String(pack && pack.id || '');
+      if (!BPMN_STYLE_ID_RE.test(id)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid id' })); return; }
+      if (!Array.isArray(pack.typeColors)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'typeColors required' })); return; }
+      const dir = path.join(GLOBAL_KNOWLEDGE_DIR, 'bpmn-styles');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, id + '.json'), JSON.stringify(pack, null, 2), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, id }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// BST4-3: DELETE /api/bpmn-styles/:id — 刪掉自訂風格檔（內建包因此復原成程式內建定義）。
+apiRouter.delete('/api/bpmn-styles/:id', (req, res, ctx) => {
+  const id = String(ctx.params.id || '');
+  if (!BPMN_STYLE_ID_RE.test(id)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid id' })); return; }
+  try {
+    const f = path.join(GLOBAL_KNOWLEDGE_DIR, 'bpmn-styles', id + '.json');
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: e.message }));
+  }
+});
+
+// ── MTGT: 逐字稿文件匯入（docx/txt）樣板解析 + 預覽確認（spec §11）───────────────────────────
+// 樣板存於 global-knowledge/transcript-templates/<id>.json（跨工作區共用，純資料，改動免 Deploy）。
+// 解析（切段/套 regex/算命中率）交給 render-service/transcript_template.py（純文字，零新依賴）。
+
+// 上傳 base64 或本地路徑 → 落一份可讀檔案供 python 解析；base64 落在 workspace 的 runtime/tmp
+// （天條：產出只留本工作區），呼叫端算完命中率就刪，不留垃圾。回傳 { srcPath, cleanup }。
+function _mtgResolveSourceFile(opts, wctx) {
+  if (opts.path) {
+    const p = String(opts.path);
+    if (!fs.existsSync(p)) throw new Error('找不到本地檔案：' + p);
+    return { srcPath: p, cleanup: false };
+  }
+  if (opts.dataUrl) {
+    let safeName = path.basename(String(opts.filename || 'transcript')).replace(/[\\/]/g, '_').replace(/[\x00-\x1f<>:"|?*]/g, '_');
+    if (!safeName || safeName === '.' || safeName.includes('..')) safeName = 'transcript';
+    const ext = path.extname(safeName).toLowerCase() || '.txt';
+    const m = String(opts.dataUrl).match(/^data:[^;,]*(?:;base64)?,([\s\S]*)$/);
+    const b64 = m ? m[1] : String(opts.dataUrl);
+    let buf; try { buf = Buffer.from(b64, 'base64'); } catch (e) { buf = null; }
+    if (!buf || !buf.length) throw new Error('上傳內容空白或格式錯誤');
+    const tmpDir = path.join(wctx.harnessDir, 'runtime', 'tmp');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const tmpPath = path.join(tmpDir, 'transcript_preview_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + ext);
+    fs.writeFileSync(tmpPath, buf);
+    return { srcPath: tmpPath, cleanup: true };
+  }
+  throw new Error('需要 file（上傳）或 path（本地路徑）');
+}
+
+// GET /api/meeting/transcript-templates — 列出可用樣板（內建 teams + 之後「樣板解析」學到的）。
+apiRouter.get('/api/meeting/transcript-templates', (req, res) => {
+  const dir = path.join(GLOBAL_KNOWLEDGE_DIR, 'transcript-templates');
+  const templates = [];
+  try {
+    if (fs.existsSync(dir)) {
+      for (const f of fs.readdirSync(dir)) {
+        if (!f.endsWith('.json')) continue;
+        try {
+          const t = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+          if (t && t.id) templates.push({ id: t.id, name: t.name || t.id, createdBy: t.createdBy || '' });
+        } catch (e) { console.error('[Meeting] transcript-templates 讀取失敗', f, e.message); }
+      }
+    }
+  } catch (e) { console.error('[Meeting] transcript-templates 列表失敗', e.message); }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true, templates }));
+});
+
+// POST /api/meeting/transcript-preview — MTGT-2：{ path|dataUrl+filename, templateId } → 預覽表格。
+apiRouter.post('/api/meeting/transcript-preview', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    let tmpPath = null;
+    try {
+      const opts = JSON.parse(body || '{}');
+      const templateId = String(opts.templateId || 'none');
+      const { srcPath, cleanup } = _mtgResolveSourceFile(opts, wctx);
+      if (cleanup) tmpPath = srcPath;
+      const { spawnSync } = require('child_process');
+      const templatesDir = path.join(GLOBAL_KNOWLEDGE_DIR, 'transcript-templates');
+      const script = path.join(RENDER_SERVICE_DIR, 'transcript_template.py');
+      const run = spawnSync(venvPython(), [script, '--action', 'preview', '--source', srcPath, '--template-id', templateId, '--templates-dir', templatesDir],
+        { env: venvSpawnEnv(), timeout: 60000, encoding: 'utf8' });
+      let out;
+      if (run.status === 0) { try { out = JSON.parse((run.stdout || '').trim()); } catch (e) { out = { ok: false, error: '解析輸出失敗' }; } }
+      else { out = { ok: false, error: (run.stderr || '預覽失敗').slice(-500) }; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(out));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    } finally {
+      if (tmpPath) { try { fs.unlinkSync(tmpPath); } catch (e) {} }
+    }
+  });
+});
+
+// 「樣板解析」的 LLM prompt：只要求輸出樣板 JSON（Python re 具名群組），不加任何說明文字。
+function _transcriptLearnPrompt(sampleText) {
+  return '你是一個逐字稿格式偵探。以下是一段會議逐字稿的原始文字（已用空白行切成多個「段」，每段理論上是一位講者的一次發言）。\n'
+    + '請分析這些段落的共同排列規律，回傳一個 JSON 物件（不要加 markdown code block、不要任何說明文字，只輸出 JSON），格式如下：\n'
+    + '{"id":"建議的英文小寫 id（3-20字，只能 a-z 0-9 - _）","name":"這個格式的中文名稱（例如 XX會議軟體逐字稿）",'
+    + '"blockPattern":"Python re 正規表示式字串，用 (?P<speaker>...) (?P<time>...) (?P<text>...) 三個具名群組分別對應講者/時間/內容；'
+    + '整段比對用 ^ 開頭 $ 結尾；內容可能跨多行，呼叫端會用 re.DOTALL 編譯，你不用自己加 (?s) 旗標"}\n'
+    + '若某些段落沒有明顯的講者或時間，speaker 或 time 群組可以匹配空字串，但 regex 裡仍要保留這兩個具名群組。\n'
+    + '只需要判斷這一種格式，不用列出多個候選，也不用附任何解釋。\n\n以下是原始文字樣本（已依空白行分段）：\n\n' + sampleText;
+}
+
+// 從模型輸出裡取出第一個 JSON 物件（容忍 ```json fence／前後贅字）。
+function _extractLlmJsonObject(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  const m = t.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('模型未回傳可解析的 JSON');
+  return JSON.parse(m[0]);
+}
+
+const TRANSCRIPT_TEMPLATE_ID_RE = /^[a-z][a-z0-9_-]{2,29}$/;
+
+// POST /api/meeting/transcript-learn — MTGT-4：「樣板解析」按鈕。送樣本給模型 → 候選樣板 →
+// 後端自行套用驗證（命中率 ≥60% 才落檔）→ 成功後立即回新樣板 id + 用該樣板跑出的預覽結果。
+apiRouter.post('/api/meeting/transcript-learn', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', async () => {
+    let tmpPath = null;
+    try {
+      const opts = JSON.parse(body || '{}');
+      const { srcPath, cleanup } = _mtgResolveSourceFile(opts, wctx);
+      if (cleanup) tmpPath = srcPath;
+      const { spawnSync } = require('child_process');
+      const templatesDir = path.join(GLOBAL_KNOWLEDGE_DIR, 'transcript-templates');
+      const script = path.join(RENDER_SERVICE_DIR, 'transcript_template.py');
+
+      const extractRun = spawnSync(venvPython(), [script, '--action', 'extract', '--source', srcPath],
+        { env: venvSpawnEnv(), timeout: 60000, encoding: 'utf8' });
+      if (extractRun.status !== 0) throw new Error((extractRun.stderr || '取出文字失敗').slice(-500));
+      const extracted = JSON.parse((extractRun.stdout || '').trim());
+      if (!extracted.ok) throw new Error(extracted.error || '取出文字失敗');
+      const fullText = extracted.text || '';
+      const sample = fullText.split('\n').slice(0, 80).join('\n').slice(0, 6000);
+      if (!sample.trim()) throw new Error('檔案內容是空的，無法學樣板');
+
+      const llmRes = await runModelsSequential({ prompt: _transcriptLearnPrompt(sample), models: [DEFAULT_MEETING_MODEL], perTimeoutMs: MEETING_SUMMARY_TIMEOUT_MS, wsRoot: wctx.root });
+      const lr = llmRes[0];
+      if (!lr || !lr.ok) throw new Error((lr && lr.error) || '呼叫模型失敗');
+      const candidate = _extractLlmJsonObject(lr.output);
+      if (!candidate.blockPattern) throw new Error('模型回傳缺少 blockPattern');
+      let id = String(candidate.id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!TRANSCRIPT_TEMPLATE_ID_RE.test(id)) id = 'learned-' + Date.now().toString(36);
+      let finalId = id, n = 2;
+      while (fs.existsSync(path.join(templatesDir, finalId + '.json'))) { finalId = id + '-' + n; n++; }
+
+      const validateRun = spawnSync(venvPython(), [script, '--action', 'validate', '--source', srcPath, '--template-json', JSON.stringify({ blockPattern: candidate.blockPattern }), '--templates-dir', templatesDir],
+        { env: venvSpawnEnv(), timeout: 60000, encoding: 'utf8' });
+      let vout;
+      if (validateRun.status === 0) { try { vout = JSON.parse((validateRun.stdout || '').trim()); } catch (e) { vout = { ok: false, error: '驗證輸出解析失敗' }; } }
+      else { vout = { ok: false, error: (validateRun.stderr || '驗證失敗').slice(-500) }; }
+      if (!vout.ok || !vout.passed) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: '新樣板命中率僅 ' + (vout.matchRate || 0) + '%，未達 60% 門檻，不落檔', matchRate: vout.matchRate || 0 }));
+      }
+
+      const templateFile = {
+        id: finalId,
+        name: (candidate.name || finalId).trim(),
+        blockPattern: candidate.blockPattern,
+        blockSplit: 'blank-line',
+        createdBy: 'learned',
+        createdAt: new Date().toISOString(),
+      };
+      fs.mkdirSync(templatesDir, { recursive: true });
+      fs.writeFileSync(path.join(templatesDir, finalId + '.json'), JSON.stringify(templateFile, null, 2), 'utf8');
+
+      const previewRun = spawnSync(venvPython(), [script, '--action', 'preview', '--source', srcPath, '--template-id', finalId, '--templates-dir', templatesDir],
+        { env: venvSpawnEnv(), timeout: 60000, encoding: 'utf8' });
+      let preview = { ok: true, total: vout.total, matched: vout.matched, matchRate: vout.matchRate, rows: vout.rows, warnings: vout.warnings };
+      if (previewRun.status === 0) { try { preview = JSON.parse((previewRun.stdout || '').trim()); } catch (e) {} }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, templateId: finalId, preview }));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    } finally {
+      if (tmpPath) { try { fs.unlinkSync(tmpPath); } catch (e) {} }
+    }
+  });
+});
+
+// ── 回報給 Hana（SPEC-issue-report.md §5.4，IR1）：問題單存 HARNESS_HOME/.harness/issues/，所有工作區共用 ──
+// GET /api/issues/config — 前端錄製器讀「保留幾分鐘」（D5）。必須排在 /api/issues/:id 之前。
+apiRouter.get('/api/issues/config', (req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(issuesStore.readConfig(HARNESS_HOME)));
+});
+// POST /api/issues — 送件（含 rrweb 事件，上限 30MB，超過 413）
+apiRouter.post('/api/issues', (req, res) => {
+  const chunks = []; let size = 0; let tooBig = false;
+  req.on('data', c => {
+    if (tooBig) return;
+    size += c.length;
+    if (size > issuesStore.MAX_BODY_BYTES) { tooBig = true; chunks.length = 0; return; }
+    chunks.push(c);
+  });
+  req.on('end', () => {
+    const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+    if (tooBig) return send(413, { error: '回報內容超過 30MB 上限' });
+    try {
+      const data = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      const wctx = resolveWorkspace(req);
+      const issue = issuesStore.createIssue(HARNESS_HOME, data, { workspace: wctx.root });
+      send(201, { id: issue.id, status: issue.status, workspace: issue.workspace });
+    } catch (e) {
+      send(e.status || 400, { error: e.message });
+    }
+  });
+});
+// GET /api/issues?status=&type= — 清單（不含大欄位）
+apiRouter.get('/api/issues', (req, res, ctx) => {
+  const qp = ctx.parsedUrl.query || {};
+  const list = issuesStore.listIssues(HARNESS_HOME, { status: qp.status, type: qp.type })
+    .map(i => ({ id: i.id, type: i.type, title: i.title, status: i.status, workspace: i.workspace, route: i.route, view: i.view, version: i.version, createdAt: i.createdAt }));
+  res.writeHead(200, { 'Content-Type': 'application/json', 'X-Open-Count': String(issuesStore.countOpen(HARNESS_HOME)) });
+  res.end(JSON.stringify(list));
+});
+// GET /api/issues/summary — 側欄徽章用：未結案數（待處理＋處理中＋已修正待驗證）。必須排在 :id 之前。
+apiRouter.get('/api/issues/summary', (req, res) => {
+  const all = issuesStore.listIssues(HARNESS_HOME);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ open: all.filter(i => issuesStore.OPEN_STATUSES.includes(i.status)).length, total: all.length }));
+});
+// GET /api/issues/:id — 單筆（issue.json + timeline.md）
+apiRouter.get('/api/issues/:id', (req, res, ctx) => {
+  const it = issuesStore.readIssue(HARNESS_HOME, ctx.params.id);
+  if (!it) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(Object.assign({}, it, { timeline: issuesStore.readTimeline(HARNESS_HOME, it.id) })));
+});
+// GET /api/issues/:id/replay — rrweb 事件。檔案本身就是 gzip，原樣送出並標 Content-Encoding，瀏覽器自動解開。
+apiRouter.get('/api/issues/:id/replay', (req, res, ctx) => {
+  const gz = issuesStore.readReplayGz(HARNESS_HOME, ctx.params.id);
+  if (!gz) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', 'Content-Length': gz.length, 'Cache-Control': 'no-store' });
+  res.end(gz);
+});
+// GET /api/issues/:id/timeline — 文字時間軸原文（timeline.md）
+apiRouter.get('/api/issues/:id/timeline', (req, res, ctx) => {
+  const it = issuesStore.readIssue(HARNESS_HOME, ctx.params.id);
+  if (!it) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+  res.end(issuesStore.readTimeline(HARNESS_HOME, it.id));
+});
+// GET /api/issues/:id/files/:name — 貼圖／指認圖（檔名白名單＋路徑必須落在該筆 files/ 內，防路徑穿越）
+apiRouter.get('/api/issues/:id/files/:name', (req, res, ctx) => {
+  const f = issuesStore.resolveFile(HARNESS_HOME, ctx.params.id, ctx.params.name);
+  if (!f) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=3600' });
+  fs.createReadStream(f.abs).pipe(res);
+});
+// POST /api/issues/:id/sessions { sessionId, label? } — 記一段頭像對話進 linkedSessions[]（去重）
+apiRouter.post('/api/issues/:id/sessions', (req, res, ctx) => {
+  let body = '';
+  req.on('data', c => { body += c; if (body.length > 10000) req.destroy(); });
+  req.on('end', () => {
+    const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+    try {
+      const d = JSON.parse(body || '{}');
+      const linked = issuesStore.linkSession(HARNESS_HOME, ctx.params.id, d.sessionId, d.label);
+      if (!linked) return send(404, { error: 'not found' });
+      send(200, { linkedSessions: linked });
+    } catch (e) { send(e.status || 400, { error: e.message }); }
+  });
 });
 
 // GET /api/notes?status=&scope=
@@ -865,6 +1484,877 @@ apiRouter.post('/api/whiteboards/:id/interpret', (req, res, ctx) => {
   });
 });
 
+// ── UI 設計系統 L1 元件庫 API（SPEC-ui-designer.md §5/§5.1，TASK.md UID-02）────────────────
+// D12 工作區隔離鐵則：全部走 resolveWorkspace(req)，資料只讀寫該工作區的 .harness/uidesign/，
+// 不做全域回退（沒有就是沒有，前端顯示「還沒有元件庫，要新建嗎」，絕不去讀 global 或別的工作區）。
+
+// GET /api/ui/tokens — 當前工作區的設計 token
+apiRouter.get('/api/ui/tokens', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  const lib = uidesignStore.readLibrary(wctx.root);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(lib.tokens));
+});
+
+// PUT /api/ui/tokens — 覆寫設計 token
+apiRouter.put('/api/ui/tokens', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const tokens = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const lib = uidesignStore.readLibrary(wctx.root);
+      lib.tokens = tokens;
+      uidesignStore.writeLibrary(wctx.root, lib);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, tokens }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// GET /api/ui/components — 列表（不含 html/css 內文，輕量）；空清單時前端要顯示「新建或匯入」提示
+apiRouter.get('/api/ui/components', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  const list = uidesignStore.readIndex(wctx.root);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(list));
+});
+
+// POST /api/ui/components — 建立。body {name, category?, description?, html?, css?, params?, variants?}
+apiRouter.post('/api/ui/components', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const now = new Date().toISOString();
+      const id = uidesignStore.genComponentId();
+      const name = String(data.name || '').trim() || '未命名元件';
+      const component = {
+        id, name,
+        category: data.category || '未分類',
+        description: data.description || '',
+        params: Array.isArray(data.params) ? data.params : [],
+        variants: Array.isArray(data.variants) ? data.variants : [],
+        html: typeof data.html === 'string' ? data.html : '<button class="btn">按鈕</button>',
+        css: typeof data.css === 'string' ? data.css : '.btn { padding: 8px 16px; border-radius: 8px; border: none; background: var(--ui-color-primary, #0891b2); color: #fff; }',
+        createdAt: now, updatedAt: now
+      };
+      uidesignStore.writeComponent(wctx.root, id, component);
+      const list = uidesignStore.readIndex(wctx.root);
+      list.push({ id, name: component.name, category: component.category, description: component.description, updatedAt: now });
+      uidesignStore.writeIndex(wctx.root, list);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(component));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// GET /api/ui/components/:id — 完整內容（含 html/css/params/variants）
+apiRouter.get('/api/ui/components/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const component = uidesignStore.readComponent(wctx.root, ctx.params.id);
+  if (!component) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(component));
+});
+
+// PUT /api/ui/components/:id — 更新。body 可帶任一欄位 {name, category, description, html, css, params, variants}
+apiRouter.put('/api/ui/components/:id', (req, res, ctx) => {
+  const id = ctx.params.id;
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const patch = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const component = uidesignStore.readComponent(wctx.root, id);
+      if (!component) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+      const FIELDS = ['name', 'category', 'description', 'html', 'css', 'params', 'variants'];
+      for (const f of FIELDS) { if (f in patch) component[f] = patch[f]; }
+      component.updatedAt = new Date().toISOString();
+      uidesignStore.writeComponent(wctx.root, id, component);
+      const list = uidesignStore.readIndex(wctx.root);
+      const idx = list.findIndex(c => c.id === id);
+      if (idx !== -1) {
+        list[idx].name = component.name;
+        list[idx].category = component.category;
+        list[idx].description = component.description;
+        list[idx].updatedAt = component.updatedAt;
+        uidesignStore.writeIndex(wctx.root, list);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(component));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// DELETE /api/ui/components/:id
+apiRouter.delete('/api/ui/components/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const component = uidesignStore.readComponent(wctx.root, ctx.params.id);
+  if (!component) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  uidesignStore.deleteComponent(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+});
+
+// ── UI 設計系統 L2 設計畫布（screens）API（SPEC-ui-designer.md §7 UID2，TASK.md UID-07）────
+// D12 工作區隔離鐵則：一律 resolveWorkspace(req)，畫面只存在 <workspace>/.harness/uidesign/screens/，
+// 不做全域回退。
+
+// GET /api/ui/devices — 裝置清單＝出廠預設（桌機/平板/手機/PDA）＋ 當前工作區的自訂尺寸。
+apiRouter.get('/api/ui/devices', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(uidesignStore.listDevices(wctx.root)));
+});
+
+// POST /api/ui/devices — 新增自訂尺寸。body {label?, width, height}。存進工作區，之後選單選得到。
+apiRouter.post('/api/ui/devices', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const device = uidesignStore.addCustomDevice(wctx.root, data);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(device));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// DELETE /api/ui/devices/:id — 移除自訂尺寸（只影響選單，既有畫面的 frame 不動）。
+apiRouter.delete('/api/ui/devices/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  uidesignStore.deleteCustomDevice(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+});
+
+// ── UI 設計系統 UID9：以「螢幕尺寸」設計（密度無關單位 dp，SPEC §7.2/D13）─────────────────
+// 機型預設表當「種子」複製進工作區（models.json），D12：一律 resolveWorkspace(req)，不做全域回退。
+
+// GET /api/ui/models — 機型清單（出廠預設 + 本工作區自訂，首次呼叫自動種子）
+apiRouter.get('/api/ui/models', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(uidesignStore.readModels(wctx.root)));
+});
+
+// POST /api/ui/models — 新增自訂機型。body {label?, diagonalInch, nativeWidth, nativeHeight}
+apiRouter.post('/api/ui/models', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const model = uidesignStore.addModel(wctx.root, data);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(model));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// DELETE /api/ui/models/:id — 只影響選單，既有畫面已記錄的 nativeWidth/scale 不受影響。
+apiRouter.delete('/api/ui/models/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  uidesignStore.deleteModel(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+});
+
+// GET /api/ui/screens — 列當前工作區的畫面（index.json，輕量：不含 elements）
+apiRouter.get('/api/ui/screens', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  const list = uidesignStore.readScreenIndex(wctx.root);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(list));
+});
+
+// UID9：依 body 決定 unit。'dp'（尺寸模式）＝挑機型或自填「對角吋數＋實體解析度」，算出
+// scale=PPI/160，畫框（frame）以 dp 呈現＝實體像素÷scale。其餘（含未帶 unit 的舊呼叫）維持
+// 'px'（解析度模式），scale=1，frame 就是實體像素——向後相容、不影響 UID2 既有行為。
+function resolveScreenSizing(wctx, data) {
+  if (data.unit === 'dp') {
+    let diagonalInch, nativeWidth, nativeHeight;
+    if (data.modelId) {
+      const model = uidesignStore.findModel(wctx.root, data.modelId);
+      if (!model) throw new Error('找不到指定的機型');
+      diagonalInch = model.diagonalInch; nativeWidth = model.nativeWidth; nativeHeight = model.nativeHeight;
+    } else {
+      diagonalInch = Number(data.diagonalInch);
+      nativeWidth = Math.round(Number(data.nativeWidth));
+      nativeHeight = Math.round(Number(data.nativeHeight));
+    }
+    if (!(diagonalInch > 0) || !nativeWidth || !nativeHeight) throw new Error('尺寸模式需要對角吋數與實體解析度');
+    const { scale } = uidesignStore.computeScale(diagonalInch, nativeWidth, nativeHeight);
+    const frame = { width: Math.round(nativeWidth / scale), height: Math.round(nativeHeight / scale) };
+    return { unit: 'dp', diagonalInch, nativeWidth, nativeHeight, scale: Math.round(scale * 100) / 100, frame, device: data.modelId || null };
+  }
+  const deviceId = data.device || 'desktop-1440';
+  const preset = uidesignStore.findDevice(wctx.root, deviceId) || uidesignStore.DEVICE_PRESETS[0];
+  const frame = (data.frame && data.frame.width && data.frame.height)
+    ? { width: Number(data.frame.width), height: Number(data.frame.height) }
+    : { width: preset.width, height: preset.height };
+  return { unit: 'px', diagonalInch: null, nativeWidth: null, nativeHeight: null, scale: 1, frame, device: deviceId };
+}
+
+// POST /api/ui/screens — 新建。body {name?, device?, frame?:{width,height}} 或 UID9 尺寸模式
+// {unit:'dp', modelId?} / {unit:'dp', diagonalInch, nativeWidth, nativeHeight}
+apiRouter.post('/api/ui/screens', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const now = new Date().toISOString();
+      const id = uidesignStore.genScreenId();
+      const sizing = resolveScreenSizing(wctx, data);
+      const deviceId = sizing.unit === 'dp' ? sizing.device : (sizing.device || data.device || 'desktop-1440');
+      // UID10 §7.3.1：語意標記（來源標記）。purpose/origin/sourceTemplateId 全部選填，沒帶
+      // 就是未標記（undefined），向後相容——既有呼叫（沒帶這三個欄位）行為完全不變。
+      const PURPOSES = ['login', 'list', 'detail', 'form', 'dashboard', 'scan', 'other'];
+      const ORIGINS = ['manual', 'template', 'image', 'skill'];
+      const screen = {
+        id,
+        name: String(data.name || '').trim() || '新畫面',
+        device: deviceId,
+        frame: sizing.frame,
+        unit: sizing.unit,
+        diagonalInch: sizing.diagonalInch,
+        nativeWidth: sizing.nativeWidth,
+        nativeHeight: sizing.nativeHeight,
+        scale: sizing.scale,
+        purpose: PURPOSES.includes(data.purpose) ? data.purpose : undefined,
+        origin: ORIGINS.includes(data.origin) ? data.origin : 'manual',
+        sourceTemplateId: data.sourceTemplateId || undefined,
+        elements: Array.isArray(data.elements) ? data.elements : [],
+        notes: typeof data.notes === 'string' ? data.notes : '',
+        createdAt: now, updatedAt: now
+      };
+      uidesignStore.writeScreen(wctx.root, id, screen);
+      const list = uidesignStore.readScreenIndex(wctx.root);
+      list.push({ id, name: screen.name, device: screen.device, frame: screen.frame, unit: screen.unit, scale: screen.scale, updatedAt: now });
+      uidesignStore.writeScreenIndex(wctx.root, list);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(screen));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// GET /api/ui/screens/:id — 完整內容（含 elements）
+apiRouter.get('/api/ui/screens/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const screen = uidesignStore.readScreen(wctx.root, ctx.params.id);
+  if (!screen) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(screen));
+});
+
+// PUT /api/ui/screens/:id — 存檔。body 可帶任一欄位 {name, device, frame, elements}
+apiRouter.put('/api/ui/screens/:id', (req, res, ctx) => {
+  const id = ctx.params.id;
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const patch = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const screen = uidesignStore.readScreen(wctx.root, id);
+      if (!screen) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+      // UID9：unit/diagonalInch/nativeWidth/nativeHeight/scale 可個別覆寫（例如指揮官事後校正
+      // 某台機型的實際 PPI）；舊呼叫不帶這些欄位時 screen 保留原值，不受影響（向後相容）。
+      // UID10：purpose/origin/sourceTemplateId 可個別覆寫（例如屬性面板事後補標／改標）；
+      // 舊呼叫不帶這些欄位時 screen 保留原值，不受影響（向後相容）。
+      const FIELDS = ['name', 'device', 'frame', 'elements', 'notes', 'unit', 'diagonalInch', 'nativeWidth', 'nativeHeight', 'scale', 'purpose', 'origin', 'sourceTemplateId'];
+      for (const f of FIELDS) { if (f in patch) screen[f] = patch[f]; }
+      screen.updatedAt = new Date().toISOString();
+      uidesignStore.writeScreen(wctx.root, id, screen);
+      const list = uidesignStore.readScreenIndex(wctx.root);
+      const idx = list.findIndex(s => s.id === id);
+      if (idx !== -1) {
+        list[idx].name = screen.name;
+        list[idx].device = screen.device;
+        list[idx].frame = screen.frame;
+        list[idx].unit = screen.unit;
+        list[idx].scale = screen.scale;
+        list[idx].updatedAt = screen.updatedAt;
+        uidesignStore.writeScreenIndex(wctx.root, list);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(screen));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// POST /api/ui/screens/:id/duplicate — 複製畫面（UID-08）。body {name?}
+apiRouter.post('/api/ui/screens/:id/duplicate', (req, res, ctx) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const wctx = resolveWorkspace(req);
+      const src = uidesignStore.readScreen(wctx.root, ctx.params.id);
+      if (!src) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+      const data = body ? JSON.parse(body) : {};
+      const now = new Date().toISOString();
+      const id = uidesignStore.genScreenId();
+      const copy = Object.assign({}, src, {
+        id,
+        name: (data.name && String(data.name).trim()) || (src.name + '（複製）'),
+        createdAt: now, updatedAt: now
+      });
+      uidesignStore.writeScreen(wctx.root, id, copy);
+      const list = uidesignStore.readScreenIndex(wctx.root);
+      list.push({ id, name: copy.name, device: copy.device, frame: copy.frame, updatedAt: now });
+      uidesignStore.writeScreenIndex(wctx.root, list);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(copy));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// DELETE /api/ui/screens/:id
+apiRouter.delete('/api/ui/screens/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const screen = uidesignStore.readScreen(wctx.root, ctx.params.id);
+  if (!screen) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  uidesignStore.deleteScreen(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+});
+
+// ── UI 設計系統 L6 設計指南（guideline.md + decisions.json）API（SPEC-ui-designer.md §6.1，
+// TASK.md UID-21/UID-22）。D12：一律 resolveWorkspace(req)，只讀寫當前工作區
+// .harness/uidesign/guideline/，出廠預設當種子（首次使用自動複製，已存在不覆寫）。
+
+// GET /api/ui/guideline — 當前工作區的 guideline.md 全文（純文字）
+apiRouter.get('/api/ui/guideline', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  const content = uidesignStore.readGuidelineMd(wctx.root);
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end(content);
+});
+
+// PUT /api/ui/guideline — 覆寫 guideline.md。body {content}
+apiRouter.put('/api/ui/guideline', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      uidesignStore.writeGuidelineMd(wctx.root, data.content || '');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// ── UI 設計系統 L5 範本庫（templates）API（SPEC-ui-designer.md §6.2、§7 UID5，TASK.md
+// UID-17～UID-20）。D12：一律 resolveWorkspace(req)，只讀寫當前工作區 .harness/uidesign/templates/；
+// 內建骨架範本與骨架佔位元件是「種子」——ensureTemplatesSeed 只在缺席時補、不覆寫已存在的檔案。
+
+// GET /api/ui/templates — 列表（輕量：不含 elements，含縮圖）；可用 ?device= 依裝置分類篩選
+apiRouter.get('/api/ui/templates', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  let list = uidesignStore.readTemplateIndex(wctx.root);
+  const u = url.parse(req.url, true);
+  const deviceGroup = u.query && u.query.device;
+  if (deviceGroup && deviceGroup !== 'all') list = list.filter(t => t.deviceGroup === deviceGroup);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(list));
+});
+
+// POST /api/ui/templates — 「畫面另存為範本」。body {name, device, frame, elements, tags?, sourceScreenId?}
+// 前端已把死內容（overrides）抽成佔位再送進來（D9），後端只負責存檔與縮圖產生，不做內容判斷。
+apiRouter.post('/api/ui/templates', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const now = new Date().toISOString();
+      const id = uidesignStore.genTemplateId();
+      const frame = (data.frame && data.frame.width && data.frame.height)
+        ? { width: Number(data.frame.width), height: Number(data.frame.height) }
+        : { width: 1440, height: 900 };
+      const name = String(data.name || '').trim() || '未命名範本';
+      const elements = Array.isArray(data.elements) ? data.elements : [];
+      const template = {
+        id, name,
+        device: data.device || 'desktop-1440',
+        deviceGroup: uidesignStore.deviceGroupOf(wctx.root, data.device || 'desktop-1440'),
+        tags: Array.isArray(data.tags) ? data.tags : [],
+        frame, elements,
+        source: 'screen',
+        sourceScreenId: data.sourceScreenId || null,
+        thumbnail: uidesignStore.genThumbnailSvg(frame, elements),
+        createdAt: now, updatedAt: now
+      };
+      uidesignStore.writeTemplate(wctx.root, id, template);
+      const list = uidesignStore.readTemplateIndex(wctx.root);
+      list.push({ id, name, deviceGroup: template.deviceGroup, device: template.device, tags: template.tags, source: 'screen', updatedAt: now, thumbnail: template.thumbnail });
+      uidesignStore.writeTemplateIndex(wctx.root, list);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(template));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// GET /api/ui/templates/:id — 完整內容（含 elements）
+apiRouter.get('/api/ui/templates/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const template = uidesignStore.readTemplate(wctx.root, ctx.params.id);
+  if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(template));
+});
+
+// DELETE /api/ui/templates/:id
+apiRouter.delete('/api/ui/templates/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const template = uidesignStore.readTemplate(wctx.root, ctx.params.id);
+  if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  uidesignStore.deleteTemplate(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+});
+
+// POST /api/ui/templates/:id/apply — 套用範本＝新建一個畫面，內容抄範本的 frame/device/elements。
+// body {name?}。與 duplicate 畫面共用同一批 uidesignStore screen 函式，不另寫一套建畫面邏輯。
+apiRouter.post('/api/ui/templates/:id/apply', (req, res, ctx) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const wctx = resolveWorkspace(req);
+      const template = uidesignStore.readTemplate(wctx.root, ctx.params.id);
+      if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+      const data = body ? JSON.parse(body) : {};
+      const now = new Date().toISOString();
+      const id = uidesignStore.genScreenId();
+      // UID10：套用範本一律標記 origin:'template'，sourceTemplateId 記下範本 id 與套用時的
+      // 範本版本（用範本 updatedAt 當版本戳，範本目前沒有獨立 version 欄位）。
+      const screen = {
+        id,
+        name: (data.name && String(data.name).trim()) || template.name,
+        device: template.device,
+        frame: template.frame,
+        origin: 'template',
+        sourceTemplateId: { id: template.id, version: template.updatedAt || null },
+        elements: JSON.parse(JSON.stringify(template.elements || [])),
+        notes: '套用自範本「' + template.name + '」',
+        createdAt: now, updatedAt: now
+      };
+      uidesignStore.writeScreen(wctx.root, id, screen);
+      const list = uidesignStore.readScreenIndex(wctx.root);
+      list.push({ id, name: screen.name, device: screen.device, frame: screen.frame, updatedAt: now });
+      uidesignStore.writeScreenIndex(wctx.root, list);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(screen));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// ── UID11 依範本重套（Restyle）API（SPEC-ui-designer.md §7.3.2，TASK.md UID-41～44）──────
+// D12：一律 resolveWorkspace(req)。preview 為 dry-run（不寫檔），apply/batch 才落地並產生可退回
+// 的版本快照（saveScreenRevision）。對位/保留/回報邏輯全部收在 uidesignStore.restyleMatchScreen，
+// 這裡只負責讀寫與組 HTTP 回應，不重複實作演算法。
+
+// POST /api/ui/screens/:id/restyle/preview — body {templateId}。只回傳試算結果，不落地。
+apiRouter.post('/api/ui/screens/:id/restyle/preview', (req, res, ctx) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const screen = uidesignStore.readScreen(wctx.root, ctx.params.id);
+      if (!screen) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'screen not found' })); return; }
+      const template = uidesignStore.readTemplate(wctx.root, data.templateId);
+      if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'template not found' })); return; }
+      const result = uidesignStore.restyleMatchScreen(screen, template);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(Object.assign({ templateId: template.id, templateName: template.name, screenId: screen.id }, result)));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// POST /api/ui/screens/:id/restyle/apply — body {templateId}。落地：存一份重套前快照到
+// screens/revisions/，再把畫面 elements 換成對位結果，回傳新畫面 + 回報清單。
+apiRouter.post('/api/ui/screens/:id/restyle/apply', (req, res, ctx) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const id = ctx.params.id;
+      const screen = uidesignStore.readScreen(wctx.root, id);
+      if (!screen) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'screen not found' })); return; }
+      const template = uidesignStore.readTemplate(wctx.root, data.templateId);
+      if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'template not found' })); return; }
+      const result = uidesignStore.restyleMatchScreen(screen, template);
+      uidesignStore.saveScreenRevision(wctx.root, id, screen, {
+        reason: 'restyle', label: '重套前（範本：' + template.name + '）', templateId: template.id
+      });
+      screen.elements = result.elements;
+      screen.updatedAt = new Date().toISOString();
+      uidesignStore.writeScreen(wctx.root, id, screen);
+      const list = uidesignStore.readScreenIndex(wctx.root);
+      const idx = list.findIndex(s => s.id === id);
+      if (idx !== -1) { list[idx].updatedAt = screen.updatedAt; uidesignStore.writeScreenIndex(wctx.root, list); }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        screen, templateId: template.id, templateName: template.name,
+        matchedCount: result.matchedCount, templateElementCount: result.templateElementCount,
+        unmatchedFromScreen: result.unmatchedFromScreen, unmatchedFromTemplate: result.unmatchedFromTemplate
+      }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// POST /api/ui/screens/restyle/batch — body {screenIds:[], templateId}。整批套用（UID-42），
+// 逐張各自走一次 apply 同款邏輯（各自存自己的可退回版本），單張失敗不擋其他張。
+apiRouter.post('/api/ui/screens/restyle/batch', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const screenIds = Array.isArray(data.screenIds) ? data.screenIds : [];
+      const template = uidesignStore.readTemplate(wctx.root, data.templateId);
+      if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'template not found' })); return; }
+      const results = screenIds.map((screenId) => {
+        const screen = uidesignStore.readScreen(wctx.root, screenId);
+        if (!screen) return { screenId, ok: false, error: 'screen not found' };
+        try {
+          const result = uidesignStore.restyleMatchScreen(screen, template);
+          uidesignStore.saveScreenRevision(wctx.root, screenId, screen, {
+            reason: 'restyle', label: '重套前（範本：' + template.name + '，整批套用）', templateId: template.id
+          });
+          screen.elements = result.elements;
+          screen.updatedAt = new Date().toISOString();
+          uidesignStore.writeScreen(wctx.root, screenId, screen);
+          const list = uidesignStore.readScreenIndex(wctx.root);
+          const idx = list.findIndex(s => s.id === screenId);
+          if (idx !== -1) { list[idx].updatedAt = screen.updatedAt; uidesignStore.writeScreenIndex(wctx.root, list); }
+          return {
+            screenId, ok: true, screenName: screen.name,
+            matchedCount: result.matchedCount, templateElementCount: result.templateElementCount,
+            unmatchedFromScreen: result.unmatchedFromScreen, unmatchedFromTemplate: result.unmatchedFromTemplate
+          };
+        } catch (e) { return { screenId, ok: false, error: e.message }; }
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ templateId: template.id, templateName: template.name, results }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// GET /api/ui/screens/:id/revisions — 該畫面的重套版本清單（新到舊）
+apiRouter.get('/api/ui/screens/:id/revisions', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const list = uidesignStore.listScreenRevisions(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(list));
+});
+
+// POST /api/ui/screens/:id/revisions/:revId/restore — 一鍵退回（UID-43）。退回前先把「即將被
+// 取代的當下版本」也存一份，讓這次退回本身仍是可逆的（不會把退回動作變成單向門）。
+apiRouter.post('/api/ui/screens/:id/revisions/:revId/restore', (req, res, ctx) => {
+  try {
+    const wctx = resolveWorkspace(req);
+    const id = ctx.params.id;
+    const current = uidesignStore.readScreen(wctx.root, id);
+    if (!current) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'screen not found' })); return; }
+    const revision = uidesignStore.readScreenRevision(wctx.root, id, ctx.params.revId);
+    if (!revision) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'revision not found' })); return; }
+    uidesignStore.saveScreenRevision(wctx.root, id, current, { reason: 'restore-superseded', label: '退回前的版本（即將被取代）' });
+    const restored = Object.assign({}, revision.snapshot, { id, updatedAt: new Date().toISOString() });
+    uidesignStore.writeScreen(wctx.root, id, restored);
+    const list = uidesignStore.readScreenIndex(wctx.root);
+    const idx = list.findIndex(s => s.id === id);
+    if (idx !== -1) {
+      list[idx].name = restored.name; list[idx].device = restored.device; list[idx].frame = restored.frame;
+      list[idx].updatedAt = restored.updatedAt;
+      uidesignStore.writeScreenIndex(wctx.root, list);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(restored));
+  } catch (e) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: e.message }));
+  }
+});
+
+// GET /api/ui/decisions — 當前工作區的元件選用決策表
+apiRouter.get('/api/ui/decisions', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  const list = uidesignStore.readDecisions(wctx.root);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(list));
+});
+
+// PUT /api/ui/decisions — 覆寫決策表。body：整份陣列
+apiRouter.put('/api/ui/decisions', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '[]');
+      const wctx = resolveWorkspace(req);
+      uidesignStore.writeDecisions(wctx.root, Array.isArray(data) ? data : []);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// ── UI 設計系統 UID12 情境流程（Scenario Flows）API（SPEC-ui-designer.md §7.4，
+// TASK.md UID-46～50/UID-55）。D12：一律 resolveWorkspace(req)，只讀寫當前工作區的
+// .harness/uidesign/flows/，不做全域回退。流程是與元件／畫面／範本並列的第四種資料，本身
+// 不改動畫面——步驟只是「screenId + 一句說明」的敘事順序。
+
+// GET /api/ui/flows — 列當前工作區的流程（index.json，輕量：不含 steps 細節）
+apiRouter.get('/api/ui/flows', (req, res) => {
+  const wctx = resolveWorkspace(req);
+  const list = uidesignStore.readFlowIndex(wctx.root);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(list));
+});
+
+// POST /api/ui/flows — 新建。body {name?, description?, device?, steps?:[]}
+apiRouter.post('/api/ui/flows', (req, res) => {
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const now = new Date().toISOString();
+      const id = uidesignStore.genFlowId();
+      const flow = {
+        id,
+        name: String(data.name || '').trim() || '未命名流程',
+        description: typeof data.description === 'string' ? data.description : '',
+        device: data.device || null,
+        steps: Array.isArray(data.steps) ? data.steps : [],
+        createdAt: now, updatedAt: now
+      };
+      uidesignStore.writeFlow(wctx.root, id, flow);
+      const list = uidesignStore.readFlowIndex(wctx.root);
+      list.push({ id, name: flow.name, description: flow.description, device: flow.device, stepCount: flow.steps.length, updatedAt: now });
+      uidesignStore.writeFlowIndex(wctx.root, list);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(flow));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// GET /api/ui/flows/:id — 完整內容（含 steps）。§7.4.1「失效不壞整條」：逐步檢查 screenId
+// 對應的畫面是否還存在，存在與否現算現標成 step._invalid（不落地、不改寫儲存資料本身），
+// 前端清單／重播/簡報模式據此顯示失效提示，整條流程照樣可開啟。
+apiRouter.get('/api/ui/flows/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const flow = uidesignStore.readFlow(wctx.root, ctx.params.id);
+  if (!flow) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  const steps = (flow.steps || []).map((step) => {
+    const screen = step && step.screenId ? uidesignStore.readScreen(wctx.root, step.screenId) : null;
+    return Object.assign({}, step, { _invalid: !screen, _screenName: screen ? screen.name : null });
+  });
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(Object.assign({}, flow, { steps })));
+});
+
+// PUT /api/ui/flows/:id — 更新。body 可帶任一欄位 {name, description, device, steps}
+apiRouter.put('/api/ui/flows/:id', (req, res, ctx) => {
+  const id = ctx.params.id;
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const patch = JSON.parse(body || '{}');
+      const wctx = resolveWorkspace(req);
+      const flow = uidesignStore.readFlow(wctx.root, id);
+      if (!flow) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+      const FIELDS = ['name', 'description', 'device', 'steps'];
+      for (const f of FIELDS) { if (f in patch) flow[f] = patch[f]; }
+      if (!Array.isArray(flow.steps)) flow.steps = [];
+      flow.updatedAt = new Date().toISOString();
+      uidesignStore.writeFlow(wctx.root, id, flow);
+      const list = uidesignStore.readFlowIndex(wctx.root);
+      const idx = list.findIndex(f => f.id === id);
+      if (idx !== -1) {
+        list[idx].name = flow.name;
+        list[idx].description = flow.description;
+        list[idx].device = flow.device;
+        list[idx].stepCount = flow.steps.length;
+        list[idx].updatedAt = flow.updatedAt;
+        uidesignStore.writeFlowIndex(wctx.root, list);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(flow));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
+// DELETE /api/ui/flows/:id
+apiRouter.delete('/api/ui/flows/:id', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const flow = uidesignStore.readFlow(wctx.root, ctx.params.id);
+  if (!flow) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  uidesignStore.deleteFlow(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+});
+
+// GET /api/ui/screens/:id/usage — UID-55 刪畫面前的引用提示。掃 flows/index.json 判斷這張畫面
+// 被哪些流程的第幾步引用，一律由伺服器判定（前端不自行推測）。回傳 [{flowId,flowName,stepIndex}]，
+// 空陣列＝未被任何流程引用（前端據此決定要不要多一次確認）。
+apiRouter.get('/api/ui/screens/:id/usage', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const usage = uidesignStore.findScreenUsageInFlows(wctx.root, ctx.params.id);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(usage));
+});
+
+// GET /api/ui/flows/:id/export-check — UID13 匯出前的誠實檢查（SPEC §7.4.4／TASK UID-53）：
+// 只計算不寫檔，回報失效步驟（畫面已刪）與掃到的外部網址（匯出後離線開啟連不到），
+// 前端據此列出清單問使用者「仍要匯出」或「先修好再匯」，不靜默略過。
+apiRouter.get('/api/ui/flows/:id/export-check', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const computed = uidesignStore.computeFlowExport(wctx.root, ctx.params.id);
+  if (!computed) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ stepCount: computed.stepCount, skipped: computed.skipped, externalRefs: computed.externalRefs }));
+});
+
+// POST /api/ui/flows/:id/export — 實際匯出。把流程烘成一份離線 index.html（素材已內嵌成
+// iframe srcdoc，不靠執行期 fetch），寫進 <workspace>/.harness/uidesign/exports/<flowId>/
+// （D12 工作區隔離、天條：產物只落在當前工作區）。回傳與 export-check 相同的檢查結果，
+// 讓「匯出後才發現有問題」也能被使用者看到，不是只有匯出前才報。
+apiRouter.post('/api/ui/flows/:id/export', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  const computed = uidesignStore.computeFlowExport(wctx.root, ctx.params.id);
+  if (!computed) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+  try {
+    const dir = uidesignStore.writeFlowExport(wctx.root, ctx.params.id, computed);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, dir, stepCount: computed.stepCount, skipped: computed.skipped, externalRefs: computed.externalRefs }));
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: e.message }));
+  }
+});
+
+// POST /api/chat/delegate — CBG-1（SPEC-chat-background-task.md §3.1）：由對話觸發一筆「一次性」
+// 背景任務，沿用既有排程器執行（D4：不另造背景執行系統）。建一筆 chatTask:true 的 Schedule（一次性
+// trigger、enabled:false，觸發後不再自動續排）並立刻 triggerNow；結果跑完後由 fireScheduledJob 的
+// onComplete（chatTask 分支）自動附加回這個 sessionId 的對話（見 appendMessageToChatSession）。
+apiRouter.post('/api/chat/delegate', (req, res, ctx) => {
+  const wctx = resolveWorkspace(req);
+  let body = '';
+  req.on('data', c => { body += c; });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      const sessionId = String(data.sessionId || '').trim();
+      const prompt = String(data.prompt || '').trim();
+      if (!sessionId || !prompt) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'sessionId 與 prompt 皆為必填' }));
+        return;
+      }
+      const model = data.model || 'claude::sonnet';
+      const name = '對話背景任務：' + prompt.slice(0, 40).replace(/\n/g, ' ');
+      const s = schedulerManager.createSchedule({
+        name,
+        enabled: false,                 // 一次性：不留在自動排程循環裡（CBG-1）
+        trigger: { type: 'once' },
+        task: { kind: 'prompt', prompt },
+        model,
+        workspace: wctx.root,
+        chatTask: true,                 // CBG-2: GET /api/schedules 要濾掉這筆
+        origin: { kind: 'chat', sessionId, workspace: wctx.root },
+      });
+      const result = schedulerManager.triggerNow(s.id, { channel: 'chat', sessionId, workspace: wctx.root });
+      if (!result || result.ok === false) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: (result && result.error) || 'trigger failed' }));
+        return;
+      }
+      const run = schedulerManager.getRunningRun(s.id);
+      broadcastChatTaskChange({ reason: 'chat-task-started', sessionId, workspace: wctx.root, scheduleId: s.id });
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ taskId: s.id, scheduleId: s.id, runId: run ? run.id : null }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+});
+
 // DELETE /api/chat/history/:sessionId/messages/:index — SPEC-chat-message-delete.md §Y.
 // MUST live in the route table, not the legacy `pathname.startsWith('/api/chat/history/')`
 // DELETE if-block further down (that one still owns whole-session delete via `split('/').pop()`,
@@ -1017,6 +2507,132 @@ const server = http.createServer((req, res) => {
   // dynamically import()-ed by router.js as views/<name>.js. §V13: every menu route now has a
   // view module here; the R5 legacy-panel fallback in router.js has been removed. Sandboxed the
   // same way /vendor/ is.
+  // WSXT2 (SPEC-workspace-settings.md §14/§D17): standalone plugin shell — a bare HTML page (no
+  // Hana chrome: no sidebar/header/avatar) that mounts ONLY the plugin's own view, for plugins meant
+  // to be delivered as an independent site (e.g. a client-facing manual). Strict name regex so this
+  // doesn't shadow any other top-level route. Must run before the /views/x/ block below only in the
+  // sense of being a distinct prefix — order relative to it doesn't matter, but keeping it adjacent
+  // since both share the same trust-gate / lookup logic.
+  if (/^\/x\/([A-Za-z0-9_-]+)$/.test(pathname)) {
+    const name = pathname.slice('/x/'.length);
+    const wctx = resolveWorkspace(req);
+    // WSXU (§21): resolve by name OR configured slug (name wins on collision, D24).
+    const plugin = findPluginByKey(applyPluginManifestOrder(getPlugins(wctx), getManifest(wctx.root).plugins), name);
+    if (!plugin) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not found');
+      return;
+    }
+    if (plugin.trust === 'code' && !plugin.enabled) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Plugin not trusted: ' + (plugin.disabledReason || name));
+      return;
+    }
+    const wsEnc = encodeURIComponent(wctx.root);
+    const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const title = plugin.title || plugin.name;
+    // WSXU (§21): asset/API references always use the resolved plugin.name, not the url key —
+    // `name` here may be a slug alias; view/style module files and the API prefix are keyed by
+    // name only (D21), so resolving once via findPluginByKey() and using plugin.name from here on
+    // avoids ambiguity regardless of which alias the browser used to reach this page.
+    const stylesTag = plugin.styles
+      ? `<link rel="stylesheet" href="/views/x/${encodeURIComponent(plugin.name)}.css?workspace=${wsEnc}">`
+      : '';
+    const html = `<!DOCTYPE html>
+<html lang="zh-TW" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+<script src="/vendor/tailwind.js"></script>
+<script src="/vendor/lucide.min.js"></script>
+<!-- WSXT2 fix: 獨立頁沒有 index.html 的 <style>，平台設計系統變數（--surface/--border/--text/
+     --brand/--radius…）會整組解析不出來，外掛 CSS 就沒底色沒邊框 —— 看起來像「跑版」。
+     變數已抽成 /shell/theme-vars.css，兩邊共用同一份。必須排在外掛自己的樣式之前，
+     外掛才覆蓋得掉。 -->
+<link rel="stylesheet" href="/shell/theme-vars.css">
+<style>
+  /* 獨立頁的版面基準：index.html 的 #view-root 是 flex-1 撐滿父層，獨立頁沒有那層外框，
+     所以在這裡自己把 html/body/#view-root 串成一條滿版高度鏈。少了這段，外掛寫
+     height:100% 會算成 0（例如手冊的 iframe 整個塌掉）。 */
+  html, body { height: 100%; margin: 0; }
+  body { background-color: var(--bg); color: var(--text); }
+  #view-root { height: 100%; overflow-y: auto; }
+</style>
+${stylesTag}
+<script>
+  // WSXT2/D17: standalone shell has no Hana chrome, so it re-derives the per-tab workspace from
+  // ?workspace= (import() can't carry the X-Workspace header — same reasoning as router.js's plugin
+  // route) instead of relying on sessionStorage having been seeded by index.html's boot step.
+  (function () {
+    const params = new URLSearchParams(location.search);
+    const ws = params.get('workspace') || '';
+    if (ws) { try { sessionStorage.setItem('current_workspace', ws); } catch (e) {} }
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    if (window.tailwind) { window.tailwind.config = { darkMode: 'class' }; }
+  })();
+</script>
+</head>
+<body class="h-full">
+<div id="view-root"></div>
+<div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+<script>
+  // WSXT2/D18: minimal compat layer — a standalone plugin gets ITS OWN view+data, but not the
+  // platform chrome it's normally embedded in. Platform-only globals are stubbed as no-ops (with a
+  // console warning) instead of left undefined, so a plugin that happens to reference them doesn't
+  // hard-crash to a blank page; it just silently no-ops that one call.
+  (function () {
+    const ws = sessionStorage.getItem('current_workspace') || '';
+    window.apiFetch = function (input, init) {
+      init = init || {};
+      const headers = init.headers instanceof Headers ? init.headers : new Headers(init.headers || {});
+      headers.set('X-Workspace', encodeURIComponent(ws));
+      init.headers = headers;
+      return fetch(input, init);
+    };
+    window.showToast = function (message, type) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const el = document.createElement('div');
+      const bad = type === 'error';
+      el.className = 'px-4 py-3 rounded-xl border shadow-xl text-xs font-semibold ' +
+        (bad ? 'bg-red-50 border-red-200 text-red-900' : 'bg-white border-slate-200 text-slate-800');
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(function () { el.remove(); }, 3500);
+    };
+    ['loadFile', 'router', 'statusData'].forEach(function (key) {
+      Object.defineProperty(window, key, {
+        configurable: true,
+        get: function () { console.warn('[standalone] ' + key + '() 在獨立頁不可用'); return function () {}; }
+      });
+    });
+  })();
+</script>
+<script type="module">
+  import('/views/x/${encodeURIComponent(plugin.name)}.js?workspace=${wsEnc}').then(function (mod) {
+    if (mod && typeof mod.mount === 'function') {
+      mod.mount(document.getElementById('view-root'), {
+        workspace: ${JSON.stringify(wctx.root)},
+        sub: null,
+        plugin: ${JSON.stringify(plugin.name)},
+        apiFetch: window.apiFetch
+      });
+    } else {
+      console.error('[standalone] plugin view module has no mount():', ${JSON.stringify(plugin.name)});
+    }
+  }).catch(function (e) {
+    console.error('[standalone] failed to load plugin view module:', e);
+  });
+</script>
+</body>
+</html>`;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(html);
+    return;
+  }
+
   // P2 (SPEC-plugin-contract.md §3): plugin view/style modules, served at /views/x/<name>.js|.css —
   // resolved to whichever tier (ship/global/project) won the plugin's `view`/`styles` file, NOT from
   // portal/views/ like the platform views below. Must run BEFORE the generic /views/ handler since
@@ -1026,7 +2642,10 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(rest).toLowerCase();
     const name = rest.slice(0, rest.length - ext.length);
     const wctx = resolveWorkspace(req);
-    const plugin = getPlugins(wctx).find(p => p.name === name);
+    // WSXU (§21): resolve by name OR configured slug (name wins on collision, D24) — the internal
+    // links generated above always use plugin.name, but this handler must still accept a slug in
+    // the URL directly (e.g. a bookmarked/cached page referencing the alias).
+    const plugin = findPluginByKey(applyPluginManifestOrder(getPlugins(wctx), getManifest(wctx.root).plugins), name);
     const wantsStyles = ext === '.css';
     const file = wantsStyles ? plugin && plugin.styles : plugin && plugin.view;
     if (!plugin || !file || (ext !== '.js' && ext !== '.css')) {
@@ -1042,6 +2661,35 @@ const server = http.createServer((req, res) => {
       res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return;
     }
     res.writeHead(200, { 'Content-Type': (wantsStyles ? 'text/css' : 'text/javascript') + '; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate' });
+    res.end(fs.readFileSync(full));
+    return;
+  }
+
+  // SBC-4 (SPEC-sidebar-card-carousel.md §5): a plugin's card module, served at
+  // /views/xcard/<pluginName>/<cardId>.js — same trust gate + path-safety as /views/x/ above, just
+  // keyed by (pluginName, cardId) instead of (pluginOrSlug). Always resolved by plugin.name (not
+  // slug) since the carousel registers cards using the ids /api/status already returned.
+  if (pathname.startsWith('/views/xcard/')) {
+    const rest = decodeURIComponent(pathname.slice('/views/xcard/'.length));
+    const slashIdx = rest.indexOf('/');
+    if (slashIdx === -1 || !rest.endsWith('.js')) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+    const pluginName = rest.slice(0, slashIdx);
+    const cardId = rest.slice(slashIdx + 1, rest.length - '.js'.length);
+    const wctx = resolveWorkspace(req);
+    const plugin = findPluginByKey(getPlugins(wctx), pluginName);
+    if (!plugin) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+    if (plugin.trust === 'code' && !plugin.enabled) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Plugin not trusted: ' + (plugin.disabledReason || pluginName));
+      return;
+    }
+    const cardDef = (plugin.cards || []).find(c => c.id === cardId);
+    if (!cardDef || !cardDef.module) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
+    const full = path.resolve(plugin.dir, cardDef.module);
+    if (!isPathSafe(full, plugin.dir) || !fs.existsSync(full) || fs.statSync(full).isDirectory()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache, must-revalidate' });
     res.end(fs.readFileSync(full));
     return;
   }
@@ -1363,7 +3011,10 @@ const server = http.createServer((req, res) => {
         // P2 (SPEC-plugin-contract.md §3): workspace-contributed sidebar items. Frontend renders
         // these into #dynamic-sections as nav buttons (router.navigate('/app/x/<name>')), not
         // folder trees like `sections` above.
-        plugins: getPlugins(wctx)
+        // WSX2: sorted per manifest.plugins.order, each entry flagged `hidden` per
+        // manifest.plugins.hidden — shell/sidebar.js skips hidden ones, views/settings.js needs
+        // the full flagged list to manage them.
+        plugins: applyPluginManifestOrder(getPlugins(wctx), manifest.plugins)
       };
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1959,6 +3610,10 @@ const server = http.createServer((req, res) => {
   if (pathname === '/api/chat-sessions' && req.method === 'GET') {
     const wctx = resolveWorkspace(req);
     const target = (parsedUrl.query.filePath || '').toString();
+    // CTX6 (SPEC-view-chat-context.md §7.3-(2)): ctxKey= is the generic-context sibling of
+    // filePath= — same 0/N-session contract, different match field. filePath path below is
+    // left completely untouched for compatibility.
+    const ctxKeyTarget = (parsedUrl.query.ctxKey || '').toString();
     const out = [];
     try {
       if (target && fs.existsSync(wctx.chatHistoryDir)) {
@@ -1973,6 +3628,21 @@ const server = http.createServer((req, res) => {
                 title = fm ? fm.content.slice(0, 30) : '無主題對話';
               }
               out.push({ sessionId: d.sessionId, title, updatedAt: d.updatedAt, filePath: d.filePath });
+            }
+          } catch (e) {}
+        }
+      } else if (ctxKeyTarget && fs.existsSync(wctx.chatHistoryDir)) {
+        for (const file of fs.readdirSync(wctx.chatHistoryDir)) {
+          if (!file.startsWith('chat_') || !file.endsWith('.json')) continue;
+          try {
+            const d = JSON.parse(fs.readFileSync(path.join(wctx.chatHistoryDir, file), 'utf8'));
+            if (d.contextKey && d.contextKey === ctxKeyTarget) {
+              let title = d.title;
+              if (!title) {
+                const fm = (d.messages || []).find(m => m.role === 'user' && typeof m.content === 'string');
+                title = fm ? fm.content.slice(0, 30) : '無主題對話';
+              }
+              out.push({ sessionId: d.sessionId, title, updatedAt: d.updatedAt, contextLabel: d.contextLabel || null });
             }
           } catch (e) {}
         }
@@ -1997,9 +3667,20 @@ const server = http.createServer((req, res) => {
     }
     
     try {
-      const data = fs.readFileSync(sessionPath, 'utf8');
+      const raw = fs.readFileSync(sessionPath, 'utf8');
+      const data = JSON.parse(raw);
+      // CBG-6 舊檔相容（SPEC-chat-background-task.md §3.5）：trace 從 session-level 搬到逐則訊息
+      // 是這次才做的——既有檔案的訊息上完全沒有 msg.trace，只有 session 級 `trace`（只存得下
+      // 最後一輪）。只在「整份訊息都沒有 per-message trace」時才把它掛到最後一則 assistant
+      // 訊息，只救得回最後一輪，不假裝補齊全部（誠實原則），不回寫磁碟、只在回應時補。
+      if (Array.isArray(data.messages) && Array.isArray(data.trace) && data.trace.length
+          && !data.messages.some(m => Array.isArray(m && m.trace) && m.trace.length)) {
+        for (let i = data.messages.length - 1; i >= 0; i--) {
+          if (data.messages[i] && data.messages[i].role === 'assistant') { data.messages[i].trace = data.trace; break; }
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(data);
+      res.end(JSON.stringify(data));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
@@ -2146,7 +3827,12 @@ const server = http.createServer((req, res) => {
   // API: list the currently-RUNNING jobs (the browser filters to its active workspace + reattaches)
   if (pathname === '/api/jobs' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ jobs: listRunningJobs() }));
+    // CHAT-JOB-ISO: only CHAT-origin jobs may be reattached as conversation tabs. A scheduled run
+    // (origin:'schedule') or a knowledge-distill job (origin:'distill') is background work owned by
+    // its own page; restoring it as a chat tab made a reopened browser show a phantom conversation
+    // whose close button (close = abort this turn) KILLED the live schedule. Filtering happens HERE,
+    // at the browser-facing layer only — listRunningJobs() itself stays complete.
+    res.end(JSON.stringify({ jobs: listRunningJobs().filter(j => !j.origin) }));
     return;
   }
   // API: explicitly abort a running job (the Stop button calls this — browser-close does NOT kill)
@@ -2254,6 +3940,51 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // MM-M1-05: serve a stored chat attachment as raw bytes, so a sent message can show the real image
+  // thumbnail (click → lightbox) and non-image files stay openable. An <img src> cannot carry the
+  // X-Workspace header, so the caller passes ?workspace= instead (resolveWorkspace already honours it).
+  // Double-guarded: isPathSafe inside the workspace AND the resolved file must live under
+  // chat_history/attachments/ — this endpoint is never a general workspace file reader.
+  if (pathname === '/api/chat/attachment' && req.method === 'GET') {
+    const wctx = resolveWorkspace(req);
+    const rel = parsedUrl.query.path;
+    if (!rel) { res.writeHead(400); res.end('path required'); return; }
+    const abs = path.resolve(wctx.root, String(rel));
+    const attRoot = path.resolve(path.join(wctx.chatHistoryDir, 'attachments'));
+    if (!isPathSafe(abs, wctx.root) || !abs.startsWith(attRoot + path.sep)) {
+      res.writeHead(403); res.end('access denied'); return;
+    }
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) { res.writeHead(404); res.end('not found'); return; }
+    const ext = path.extname(abs).toLowerCase();
+    const ATT_MIMES = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+      '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml',
+      '.pdf': 'application/pdf', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8',
+      '.csv': 'text/plain; charset=utf-8', '.json': 'application/json',
+      '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg',
+      '.mp4': 'video/mp4', '.webm': 'video/webm',
+    };
+    try {
+      const stat = fs.statSync(abs);
+      const headers = {
+        'Content-Type': ATT_MIMES[ext] || 'application/octet-stream',
+        'Content-Length': stat.size,
+        'Cache-Control': 'private, max-age=86400',
+      };
+      if (parsedUrl.query.download) {
+        // stored name is `<ts>_<rand>_<原檔名>` — hand the user back the original name
+        const orig = path.basename(abs).replace(/^\d+_[a-z0-9]{1,8}_/, '');
+        headers['Content-Disposition'] = "attachment; filename*=UTF-8''" + encodeURIComponent(orig);
+      }
+      res.writeHead(200, headers);
+      fs.createReadStream(abs).pipe(res);
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   if (pathname === '/api/chat' && req.method === 'POST') {
     const wctx = resolveWorkspace(req);
     let body = '';
@@ -2291,11 +4022,22 @@ const server = http.createServer((req, res) => {
         // even if the user switches workspace while it runs, and it's registered so it survives a
         // browser disconnect and can be listed/aborted/reattached.
         const jobId = clientJobId || ('job_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
-        const ctx = { req, res, messages, activeSessionId, modelArg, provider, effort, startT: Date.now(), jobId, wctx: snapshotWctx(wctx), status: 'running', filePath: filePath || null, meetingId: meetingId || null, pmProjectIds: Array.isArray(pmProjectIds) && pmProjectIds.length ? pmProjectIds : null, context: chatContext };
+        // CTX6 (SPEC-view-chat-context.md §7): keep the RAW context object (only set when the
+        // client actually sent one, i.e. a view's getChatContext()) separate from `chatContext`
+        // above — that one also gets synthesized from legacy filePath/meetingId/pmProjectIds for
+        // buildChatPrompt's provider dispatch, and we must NOT let that synthesis leak a
+        // contextKind/contextKey/contextLabel onto plain file/meeting/pm session records.
+        const ctx = { req, res, messages, activeSessionId, modelArg, provider, effort, startT: Date.now(), jobId, wctx: snapshotWctx(wctx), status: 'running', filePath: filePath || null, meetingId: meetingId || null, pmProjectIds: Array.isArray(pmProjectIds) && pmProjectIds.length ? pmProjectIds : null, context: chatContext, rawContext: (context && context.kind) ? context : null };
         jobs.set(jobId, ctx);
+        // IR2-5：在問題單頁開的頭像對話，把這段 session 記進該筆的 linkedSessions[]（去重）。附屬動作，失敗不影響對話。
+        if (context && context.kind === 'issue' && context.payload && context.payload.scope === 'detail') {
+          try { issuesStore.linkSession(HARNESS_HOME, context.payload.issueId, activeSessionId, context.label); } catch (e) {}
+        }
         // X1 (SPEC-chat-durability): the user's message must hit disk BEFORE it's handed to a CLI —
         // a Deploy/crash/kill between here and finalize used to lose the whole turn (it only lived
         // in memory). Best-effort: never let a save failure block the actual chat request.
+        // CMQ-1: 先蓋上提問序號再落檔，重開對話時每一問都對得上。
+        cmqStampQuestion(ctx);
         saveChatPending(ctx, []);
         if (cmd) {
           const def = loadCommands(wctx.commandsDir).find(c => c.name === cmd.name);
@@ -2305,10 +4047,7 @@ const server = http.createServer((req, res) => {
           if (def && def.type === 'builtin' && def.name === 'memory') {
             ctx.memoryIntent = true;
             ctx.fullPrompt = buildMemoryUpdatePrompt(messages, cmd.rest, wctx.knowledgeDir);
-            if (provider === 'gemini') chatViaGemini(ctx);
-            else if (provider === 'codex') chatViaCodex(ctx);
-            else if (provider === 'grok') chatViaGrok(ctx);
-            else chatViaClaude(ctx);
+            cmqSubmit(ctx, { mergeable: false });   // CMQ: 走每條對話的佇列（指令不併入他人）
             return;
           }
           // prompt-type command: expand its template with the args, then run as a normal turn.
@@ -2329,19 +4068,24 @@ const server = http.createServer((req, res) => {
             // 當作「本次要執行的指示」附在後面；使用者原文永遠保留在「使用者問題」裡，不再遺失。
             const hasArgsSlot = /\{\{\s*args\s*\}\}/.test(body);
             body = body.replace(/\{\{\s*args\s*\}\}/g, cmd.rest);
+            // PORTAL-BASE: skills call this server's own API by curl. They used to hardcode
+            // http://localhost:3300 (the OLD _harness prod port); this server listens on PORT
+            // (default 3400), so every such curl got ECONNREFUSED and the model concluded
+            // "Harness 服務沒在跑" — a wrong diagnosis cascading into wrong answers. Skills now
+            // write {{PORTAL}}; legacy :3300 literals are rewritten too so no skill can go stale.
+            const portalBase = 'http://localhost:' + PORT;
+            body = body.replace(/\{\{\s*PORTAL\s*\}\}/g, portalBase)
+                       .replace(/http:\/\/(?:localhost|127\.0\.0\.1):3300/g, portalBase);
             if (!hasArgsSlot && cmd.rest && cmd.rest.trim()) {
               body += `\n\n--- 本次指令參數（使用者打在 /${cmd.name} 後面的原文）---\n${cmd.rest.trim()}\n`;
             }
             const skillCtxFile = writeContextFile(activeSessionId, messages.slice(0, -1), wctx.chatHistoryDir);
-            ctx.fullPrompt = buildChatPrompt(messages, skillCtxFile, wctx, ctx.context)
+            ctx.fullPrompt = buildChatPrompt(messages, skillCtxFile, wctx, ctx.context, provider, activeSessionId)
               + `\n\n=== 本次要執行的技能：/${cmd.name} ===\n`
               + '（上面「使用者問題」是使用者的原始輸入；斜線指令後面的文字就是本次技能的參數。請依下列技能指示執行，不要只是複述它。）\n\n'
               + body
               + `\n=== 技能指示結束 ===\n`;
-            if (provider === 'gemini') chatViaGemini(ctx);
-            else if (provider === 'codex') chatViaCodex(ctx);
-            else if (provider === 'grok') chatViaGrok(ctx);
-            else chatViaClaude(ctx);
+            cmqSubmit(ctx, { mergeable: false });
             return;
           }
           // Unknown command → fall through and treat as a normal message.
@@ -2427,12 +4171,21 @@ const server = http.createServer((req, res) => {
         // v2a: persist the full prior transcript to a file the agent can read, then build a
         // compact prompt that points at it (continuity without bloating argv/stdin).
         const contextFilePath = writeContextFile(activeSessionId, messages.slice(0, -1), wctx.chatHistoryDir);
-        ctx.fullPrompt = buildChatPrompt(messages, contextFilePath, wctx, ctx.context);
+        ctx.fullPrompt = buildChatPrompt(messages, contextFilePath, wctx, ctx.context, provider, activeSessionId);
 
-        if (provider === 'gemini') { chatViaGemini(ctx); return; }
-        if (provider === 'codex')  { chatViaCodex(ctx);  return; }
-        if (provider === 'grok')   { chatViaGrok(ctx);   return; }
-        chatViaClaude(ctx);
+        // CMQ: 不直接開跑，交給這條對話的佇列決定（獨立唯讀→並行；其餘→排隊；明確補充→併入重做）。
+        // rebuildPrompt：合併後以「前文＋補充」的完整需求重建 prompt。
+        cmqSubmit(ctx, {
+          rebuildPrompt: (effectiveText) => {
+            // 以「現在硬碟上的對話」為準（前一個的回覆這時已落檔），排除自己與更晚的提問。
+            const curNo = ctx.cmqQuestionNo || 0;
+            const disk = readChatSessionMessages(activeSessionId, wctx.chatHistoryDir);
+            const prior = (disk.length ? disk : messages.slice(0, -1)).filter(m => !(m && m.role === 'user' && (m.questionNo || 0) >= curNo));
+            const cur = Object.assign({}, messages[messages.length - 1], { content: effectiveText });
+            const ctxFile = writeContextFile(activeSessionId, prior, wctx.chatHistoryDir);
+            return buildChatPrompt(prior.concat([cur]), ctxFile, wctx, ctx.context, provider, activeSessionId);
+          },
+        });
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
@@ -2581,7 +4334,7 @@ const server = http.createServer((req, res) => {
           res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
         }
         const tasks = pm.tasks.filter(t => t.projectId === pid).sort((a, b) => (a.order || 0) - (b.order || 0));
-        const wb = buildPmWorkbook(project, tasks);
+        const wb = buildPmWorkbook(project, tasks, pm.resources);
         const buf = await wb.xlsx.writeBuffer();
         const fname = project.name.replace(/[\\/:*?"<>|]/g, '_') + '.xlsx';
         res.writeHead(200, {
@@ -2625,6 +4378,16 @@ const server = http.createServer((req, res) => {
           deps = data.deps.filter(d => sameProjectIds.has(d));
         }
         const maxOrder = pm.tasks.filter(t => t.projectId === pid).reduce((m, t) => Math.max(m, t.order || 0), -1);
+        // PMHR-03: assigneeId must resolve to a resource in the SAME workspace as this project.
+        let assigneeId = null;
+        if (data.assigneeId != null && data.assigneeId !== '') {
+          const resource = pm.resources.find(r => r.id === data.assigneeId);
+          if (!resource || pmNorm(resource.workspace || WORKSPACE_ROOT) !== pmNorm(project.workspace || WORKSPACE_ROOT)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'assigneeId must be a resource in the same workspace' })); return;
+          }
+          assigneeId = resource.id;
+        }
+        const estimateHours = typeof data.estimateHours === 'number' && data.estimateHours >= 0 ? data.estimateHours : null;
         const now = new Date().toISOString();
         const task = {
           id: pmStore.genTaskId(),
@@ -2639,6 +4402,8 @@ const server = http.createServer((req, res) => {
           order: maxOrder + 1,
           color: data.color ? String(data.color) : null,
           baseline: null,
+          assigneeId,
+          estimateHours,
           createdAt: now,
           updatedAt: now,
         };
@@ -2704,7 +4469,19 @@ const server = http.createServer((req, res) => {
             if (pmStore.wouldCycle(pm.tasks, tid, depId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'dep would create a cycle' })); return; }
           }
         }
-        const FIELDS = ['name', 'start', 'end', 'progress', 'status', 'deps', 'isMilestone', 'order', 'color', 'baseline'];
+        // PMHR-03: assigneeId (if patched) must resolve to a resource in the SAME workspace as the task's project.
+        if ('assigneeId' in patch) {
+          if (patch.assigneeId != null && patch.assigneeId !== '') {
+            const resource = pm.resources.find(r => r.id === patch.assigneeId);
+            if (!resource || pmNorm(resource.workspace || WORKSPACE_ROOT) !== pmNorm(project.workspace || WORKSPACE_ROOT)) {
+              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'assigneeId must be a resource in the same workspace' })); return;
+            }
+            patch.assigneeId = resource.id;
+          } else {
+            patch.assigneeId = null;
+          }
+        }
+        const FIELDS = ['name', 'start', 'end', 'progress', 'status', 'deps', 'isMilestone', 'order', 'color', 'baseline', 'assigneeId', 'estimateHours'];
         for (const f of FIELDS) { if (f in patch) task[f] = patch[f]; }
         task.updatedAt = new Date().toISOString();
         pm.tasks[idx] = task;
@@ -2736,6 +4513,133 @@ const server = http.createServer((req, res) => {
     writePm(pm);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // ===== Resource Management API (PMHR1, SPEC-project-management.md §14) ================
+  // 人力資源：resources[] lives in the same pm.json (R1: workspace-shared pool, not per-project).
+  // `name`/`role` are stored/returned as-is; the client MUST render via textContent, never innerHTML.
+
+  // GET /api/pm/resources?includeArchived=0|1 — current workspace's pool (resolveWorkspace filter).
+  if (pathname === '/api/pm/resources' && req.method === 'GET') {
+    const wctx = resolveWorkspace(req);
+    const active = pmNorm(wctx.root);
+    const includeArchived = parsedUrl.query.includeArchived === '1';
+    const { resources } = readPm();
+    let list = resources.filter(r => pmNorm(r.workspace || WORKSPACE_ROOT) === active);
+    if (!includeArchived) list = list.filter(r => !r.archived);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(list));
+    return;
+  }
+
+  // POST /api/pm/resources — create. body {name, role?, color?, weeklyHours?}
+  if (pathname === '/api/pm/resources' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const name = String(data.name || '').trim();
+        if (!name) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'name required' })); return; }
+        const weeklyHours = typeof data.weeklyHours === 'number' && data.weeklyHours > 0 ? data.weeklyHours : 40;
+        const wctx = resolveWorkspace(req);
+        const now = new Date().toISOString();
+        const resource = {
+          id: pmStore.genResourceId(),
+          name,
+          role: data.role ? String(data.role) : '',
+          color: data.color ? String(data.color) : null,
+          weeklyHours,
+          // PMWD: 個人休假日（週末以外的不上班日：排休/調休/特休）。正規化後才落檔。
+          daysOff: pmStore.normalizeDaysOff(data.daysOff),
+          workspace: wctx.root,
+          archived: false,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const pm = readPm();
+        pm.resources.push(resource);
+        writePm(pm);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(resource));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // PUT /api/pm/resources/:id — update name/role/color/weeklyHours/archived
+  // DELETE /api/pm/resources/:id — delete, and clear assigneeId on all tasks referencing it (R… no
+  // cascade to tasks themselves, same "scrub the reference, keep the task" convention as task deps).
+  const pmResourceIdMatch = pathname.match(/^\/api\/pm\/resources\/([^/]+)$/);
+  if (pmResourceIdMatch && req.method === 'PUT') {
+    const rid = pmResourceIdMatch[1];
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      try {
+        const patch = JSON.parse(body || '{}');
+        const wctx = resolveWorkspace(req);
+        const pm = readPm();
+        const idx = pm.resources.findIndex(r => r.id === rid);
+        if (idx === -1 || pmNorm(pm.resources[idx].workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
+          res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
+        }
+        const resource = pm.resources[idx];
+        const FIELDS = ['name', 'role', 'color', 'weeklyHours', 'archived'];
+        for (const f of FIELDS) { if (f in patch) resource[f] = patch[f]; }
+        if ('daysOff' in patch) resource.daysOff = pmStore.normalizeDaysOff(patch.daysOff); // PMWD
+        resource.updatedAt = new Date().toISOString();
+        pm.resources[idx] = resource;
+        writePm(pm);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(resource));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+  if (pmResourceIdMatch && req.method === 'DELETE') {
+    const rid = pmResourceIdMatch[1];
+    const wctx = resolveWorkspace(req);
+    const pm = readPm();
+    const resource = pm.resources.find(r => r.id === rid);
+    if (!resource || pmNorm(resource.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
+    }
+    pm.resources = pm.resources.filter(r => r.id !== rid);
+    for (const t of pm.tasks) { if (t.assigneeId === rid) t.assigneeId = null; }
+    writePm(pm);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // GET /api/pm/workload?from=&to=&scope=workspace|all — §14.4 weekly load per resource, aggregated
+  // across ALL projects (R1's whole point: catch a person overloaded by two projects at once).
+  if (pathname === '/api/pm/workload' && req.method === 'GET') {
+    const wctx = resolveWorkspace(req);
+    const active = pmNorm(wctx.root);
+    const qp = parsedUrl.query;
+    const scope = qp.scope === 'all' ? 'all' : 'workspace';
+    const from = qp.from ? String(qp.from) : null;
+    const to = qp.to ? String(qp.to) : null;
+    const pm = readPm();
+    const resources = scope === 'all' ? pm.resources : pm.resources.filter(r => pmNorm(r.workspace || WORKSPACE_ROOT) === active);
+    const resourceIds = new Set(resources.map(r => r.id));
+    // PMHR3/§14.5-3: optional `projectIds=a,b` narrows the aggregation to a chosen set of projects —
+    // the multi-project aligned view sums exactly the checked projects. Omitted = every project
+    // (R1's default: cross-project overload is the whole point).
+    const projectFilter = qp.projectIds ? new Set(String(qp.projectIds).split(',').map(s => s.trim()).filter(Boolean)) : null;
+    const tasks = pm.tasks.filter(t => t.assigneeId && resourceIds.has(t.assigneeId) && (!projectFilter || projectFilter.has(t.projectId)));
+    const result = pmStore.computeWorkload({ resources, tasks }, { from, to });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
     return;
   }
 
@@ -2919,6 +4823,19 @@ const server = http.createServer((req, res) => {
 
   // ===== Scheduler API =================================================
 
+  // CBGV-1（SPEC-chat-background-task.md §3.6.2）：判斷「這筆排程只該在對話裡可見，不該出現在
+  // 排程清單」。週期性（cron）排程永遠留在清單——它是指揮官主動要管的真排程，不論帶不帶 chat
+  // origin／chatTask；非 cron（once / interval / manual 或任何其他型別）只要帶 chatTask:true
+  // （§CBG 的 /api/chat/delegate）或帶 chat origin（CBGO 另建排程再觸發那條路）就視為對話衍生的
+  // 一次性任務，從清單濾掉。供 GET /api/schedules 與日後任何讀取排程清單的面共用，不要散落 inline
+  // 條件（CBGV-5：worktable/views/schedule.js、Telegram /schedules 等走同一個 GET，天然套用）。
+  function isChatOnlySchedule(s) {
+    if (!s) return false;
+    if (s.trigger && s.trigger.type === 'cron') return false;
+    if (s.chatTask === true) return true;
+    return !!(s.origin && s.origin.kind === 'chat' && s.origin.sessionId);
+  }
+
   // GET /api/schedules — list schedules for the ACTIVE workspace only (workspace isolation).
   // (SCHED-DEPLOY validation helpers `validatePostRunPatch`/`postRunConflicts` live at module
   // scope below the request router — see their definitions there.)
@@ -2931,10 +4848,37 @@ const server = http.createServer((req, res) => {
     const active = norm(wctx.root);
     const list = schedulerManager.loadSchedules()
       .filter(s => norm(s.workspace || WORKSPACE_ROOT) === active)
+      // CBGV-1（SPEC-chat-background-task.md §3.6.2，指揮官 2026-10-01 推翻 §3.6 修法第 1 點）：
+      // 凡是「對話中為了把工作做掉而建立的一次性排程」一律從排程清單濾掉，不限於 chatTask:true
+      // 這一條路（§CBG 的 /api/chat/delegate）。指揮官主動要的「週期性（cron）定時任務」永遠留著
+      // ——判準見 isChatOnlySchedule()。
+      .filter(s => !isChatOnlySchedule(s))
       .map(s => {  // SCHED-14: 附帶目前執行中的 run（開始時間 + 自動/手動）供清單顯示「執行中」
         const r = schedulerManager.getRunningRun(s.id);
         return Object.assign({}, s, { running: r ? { runId: r.id, startedAt: r.startedAt, trigger: r.trigger || 'auto' } : null });
       });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(list));
+    return;
+  }
+
+  // GET /api/schedules/deploy-targets — SCHED-DEPLOY-NEXT §4.8: the「部署成功後接續」dropdown may
+  // point ACROSS workspaces, so it lists every schedule — but deliberately only {id,name,workspace
+  // label,enabled,archived}: no task text, no runs, no notifications (the workspace-isolation rule
+  // for schedule READ surfaces still holds for everything that carries content).
+  if (pathname === '/api/schedules/deploy-targets' && req.method === 'GET') {
+    let reg = null; try { reg = loadRegistry(); } catch (e) {}
+    const norm = p => { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } };
+    const labelOf = ws => {
+      const r = norm(ws || WORKSPACE_ROOT);
+      const hit = reg && (reg.projects || []).find(p => norm(p.root) === r);
+      if (hit && hit.name) return hit.name;
+      if (r === norm(HARNESS_HOME)) return 'Harness';
+      return path.basename(ws || WORKSPACE_ROOT);
+    };
+    const list = schedulerManager.loadSchedules()
+      .filter(s => !isChatOnlySchedule(s))
+      .map(s => ({ id: s.id, name: s.name, workspace: labelOf(s.workspace), enabled: !!s.enabled, archived: !!s.archived }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(list));
     return;
@@ -2955,7 +4899,19 @@ const server = http.createServer((req, res) => {
         }
         // Tag the schedule with the active workspace (from X-Workspace) so it stays isolated to it.
         if (!data.workspace) { try { data.workspace = resolveWorkspace(req).root; } catch (e) {} }
+        // CBGO-2 (SPEC-chat-background-task.md §3.6): accept an optional chat origin so a schedule
+        // built IN a conversation (not via /api/chat/delegate) still knows which session to report
+        // back to. chatTask is deliberately left untouched here — this schedule still shows up in
+        // the schedule list (決策①), only §CBG's chatTask:true ones are filtered out there.
+        // Validate the shape ourselves; anything that isn't a well-formed chat origin is silently
+        // dropped — must never block creation (指揮官可能漏帶，或帶的是別種 origin).
+        if (data.origin && typeof data.origin === 'object' && data.origin.kind === 'chat' && data.origin.sessionId) {
+          data.origin = { kind: 'chat', sessionId: String(data.origin.sessionId), workspace: data.origin.workspace || data.workspace || null };
+        } else {
+          delete data.origin;
+        }
         const s = schedulerManager.createSchedule(data);
+        broadcastScheduleChange({ reason: 'schedule-created', scheduleId: s.id, workspace: s.workspace });
         res.writeHead(201, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(s));
       } catch (e) {
@@ -2969,15 +4925,100 @@ const server = http.createServer((req, res) => {
   // POST /api/schedules/:id/run — manual trigger
   const schedRunMatch = pathname.match(/^\/api\/schedules\/([^/]+)\/run$/);
   if (schedRunMatch && req.method === 'POST') {
-    const result = schedulerManager.triggerNow(schedRunMatch[1]);
-    if (!result) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
-    if (result.ok === false) {  // SCHED-15: already-running → 409, don't double-fire
-      res.writeHead(409, { 'Content-Type': 'application/json' });
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      // TGC10-01: optional origin ({channel,chatId,sessionId}) so the completion notification can
+      // be routed back to the conversation that triggered it, instead of always broadcasting.
+      // Absent/unparseable body → origin undefined → behavior identical to before this change.
+      let origin;
+      try {
+        const data = body ? JSON.parse(body) : {};
+        if (data && data.origin && typeof data.origin === 'object') origin = data.origin;
+      } catch (e) { /* ignore malformed body — origin stays undefined, same as no body */ }
+      // CBGO-3 (SPEC-chat-background-task.md §3.6): if this trigger carries a chat origin and the
+      // schedule itself doesn't have one yet, backfill it onto the SCHEDULE (not just this run) —
+      // covers "先建、之後才知道 sessionId" / "建的時候忘了帶". This is separate from the run-level
+      // `origin` above (TGC10-01/02, Telegram {channel,chatId,sessionId} delivery routing) — distinct
+      // shape ({kind:'chat',...}), distinct purpose (CBG-4's deliverChatTaskResult reads
+      // schedule.origin, not run.origin), so existing Telegram manual-trigger behavior is untouched.
+      if (origin && origin.kind === 'chat' && origin.sessionId) {
+        const sBefore = schedulerManager.getSchedule(schedRunMatch[1]);
+        if (sBefore && !(sBefore.origin && sBefore.origin.kind === 'chat' && sBefore.origin.sessionId)) {
+          schedulerManager.updateSchedule(schedRunMatch[1], {
+            origin: { kind: 'chat', sessionId: String(origin.sessionId), workspace: origin.workspace || sBefore.workspace || null },
+          });
+        }
+      }
+      const result = schedulerManager.triggerNow(schedRunMatch[1], origin);
+      if (!result) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+      if (result.ok === false) {  // SCHED-15: already-running → 409, don't double-fire
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+        return;
+      }
+      const triggeredSched = schedulerManager.getSchedule(schedRunMatch[1]);
+      broadcastScheduleChange({ reason: 'manual-run', scheduleId: schedRunMatch[1], workspace: triggeredSched && triggeredSched.workspace });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
+    });
+    return;
+  }
+
+  // POST /api/schedules/:id/abort — SCH-STOP: 中止該排程「目前正在跑」的 run。
+  // 語意＝叫停，不是還原：已寫入的檔案/已上線的程式/已過帳的資料不會退回。
+  const schedAbortMatch = pathname.match(/^\/api\/schedules\/([^/]+)\/abort$/);
+  if (schedAbortMatch && req.method === 'POST') {
+    const scheduleId = schedAbortMatch[1];
+    const schedule = schedulerManager.getSchedule(scheduleId);
+    if (!schedule) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+    // 工作區隔離（§5 鐵則）：只准中止「當前工作區」看得到的排程，避免跨工作區誤停別人的任務。
+    const norm = p => { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } };
+    const active = norm(resolveWorkspace(req).root);
+    const owner  = norm(schedule.workspace || WORKSPACE_ROOT);
+    if (active !== owner) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'forbidden-workspace' }));
       return;
     }
+    const run = schedulerManager.getRunningRun(scheduleId);
+    if (!run) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'not-running' }));
+      return;
+    }
+    if (!run.jobId || !abortJob(run.jobId)) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'no-job' }));
+      return;
+    }
+    broadcastScheduleChange({ reason: 'abort-requested', scheduleId, runId: run.id, workspace: schedule.workspace });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(result));
+    res.end(JSON.stringify({ ok: true, runId: run.id }));
+    return;
+  }
+
+  // GET /api/schedules/stream — SSE: 排程資料變動輕量通知（SLV）。前端收到後自己重抓
+  // /api/schedules /api/activities，這裡不推整包資料。必須放在 schedIdMatch（/api/schedules/:id）
+  // 之前，否則 'stream' 會被那條正則當成排程 id 吃掉。
+  if (pathname === '/api/schedules/stream' && req.method === 'GET') {
+    const wctx = resolveWorkspace(req); // EventSource 帶不了自訂標頭，靠 ?workspace= query（resolveWorkspace 已支援）
+    const client = { res, workspace: _normScheduleWorkspace(wctx.root) };
+    res.writeHead(200, {
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection':    'keep-alive',
+    });
+    res.write(': connected\n\n');
+    scheduleSSEClients.add(client);
+    const heartbeat = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch (e) {}
+    }, 25000);
+    if (heartbeat.unref) heartbeat.unref();
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      scheduleSSEClients.delete(client);
+    });
     return;
   }
 
@@ -2987,6 +5028,335 @@ const server = http.createServer((req, res) => {
     const candidates = schedulerManager.collectCandidates(wctxCand.root);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, candidates }));
+    return;
+  }
+
+  // ── KD1: 知識精華收斂 API（spec: specs/SPEC-knowledge-distill.md）─────────────────────
+  // 工作區隔離鐵則：三個端點一律 resolveWorkspace(req)，提案檔／候選都只作用於當前工作區。
+
+  // POST /api/knowledge-distill/run — 背景跑 /knowledge-distill 技能產提案，立即回 jobId。
+  // body: { model?: 'claude::opus', mode?: 'run'|'rethink', rowIds?: [] }
+  if (pathname === '/api/knowledge-distill/run' && req.method === 'POST') {
+    let kdBody = '';
+    req.on('data', c => { kdBody += c; });
+    req.on('end', () => {
+      try {
+        const wctxKD = resolveWorkspace(req);
+        const payload = JSON.parse(kdBody || '{}');
+        const model = typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : 'claude::opus';
+        const mode  = payload.mode === 'rethink' ? 'rethink' : 'run';
+        const rowIds = Array.isArray(payload.rowIds) ? payload.rowIds.map(String) : null;
+        // Nothing to distill → don't burn a model call producing an empty proposal.
+        if (mode === 'run') {
+          const pending = schedulerManager.collectCandidates(wctxKD.root) || [];
+          if (!pending.length) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: '目前沒有待審候選，不需要彙整', candidateCount: 0 }));
+            return;
+          }
+        }
+        const started = fireDistillJob(wctxKD, model, mode, rowIds);
+        res.writeHead(started.ok ? 200 : 409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(Object.assign({ workspace: wctxKD.root, model, mode }, started)));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // GET /api/knowledge-distill/status — 本工作區彙整 job 的進度（前端輪詢用）
+  if (pathname === '/api/knowledge-distill/status' && req.method === 'GET') {
+    const wctxKS = resolveWorkspace(req);
+    const job = getDistillJob(wctxKS);
+    const proposal = readDistillProposal(wctxKS);
+    let candidateCount = 0;
+    try { candidateCount = (schedulerManager.collectCandidates(wctxKS.root) || []).length; } catch (e) {}
+    const live = job ? jobs.get(job.jobId) : null;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true,
+      workspace: wctxKS.root,
+      running: !!(job && job.status === 'running'),
+      job: job ? {
+        jobId: job.jobId, mode: job.mode, model: job.model, status: job.status,
+        startedAt: job.startedAt, finishedAt: job.finishedAt || null,
+        elapsedMs: job.elapsedMs || (live ? Date.now() - live.startT : null),
+        error: job.error || null, summary: job.summary || null,
+        liveOutput: (live && live.liveOutput) ? String(live.liveOutput).slice(-2000) : null,
+      } : null,
+      candidateCount,
+      hasProposal: !!proposal,
+      generatedAt: proposal ? (proposal.generatedAt || null) : null,
+    }));
+    return;
+  }
+
+  // GET /api/knowledge-distill/proposal — 目前提案 + 完整性檢查（有無候選未登進任何列）
+  if (pathname === '/api/knowledge-distill/proposal' && req.method === 'GET') {
+    const wctxKP = resolveWorkspace(req);
+    const proposal = readDistillProposal(wctxKP);
+    if (!proposal) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, workspace: wctxKP.root, proposal: null, completeness: null, summary: null }));
+      return;
+    }
+    // A proposal generated for ANOTHER workspace must never surface here (a stale file copied in,
+    // or a path typed two different ways). Compare with the same resolve+lowercase normalisation
+    // the scheduler uses.
+    const normKP = p => { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } };
+    if (proposal.workspace && normKP(proposal.workspace) !== normKP(wctxKP.root)) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: '提案檔的工作區與當前工作區不符', proposalWorkspace: proposal.workspace }));
+      return;
+    }
+    const completeness = checkDistillCompleteness(wctxKP, proposal);
+    const rows = Array.isArray(proposal.rows) ? proposal.rows : [];
+    const clusters = Array.isArray(proposal.clusters) ? proposal.clusters : [];
+    const conflictPairs = new Set();
+    for (const r of rows) {
+      for (const other of (Array.isArray(r.conflictsWith) ? r.conflictsWith : [])) {
+        conflictPairs.add([String(r.id), String(other)].sort().join('|'));
+      }
+    }
+    const countBy = v => rows.filter(r => r.verdict === v).length;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true,
+      workspace: wctxKP.root,
+      proposal,
+      completeness,
+      summary: {
+        clusters: clusters.length,
+        rows: rows.length,
+        keep: countBy('adopt') + countBy('merge') + countBy('partial'),
+        drop: countBy('outdated') + countBy('wrong') + countBy('duplicate'),
+        conflictPairs: conflictPairs.size,
+        housekeeping: Array.isArray(proposal.housekeeping) ? proposal.housekeeping.length : 0,
+        pending: rows.filter(r => !r.status || r.status === 'pending').length,
+        model: proposal.model || null,
+        generatedAt: proposal.generatedAt || null,
+      },
+    }));
+    return;
+  }
+
+  // ── KD3: 往返討論（spec §3.2／D6）────────────────────────────────────────────────
+  // POST /api/knowledge-distill/rethink — 指揮官對某幾列送出備註後，觸發 Hana 只對這幾列重新思考。
+  // body: { rows: [{ id, note }], model? }
+  // 這一步做兩件事：① 把備註寫進該列 thread、狀態轉 commented（純狀態轉換，不需要模型）；
+  // ② 才交給 fireDistillJob(mode:'rethink') 讓技能真的重新想一次（見該函式與技能檔 §B）。
+  if (pathname === '/api/knowledge-distill/rethink' && req.method === 'POST') {
+    let rtBody = '';
+    req.on('data', c => { rtBody += c; });
+    req.on('end', () => {
+      try {
+        const wctxRT = resolveWorkspace(req);
+        const payload = JSON.parse(rtBody || '{}');
+        const model = typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : 'claude::sonnet';
+        const reqRows = Array.isArray(payload.rows) ? payload.rows : [];
+        if (!reqRows.length) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: '請指定要重新思考的列（rows）' }));
+          return;
+        }
+        const proposal = readDistillProposal(wctxRT);
+        if (!proposal) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: '目前沒有進行中的提案' }));
+          return;
+        }
+        const normRT = p => { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } };
+        if (proposal.workspace && normRT(proposal.workspace) !== normRT(wctxRT.root)) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: '提案檔的工作區與當前工作區不符' }));
+          return;
+        }
+        const rows = Array.isArray(proposal.rows) ? proposal.rows : [];
+        const rowIds = [];
+        const skipped = [];
+        const nowIso = new Date().toISOString();
+        for (const item of reqRows) {
+          const id = String((item && item.id) || '').trim();
+          const note = String((item && item.note) || '').trim();
+          const row = rows.find(r => String(r.id) === id);
+          if (!id || !note || !row) { skipped.push(id || '(missing id)'); continue; }
+          if (!Array.isArray(row.thread)) row.thread = [];
+          row.thread.push({ by: 'commander', at: nowIso, text: note });
+          row.status = 'commented';
+          rowIds.push(id);
+        }
+        if (!rowIds.length) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: '沒有有效的列可送出（缺 id 或備註內容）', skipped }));
+          return;
+        }
+        writeDistillProposal(wctxRT, proposal);
+        const started = fireDistillJob(wctxRT, model, 'rethink', rowIds);
+        res.writeHead(started.ok ? 200 : 409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(Object.assign({ workspace: wctxRT.root, model, mode: 'rethink', rowIds, skipped }, started)));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ── KD4: 套用與逐候選清空（spec §3.3／§5）───────────────────────────────────────
+  // POST /api/knowledge-distill/apply
+  // body: { decisions?: {rowId: 'accepted'|'rejected'}, housekeeping?: [idx,...] }
+  // 「接受／拒絕」目前只存在 KD2 頁面本地狀態（kdRowState）——commented/disputed/agreed 才會
+  // 真的寫回 proposal.json（KD3 的 rethink）。apply 收到 decisions 後先把它套進對應列的 status，
+  // 再依 spec §3.2 表格決定要不要寫入記憶檔。housekeeping 用 index 指定（該陣列本身無穩定 id）。
+  //
+  // 設計取捨（與 spec §5／TASK.md KD4-4 字面「只移除已定案列」略有不同，此處誠實記下）：
+  // 沒有把已定案列從 proposal.rows 陣列刪掉，只改 status 為 applied/rejected 並保留在原地——
+  // 若真的刪掉陣列元素，candidateLedger 裡引用同一候選、但還沒全部定案的其餘 rowIds 會變成
+  // 「指向不存在的列」，讓既有 checkDistillCompleteness()（GET /proposal 每次都會跑）的
+  // danglingRowIds 檢查誤判提案不完整、鎖住其餘列的套用鈕——反而破壞現有防呆。改成「留列、
+  // 標狀態」後：① thread 完整討論紀錄可回溯；② 待審視野一樣會清空（accepted/agreed/rejected
+  // /applied 都不算「待審」）；③ 全部列都定案時整份 proposal.json 照樣刪除，效果等價。
+  if (pathname === '/api/knowledge-distill/apply' && req.method === 'POST') {
+    let apBody = '';
+    req.on('data', c => { apBody += c; });
+    req.on('end', () => {
+      try {
+        const wctxAP = resolveWorkspace(req);
+        const payload = JSON.parse(apBody || '{}');
+        const decisions = (payload.decisions && typeof payload.decisions === 'object') ? payload.decisions : {};
+        const hkSelected = new Set((Array.isArray(payload.housekeeping) ? payload.housekeeping : []).map(String));
+
+        const proposal = readDistillProposal(wctxAP);
+        if (!proposal) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: '目前沒有進行中的提案' }));
+          return;
+        }
+        const normAP = p => { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } };
+        if (proposal.workspace && normAP(proposal.workspace) !== normAP(wctxAP.root)) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: '提案檔的工作區與當前工作區不符' }));
+          return;
+        }
+
+        // KD4-1：先快照四個記憶檔（不論這次是否真的有東西要寫）——出事能還原。
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const snapDir = path.join(distillDir(wctxAP), 'snapshots', ts);
+        try {
+          fs.mkdirSync(snapDir, { recursive: true });
+          for (const name of Object.keys(MEMORY_SPECS)) {
+            fs.writeFileSync(path.join(snapDir, name + '.md'), readMemoryFile(name, wctxAP.knowledgeDir), 'utf8');
+          }
+        } catch (e) { console.error('[Distill] snapshot failed:', e.message); }
+
+        const DECIDED = new Set(['accepted', 'agreed', 'rejected', 'applied']);
+        const rows = Array.isArray(proposal.rows) ? proposal.rows : [];
+        const ops = [];
+        const bucketCounts = {};
+        const nowIso = new Date().toISOString();
+
+        // KD4-2：組 ops（accepted 用 op.new；agreed 用 thread 最後一則 hana/agree 的 newText），
+        // 一次交給既有 applyMemoryOps；已 applied/rejected 的列不可重複處理。
+        for (const r of rows) {
+          if (r.status === 'applied' || r.status === 'rejected') continue;
+          const incoming = decisions[String(r.id)];
+          const effective = (incoming === 'accepted' || incoming === 'rejected') ? incoming : r.status;
+          if (effective === 'rejected') { r.status = 'rejected'; continue; }
+          if (effective !== 'accepted' && effective !== 'agreed') continue; // pending/commented/disputed：本次不處理
+
+          const op = r.op || {};
+          let finalText = op.new;
+          if (effective === 'agreed') {
+            const thread = Array.isArray(r.thread) ? r.thread : [];
+            const lastAgree = [...thread].reverse().find(t => t.by === 'hana' && t.outcome === 'agree');
+            if (lastAgree && lastAgree.newText) finalText = lastAgree.newText;
+          }
+          const bucket = String(r.bucket || 'MEMORY').toUpperCase();
+          if (op.action === 'add' || op.action === 'replace' || op.action === 'remove') {
+            // applyMemoryOps 的 add 動作讀 op.text（不是 op.new）；replace/remove 讀 op.old/op.new。
+            // 兩個欄位都給，符合它實際吃的形狀，不必分岔寫兩份 push。
+            ops.push({ file: bucket, action: op.action, old: op.old, new: finalText, text: finalText });
+            bucketCounts[bucket] = (bucketCounts[bucket] || 0) + 1;
+          }
+          r.status = 'applied';
+        }
+
+        // housekeeping（spec D2）：只套用指揮官在頁面上勾選的項目，預設不勾就完全不動。
+        const hk = Array.isArray(proposal.housekeeping) ? proposal.housekeeping : [];
+        const hkAppliedIdx = [];
+        hk.forEach((h, idx) => {
+          if (!hkSelected.has(String(idx))) return;
+          const hop = h.op || {};
+          const bucket = String(h.bucket || 'MEMORY').toUpperCase();
+          if (hop.action === 'add' || hop.action === 'replace' || hop.action === 'remove') {
+            ops.push({ file: bucket, action: hop.action, old: hop.old, new: hop.new, text: hop.new });
+            bucketCounts[bucket] = (bucketCounts[bucket] || 0) + 1;
+          }
+          hkAppliedIdx.push(idx);
+        });
+        if (hkAppliedIdx.length) proposal.housekeeping = hk.filter((h, idx) => !hkAppliedIdx.includes(idx));
+
+        const memorySummary = ops.length ? applyMemoryOps({ ops }, wctxAP.knowledgeDir) : [];
+        const capWarnings = memorySummary.filter(s => s.startsWith('⚠️'));
+
+        // KD4-3：依 candidateLedger 結算候選——只有所有衍生列都已定案才 reviewed:true。
+        const ledger = Array.isArray(proposal.candidateLedger) ? proposal.candidateLedger : [];
+        const rowStatusOf = id => { const row = rows.find(x => String(x.id) === String(id)); return row ? row.status : null; };
+        let settledCount = 0;
+        const inProgress = [];
+        for (const entry of ledger) {
+          const rowIds = Array.isArray(entry.rowIds) ? entry.rowIds : [];
+          const decidedRowIds = rowIds.filter(id => DECIDED.has(rowStatusOf(id)));
+          entry.decidedCount = decidedRowIds.length;
+          entry.totalCount = rowIds.length;
+          if (rowIds.length && decidedRowIds.length === rowIds.length) {
+            entry.settled = true;
+            settledCount++;
+            try {
+              const existing = schedulerManager.getMemoryCandidate(entry.scheduleId, entry.runId) || {};
+              schedulerManager.saveMemoryCandidate(entry.scheduleId, entry.runId, Object.assign({}, existing, {
+                reviewed: true, reviewedAt: nowIso, viaDistill: true,
+              }));
+            } catch (e) { console.error('[Distill] mark candidate reviewed failed:', e.message); }
+          } else {
+            entry.settled = false;
+            inProgress.push({ scheduleId: entry.scheduleId, runId: entry.runId, decided: decidedRowIds.length, total: rowIds.length });
+          }
+        }
+        // 已全部結案的候選從帳本移除（候選本身已因 reviewed:true 從 collectCandidates 消失，
+        // 帳本留著只是佔位）；未結案的留著，附 decidedCount/totalCount 供頁面顯示「處理中 x/y」。
+        proposal.candidateLedger = ledger.filter(e => !e.settled);
+
+        // KD4-4：提案檔生命週期。「全部定案」＝ rows 裡沒有還停在 pending/commented/disputed 的列
+        // （見檔頭註解：此處保留列本體、只改狀態，故用「是否還有未定案列」判斷，而非陣列長度）。
+        const stillOpen = rows.some(r => !DECIDED.has(r.status));
+        let deleted = false;
+        if (!stillOpen) {
+          try { fs.unlinkSync(distillProposalPath(wctxAP)); } catch (e) {}
+          deleted = true;
+        } else {
+          writeDistillProposal(wctxAP, proposal);
+        }
+
+        // KD4-5：回傳寫入摘要。
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          workspace: wctxAP.root,
+          written: bucketCounts,
+          capWarnings,
+          settledCandidates: settledCount,
+          stillInProgress: inProgress,
+          proposalDeleted: deleted,
+          snapshotDir: snapDir,
+        }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
     return;
   }
 
@@ -3112,15 +5482,16 @@ const server = http.createServer((req, res) => {
           }
           // SCHED-DEPLOY Z1: validate postRun shape + D2 invariant against the FINAL state (patch
           // merged over what's already on disk) BEFORE any write happens.
-          const pv = validatePostRunPatch(patch);
-          if (!pv.ok) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: pv.error })); return; }
           const existingSched = schedulerManager.getSchedule(sid);
           if (!existingSched) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+          const pv = validatePostRunPatch(patch, { selfId: sid, existing: existingSched });
+          if (!pv.ok) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: pv.error })); return; }
           if (postRunConflicts(patch, existingSched)) {
             res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: POSTRUN_CONFLICT_MSG })); return;
           }
           const updated = schedulerManager.updateSchedule(sid, patch);
           if (!updated) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+          broadcastScheduleChange({ reason: 'schedule-updated', scheduleId: sid, workspace: updated.workspace });
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(updated));
         } catch (e) {
@@ -3131,7 +5502,9 @@ const server = http.createServer((req, res) => {
       return;
     }
     if (req.method === 'DELETE') {
+      const beforeDel = schedulerManager.getSchedule(sid); // 刪前先留一份 workspace，刪完就查不到了
       const ok = schedulerManager.deleteSchedule(sid);
+      if (ok) broadcastScheduleChange({ reason: 'schedule-deleted', scheduleId: sid, workspace: beforeDel && beforeDel.workspace });
       res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok }));
       return;
@@ -3178,7 +5551,13 @@ const server = http.createServer((req, res) => {
   // DELETE /api/activities/:id — dismiss a notification
   const actDismissMatch = pathname.match(/^\/api\/activities\/([^/]+)$/);
   if (actDismissMatch && req.method === 'DELETE') {
+    // 刪前先找出這則通知屬於哪個排程／工作區，刪完就查不到了（dismissNotification 只回 boolean）。
+    const beforeNotif = schedulerManager.getNotifications(200).find(n => n.id === actDismissMatch[1]);
     const ok = schedulerManager.dismissNotification(actDismissMatch[1]);
+    if (ok && beforeNotif) {
+      const owningSched = schedulerManager.getSchedule(beforeNotif.scheduleId);
+      broadcastScheduleChange({ reason: 'notification-dismissed', scheduleId: beforeNotif.scheduleId, workspace: owningSched && owningSched.workspace });
+    }
     res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok }));
     return;
@@ -3195,8 +5574,138 @@ const server = http.createServer((req, res) => {
       status:     qp.status     || null,
       limit:      Math.min(parseInt(qp.limit || '50', 10) || 50, 500),
     });
+    // CBG-2: 對話觸發的背景任務不進排程清單，但仍保留在執行記錄——標註「來自對話」讓看的人
+    // 知道這筆不是一般排程。查 schedule 一次性快取，避免同一批 runs 重複讀同一個排程檔。
+    const schedCache = new Map();
+    const getSched = id => { if (!schedCache.has(id)) schedCache.set(id, schedulerManager.getSchedule(id)); return schedCache.get(id); };
+    const labeled = runs.map(r => {
+      const s = r && r.scheduleId ? getSched(r.scheduleId) : null;
+      // CBGO-5 (SPEC-chat-background-task.md §3.6 查證結果): portal/index.html 的徽章/狀態小卡/
+      // 停止連動（CBGU-2, fetchChatRunningTasks 等）全部只看 r.fromChat && r.origin.sessionId——
+      // 查證發現 fromChat 原本綁死 schedule.chatTask===true，§CBGO 的排程刻意不設 chatTask（決策①），
+      // 若不補這段，前端就會把它濾掉（這正是「chatTask 條件在擋」的那一處，已依指示放寬）。放寬成
+      // 「有 chat origin 即算」，並在 run 自己沒帶 per-run origin 時（例如由 cron 自動觸發，TGC10-02
+      // 原本就不帶 run-level origin）用 schedule.origin 回填，前端完全不必改。
+      const hasChatOrigin = s && s.origin && s.origin.kind === 'chat' && s.origin.sessionId;
+      if (s && s.chatTask === true) return Object.assign({}, r, { fromChat: true });
+      if (hasChatOrigin) {
+        return Object.assign({}, r, {
+          fromChat: true,
+          origin: (r && r.origin && r.origin.sessionId) ? r.origin : s.origin,
+        });
+      }
+      return r;
+    });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(runs));
+    res.end(JSON.stringify(labeled));
+    return;
+  }
+
+  // GET /api/usage/events|summary|control-chart — §UA-4 (SPEC-usage-analytics.md §3.3).
+  // Workspace isolation follows the same convention as /api/schedules /api/activities: resolve the
+  // active workspace from X-Workspace, normalise with path.resolve()+lowercase, null workspace in a
+  // stored event = WORKSPACE_ROOT. usageTracker's query fns take (eventWorkspaceRoot, defaultRoot,
+  // filters) where the first arg is "which workspace's files to read" — pass the active workspace
+  // itself since usage events are isolated per-workspace by directory, not by a shared pool.
+  // UASZ-3 (D34/§3.3)：scope 只接受 current/all，其他值一律當 current，不回 400（相容舊呼叫）。
+  const parseUsageScope = (qp) => (qp && qp.scope === 'all') ? 'all' : 'current';
+  if (pathname === '/api/usage/events' && req.method === 'GET') {
+    const qp = url.parse(req.url, true).query;
+    const wctx = resolveWorkspace(req);
+    const result = usageTracker.queryEvents(wctx.root, WORKSPACE_ROOT, {
+      from: qp.from || null, to: qp.to || null,
+      trigger: qp.trigger || null, skill: qp.skill || null,
+      provider: qp.provider || null, model: qp.model || null,
+      scope: parseUsageScope(qp),
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+  if (pathname === '/api/usage/summary' && req.method === 'GET') {
+    const qp = url.parse(req.url, true).query;
+    const wctx = resolveWorkspace(req);
+    const result = usageTracker.querySummary(wctx.root, WORKSPACE_ROOT, {
+      from: qp.from || null, to: qp.to || null,
+      trigger: qp.trigger || null, skill: qp.skill || null,
+      provider: qp.provider || null, model: qp.model || null,
+      scope: parseUsageScope(qp),
+    }, qp.groupBy || null);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+  // GET /api/usage/xbar-r — UASF-4 (D11)：X-Bar/R，分組＝(日期, sessionId)，n 隨組變動。
+  if (pathname === '/api/usage/xbar-r' && req.method === 'GET') {
+    const qp = url.parse(req.url, true).query;
+    const wctx = resolveWorkspace(req);
+    const result = usageTracker.queryXbarR(wctx.root, WORKSPACE_ROOT, {
+      from: qp.from || null, to: qp.to || null,
+      trigger: qp.trigger || null, skill: qp.skill || null,
+      provider: qp.provider || null, model: qp.model || null,
+      scope: parseUsageScope(qp),
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+  // GET/PUT /api/usage/settings — UASC-1 (D19/D20)：設定統計指標彈窗存檔。
+  if (pathname === '/api/usage/settings' && req.method === 'GET') {
+    const wctx = resolveWorkspace(req);
+    const result = usageTracker.readUsageSettings(wctx.root, WORKSPACE_ROOT);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+  if (pathname === '/api/usage/settings' && req.method === 'PUT') {
+    const wctx = resolveWorkspace(req);
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      let patch;
+      try { patch = JSON.parse(body || '{}'); } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid JSON body' }));
+        return;
+      }
+      const result = usageTracker.writeUsageSettings(wctx.root, WORKSPACE_ROOT, patch);
+      if (!result.ok) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: result.errors.join('；') }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result.value));
+    });
+    return;
+  }
+  // GET /api/usage/trend — UASC-2 (D17)：固定組距 X-Bar/R，取代 G4 原本呼叫的 X/MR。
+  if (pathname === '/api/usage/trend' && req.method === 'GET') {
+    const qp = url.parse(req.url, true).query;
+    const wctx = resolveWorkspace(req);
+    const settings = usageTracker.readUsageSettings(wctx.root, WORKSPACE_ROOT);
+    const result = usageTracker.queryUsageTrend(wctx.root, WORKSPACE_ROOT, {
+      from: qp.from || null, to: qp.to || null,
+      trigger: qp.trigger || null, skill: qp.skill || null,
+      provider: qp.provider || null, model: qp.model || null,
+      scope: parseUsageScope(qp),
+    }, settings);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+    return;
+  }
+  // GET /api/usage/control-chart — v0.6（D17）：保留端點、前端不再呼叫，避免破壞尚未更新的快取頁面。
+  if (pathname === '/api/usage/control-chart' && req.method === 'GET') {
+    const qp = url.parse(req.url, true).query;
+    const wctx = resolveWorkspace(req);
+    const result = usageTracker.queryControlChart(wctx.root, WORKSPACE_ROOT, {
+      from: qp.from || null, to: qp.to || null,
+      trigger: qp.trigger || null, skill: qp.skill || null,
+      provider: qp.provider || null, model: qp.model || null,
+      scope: parseUsageScope(qp),
+    }, qp.subject || null);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
     return;
   }
 
@@ -3337,23 +5846,21 @@ const server = http.createServer((req, res) => {
         const { slidesToPngs } = require('./render-service/screenshot');
         const { buildPptx } = require('./render-service/export');
 
-        // Locate the deck HTML
-        const deckHtmlPath = path.join(HARNESS_HOME, 'presentations', deckName + '.html');
-        if (!fs.existsSync(deckHtmlPath)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: `找不到 deck：presentations/${deckName}.html` }));
-        }
+        // Locate the deck HTML — workspace first, HARNESS_HOME fallback (PXW-01)
+        const hit = locateDeck(req, deckName);
+        if (!hit.root) return deckNotFound(res, `deck：presentations/${deckName}.html`, hit.tried);
+        const deckRoot = hit.root;
 
         // Build the URL pointing at our own server so /raw can inject core + overlay
-        // Pin /raw to HARNESS_HOME so it resolves presentations/ regardless of the portal's DEFAULT
+        // Pin /raw to deckRoot so it resolves presentations/ regardless of the portal's DEFAULT
         // workspace. A header-less server-side fetch otherwise resolves against the active workspace
         // (e.g. a client project like 範例專案) → 404 → Playwright sees 0 .slide → misleading「找不到 .slide」.
-        const deckUrl = `http://localhost:${PORT}/raw?path=presentations/${deckName}.html&workspace=${encodeURIComponent(HARNESS_HOME)}`;
+        const deckUrl = `http://localhost:${PORT}/raw?path=presentations/${deckName}.html&workspace=${encodeURIComponent(deckRoot)}`;
         const slides = await slidesToPngs(deckUrl);
 
-        const exportDir = path.join(HARNESS_HOME, 'presentations', 'exports');
+        const exportDir = path.join(deckRoot, 'presentations', 'exports');
         const outputPath = await buildPptx(slides, deckName, exportDir);
-        const relPath = path.relative(HARNESS_HOME, outputPath).replace(/\\/g, '/');
+        const relPath = path.relative(deckRoot, outputPath).replace(/\\/g, '/');
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, path: relPath, slides: slides.length }));
@@ -3377,23 +5884,21 @@ const server = http.createServer((req, res) => {
         const { recordDeck, ffmpegAvailable } = require('./render-service/record');
         const { loadVoiceConfig } = require('./render-service/tts-edge');
         if (!ffmpegAvailable()) throw new Error('ffmpeg 未安裝或不在 PATH，請先安裝 ffmpeg 並重啟 portal');
-        const deckHtmlPath = path.join(HARNESS_HOME, 'presentations', deckName + '.html');
-        if (!fs.existsSync(deckHtmlPath)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: `找不到 deck：presentations/${deckName}.html` }));
-        }
+        const hit = locateDeck(req, deckName); // PXW-03: same resolution as export
+        if (!hit.root) return deckNotFound(res, `deck：presentations/${deckName}.html`, hit.tried);
+        const deckRoot = hit.root;
         const vc = loadVoiceConfig(HARNESS_HOME); // edge-tts voice + rate matching the browser config
-        // Pin /raw to HARNESS_HOME so it resolves presentations/ regardless of the portal's DEFAULT
+        // Pin /raw to deckRoot so it resolves presentations/ regardless of the portal's DEFAULT
         // workspace. A header-less server-side fetch otherwise resolves against the active workspace
         // (e.g. a client project like 範例專案) → 404 → Playwright sees 0 .slide → misleading「找不到 .slide」.
-        const deckUrl = `http://localhost:${PORT}/raw?path=presentations/${deckName}.html&workspace=${encodeURIComponent(HARNESS_HOME)}`;
-        const exportDir = path.join(HARNESS_HOME, 'presentations', 'exports');
+        const deckUrl = `http://localhost:${PORT}/raw?path=presentations/${deckName}.html&workspace=${encodeURIComponent(deckRoot)}`;
+        const exportDir = path.join(deckRoot, 'presentations', 'exports');
         const outputPath = path.join(exportDir, deckName + '.mp4');
         const result = await recordDeck(deckUrl, outputPath, { edgeVoice: vc.voice, edgeRate: vc.rate });
-        const relPath = path.relative(HARNESS_HOME, result.outputPath).replace(/\\/g, '/');
-        const vttRel = result.vttPath ? path.relative(HARNESS_HOME, result.vttPath).replace(/\\/g, '/') : null;
+        const relPath = path.relative(deckRoot, result.outputPath).replace(/\\/g, '/');
+        const vttRel = result.vttPath ? path.relative(deckRoot, result.vttPath).replace(/\\/g, '/') : null;
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, path: relPath, vtt: vttRel, slides: result.slideCount, voice: vc.voice }));
+        res.end(JSON.stringify({ ok: true, path: relPath, vtt: vttRel, slides: result.slideCount, segments: result.segmentCount, voice: vc.voice }));
       } catch (e) {
         console.error('[record-mp4] error:', e);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -3403,12 +5908,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET /api/presentations/exports/<file> — serve recorded media (mp4 / vtt) from HARNESS_HOME with
-  // HTTP Range support so <video> can stream + seek. No workspace param needed (always HARNESS_HOME).
+  // GET /api/presentations/exports/<file> — serve recorded media (mp4 / vtt) with HTTP Range support
+  // so <video> can stream + seek. Recorded media follows its deck, so look in the current workspace
+  // first and fall back to HARNESS_HOME for decks that live in the harness itself.
+  // PXW-04: a <video>/<track> request can't send X-Workspace, so the frontend appends ?workspace=
+  // (resolveWorkspace already honours it). Without it, behaviour is unchanged.
   const exportFileMatch = pathname.match(/^\/api\/presentations\/exports\/([^/]+)$/);
   if (exportFileMatch && req.method === 'GET') {
     const fileName = decodeURIComponent(exportFileMatch[1]);
-    const exportsDir = path.join(HARNESS_HOME, 'presentations', 'exports');
+    let exportsDir = path.join(HARNESS_HOME, 'presentations', 'exports');
+    try {
+      const wsExports = path.join(resolveWorkspace(req).root, 'presentations', 'exports');
+      if (!/[\/]/.test(fileName) && fs.existsSync(path.join(wsExports, fileName))) exportsDir = wsExports;
+    } catch (e) {}
     const filePath = path.join(exportsDir, fileName);
     if (/[\\/]/.test(fileName) || !isPathSafe(filePath, exportsDir) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -3442,12 +5954,19 @@ const server = http.createServer((req, res) => {
   // GET /api/block-decks — list .blocks.json files (PRES-BLOCK-02/03)
   if (pathname === '/api/block-decks' && req.method === 'GET') {
     try {
-      const presDir = path.join(HARNESS_HOME, 'presentations');
-      const files = fs.existsSync(presDir)
-        ? fs.readdirSync(presDir).filter(f => f.endsWith('.blocks.json'))
-        : [];
+      // PXW-06: list the current workspace's block decks plus HARNESS_HOME's (deduped by name;
+      // the workspace copy wins — same precedence as locateDeck()).
+      const names = new Set();
+      const roots = [];
+      try { roots.push(resolveWorkspace(req).root); } catch (e) {}
+      roots.push(HARNESS_HOME);
+      for (const root of roots) {
+        const presDir = path.join(root, 'presentations');
+        if (!fs.existsSync(presDir)) continue;
+        fs.readdirSync(presDir).filter(f => f.endsWith('.blocks.json')).forEach(f => names.add(f.replace('.blocks.json', '')));
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, decks: files.map(f => f.replace('.blocks.json', '')) }));
+      res.end(JSON.stringify({ ok: true, decks: [...names] }));
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -3911,6 +6430,35 @@ const server = http.createServer((req, res) => {
         const content = fs.readFileSync(mdAbs, 'utf8');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, content }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // POST /api/documents/:id/flow-style — BST3-1 (SPEC-bpmn-style.md §2): set/clear this document's
+  // default BPMN display style (registry documents[].flowStyle). No whitelist here on purpose — the
+  // set of valid style ids lives client-side in BPMN_STYLE_PACKS (index.html) so a new pack (e.g. the
+  // BST3-3 'drawio' one) needs zero server changes. body: { flowStyle: 'bpmn'|'visio'|'drawio'|'' }.
+  // '' (or any falsy) clears the default back to "no doc-level override" (≡ bpmn 原生, per §2 決策 3).
+  const docFlowStyleMatch = pathname.match(/^\/api\/documents\/([^/]+)\/flow-style$/);
+  if (docFlowStyleMatch && req.method === 'POST') {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => {
+      try {
+        const wctx = resolveWorkspace(req);
+        const reg  = docRegistry.readRegistry(wctx.root);
+        const doc  = reg.documents.find(d => d.id === docFlowStyleMatch[1]);
+        if (!doc) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'document not found' })); }
+        let flowStyle = '';
+        try { flowStyle = String((JSON.parse(body || '{}')).flowStyle || ''); } catch (e) {}
+        flowStyle = flowStyle.slice(0, 40); // sanity cap; not a whitelist (see comment above)
+        docRegistry.upsertDocument(wctx.root, { id: doc.id, flowStyle });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, flowStyle }));
       } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -4544,16 +7092,14 @@ const server = http.createServer((req, res) => {
     req.on('data', () => {});
     req.on('end', async () => {
       try {
-        const jsonPath = path.join(HARNESS_HOME, 'presentations', deckName + '.blocks.json');
-        if (!fs.existsSync(jsonPath)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: `找不到 block deck：${deckName}.blocks.json` }));
-        }
-        const deckData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+        // PXW-06: workspace first, HARNESS_HOME fallback; export lands in the hit root's presentations/exports
+        const hit = locateDeck(req, deckName, '.blocks.json');
+        if (!hit.root) return deckNotFound(res, `block deck：${deckName}.blocks.json`, hit.tried);
+        const deckData = JSON.parse(fs.readFileSync(hit.file, 'utf8'));
         const { buildEditablePptx } = require('./render-service/block-export');
-        const exportDir = path.join(HARNESS_HOME, 'presentations', 'exports');
-        const outputPath = await buildEditablePptx(deckData, deckName, exportDir, HARNESS_HOME);
-        const relPath = path.relative(HARNESS_HOME, outputPath).replace(/\\/g, '/');
+        const exportDir = path.join(hit.root, 'presentations', 'exports');
+        const outputPath = await buildEditablePptx(deckData, deckName, exportDir, hit.root);
+        const relPath = path.relative(hit.root, outputPath).replace(/\\/g, '/');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, path: relPath, slides: (deckData.slides || []).length }));
       } catch (e) {
@@ -4955,8 +7501,16 @@ const server = http.createServer((req, res) => {
           const e = meetingProcs.get(meetingId);
           if (e) { e.exited = true; e.exitCode = code; }
           console.log(`[Meeting] ${meetingId} recorder exited code=${code}`);
+          // MTG-ABRT-01: 沒按停止就退出＝靜默中斷 → 當場標 aborted + 附真因 + 推 Telegram，
+          // 前端輪詢（mtgPollTranscript）下一拍就會跳出紅色警告列，不必等指揮官事後翻檔案。
+          markMeetingAbortedIfCrashed(meetingId, meetingDir, code, errTail, wctx);
         });
-        child.on('error', (err) => { console.error('[Meeting] spawn error:', err.message); });
+        child.on('error', (err) => {
+          console.error('[Meeting] spawn error:', err.message);
+          // MTG-ABRT-01: spawn 失敗（例：venv python 不在）不會觸發 'exit'，不接這裡的話畫面會
+          // 永遠停在「錄製中」——跟行程中途死掉是同一種症狀，同樣要跟指揮官講。
+          markMeetingAbortedIfCrashed(meetingId, meetingDir, null, '', wctx, '錄製程式啟動失敗：' + err.message);
+        });
         meetingProcs.set(meetingId, { child, meetingDir, title: meta.title, errTailRef: () => errTail });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, meetingId, meta }));
@@ -4968,6 +7522,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── MTGT: 逐字稿文件匯入（docx/txt）樣板解析 + 預覽確認（spec §11）──────────────────────────
   // POST /api/meeting/import — MTG-IMP-03: 匯入既有音檔/字幕 → 標準 meeting 目錄 → 觸發既有 finalize。
   // 兩種輸入擇一：本地路徑 { path }（大檔免上傳，只讀不複製）或 base64 上傳 { dataUrl, filename }
   // （沿用 /api/chat/upload 的 no-multipart-dep 慣例）。副檔名白名單分派：audio→STT、subtitle→純解析。
@@ -4994,8 +7549,10 @@ const server = http.createServer((req, res) => {
         const opts = JSON.parse(body || '{}');
         const AUDIO_EXTS = ['.mp3', '.mp4', '.m4a', '.wav'];
         const SUB_EXTS = ['.vtt', '.srt'];
+        const DOC_EXTS = ['.docx', '.txt'];   // MTGT: 樣板解析 + 預覽確認（spec §11）
         const lang = opts.lang || 'zh';
         const model = opts.model || 'medium';
+        const templateId = String(opts.templateId || 'none');
 
         // 決定來源：本地路徑（只讀）或 base64 上傳（存進 meetingDir/source.<ext>）。
         let ext = '', origin = '', localPath = null, uploadBuf = null;
@@ -5021,10 +7578,10 @@ const server = http.createServer((req, res) => {
           return res.end(JSON.stringify({ ok: false, error: '需要 file（上傳）或 path（本地路徑）' }));
         }
 
-        const kind = AUDIO_EXTS.includes(ext) ? 'audio' : (SUB_EXTS.includes(ext) ? 'subtitle' : null);
+        const kind = AUDIO_EXTS.includes(ext) ? 'audio' : (SUB_EXTS.includes(ext) ? 'subtitle' : (DOC_EXTS.includes(ext) ? 'document' : null));
         if (!kind) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ ok: false, error: '不支援的格式（僅 mp3/mp4/m4a/wav/vtt/srt）' }));
+          return res.end(JSON.stringify({ ok: false, error: '不支援的格式（僅 mp3/mp4/m4a/wav/vtt/srt/docx/txt）' }));
         }
         if (localPath && !fs.existsSync(localPath)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -5046,8 +7603,35 @@ const server = http.createServer((req, res) => {
           startedAt: new Date().toISOString(), finishedAt: null,
           status: 'importing', workspace: wctx.root,
         };
-        fs.writeFileSync(path.join(meetingDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8');
+        if (kind === 'document') meta.templateId = templateId;
+        const metaPath = path.join(meetingDir, 'meta.json');
+        fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
         meetingGitCommit(path.dirname(meetingDir), meetingId, 'import started', 'Hana');
+
+        // MTGT-5: docx/txt 走純文字樣板解析，同步完成（無 STT，很快），不需背景 child process。
+        if (kind === 'document') {
+          const { spawnSync } = require('child_process');
+          const templatesDir = path.join(GLOBAL_KNOWLEDGE_DIR, 'transcript-templates');
+          const script = path.join(RENDER_SERVICE_DIR, 'transcript_template.py');
+          const run = spawnSync(venvPython(), [script, '--action', 'import-text', '--source', sourcePath, '--template-id', templateId, '--templates-dir', templatesDir],
+            { env: venvSpawnEnv(), timeout: 60000, encoding: 'utf8' });
+          let result;
+          if (run.status === 0) { try { result = JSON.parse((run.stdout || '').trim()); } catch (e) { result = { ok: false, error: '解析輸出失敗' }; } }
+          else { result = { ok: false, error: (run.stderr || '匯入失敗').slice(-500) }; }
+          if (!result.ok) {
+            meta.status = 'error'; meta.error = result.error || '匯入失敗';
+            fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+            console.log(`[Meeting] ${meetingId} import (document) failed: ${meta.error}`);
+          } else {
+            fs.writeFileSync(path.join(meetingDir, 'transcript.txt'), result.transcript || '', 'utf8');
+            meta.status = 'done'; meta.finishedAt = new Date().toISOString();
+            fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+            meetingGitCommit(path.dirname(meetingDir), meetingId, 'import (document) done', 'Hana');
+            finalizeMeetingSummary(meetingId, meetingDir, wctx).catch(e => console.error('[Meeting] import summary error:', e.message));
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, meetingId, meta }));
+        }
 
         const args = ['-u', path.join(RENDER_SERVICE_DIR, 'meeting_import.py'),
           '--dir', meetingDir, '--source', sourcePath, '--kind', kind, '--lang', lang, '--model', model];
@@ -5858,6 +8442,49 @@ const SHIP_PLUGINS_DIR = path.join(__dirname, 'plugins');
 const GLOBAL_PLUGINS_DIR = path.join(GLOBAL_KNOWLEDGE_DIR, 'plugins');
 const schedulerManager = new SchedulerManager(HARNESS_HOME);
 
+// ── SLV: SSE 排程即時更新 ────────────────────────────────────────────────
+// Server 只推「排程資料有變動」的輕量事件，不推整包資料——前端收到後自己重新呼叫既有的
+// GET /api/schedules / GET /api/activities 重繪，避免兩份狀態不同步。
+// 工作區隔離（鐵則）：每個連線記錄自己正規化後的 workspace；廣播時只送給同工作區的連線。
+const scheduleSSEClients = new Set(); // { res, workspace(normalized), heartbeat }
+function _normScheduleWorkspace(p) {
+  try { return path.resolve(String(p || WORKSPACE_ROOT)).toLowerCase(); } catch (e) { return ''; }
+}
+function broadcastScheduleChange(evt) {
+  if (!scheduleSSEClients.size) return; // nobody listening — skip the work
+  const owner = _normScheduleWorkspace((evt && evt.workspace) || WORKSPACE_ROOT);
+  const payload = JSON.stringify({
+    reason:     evt && evt.reason,
+    scheduleId: evt && evt.scheduleId,
+    runId:      evt && evt.runId || null,
+  });
+  for (const client of scheduleSSEClients) {
+    if (client.workspace !== owner) continue; // 跨工作區絕不外洩
+    try { client.res.write('event: schedules-changed\ndata: ' + payload + '\n\n'); }
+    catch (e) { /* dead connection — 'close' handler will clean it up */ }
+  }
+}
+// SLV-1: SchedulerManager 內部的 run 起訖/狀態變動都經此廣播（scheduleId/runId/workspace）。
+schedulerManager.setChangeListener(broadcastScheduleChange);
+
+// CBG-5 (SPEC-chat-background-task.md §3.3): 沿用同一條 SSE 管道（§9.3）與同一組已做好工作區
+// 隔離的連線集合，只是換一個輕量事件名——「這條對話有變動」，不推資料本體，前端自己重抓那個
+// session。刻意不另開一條 SSE 端點（不重造輪子，D4 的精神也適用於這裡）。
+function broadcastChatTaskChange(evt) {
+  if (!scheduleSSEClients.size) return;
+  const owner = _normScheduleWorkspace((evt && evt.workspace) || WORKSPACE_ROOT);
+  const payload = JSON.stringify({
+    reason:    evt && evt.reason,     // 'chat-task-started' | 'chat-task-finished'
+    sessionId: evt && evt.sessionId,
+    scheduleId: evt && evt.scheduleId || null,
+  });
+  for (const client of scheduleSSEClients) {
+    if (client.workspace !== owner) continue; // 跨工作區絕不外洩
+    try { client.res.write('event: chat-task-changed\ndata: ' + payload + '\n\n'); }
+    catch (e) { /* dead connection — 'close' handler will clean it up */ }
+  }
+}
+
 // ── Shared venv python resolver (SPEC-meeting-transcriber §8) ───────────────
 // All python spawns (stt.py / meeting_record.py / diarize.py) MUST use the harness venv's
 // absolute interpreter — never a relative path, never `python` on PATH. The venv lives at
@@ -5963,27 +8590,179 @@ function claudeLauncher() {
   return _claudeLauncher;
 }
 
+// TG-MODEL: Telegram 對話／任務用的預設模型 — 讀 telegramBot 的設定（secrets/telegram.json 的
+// model 欄位），未設定時預設 'opus'（指揮官 2026-09-09 拍板：Telegram 多是短對話，思考品質優先於
+// token 成本）。telegramBot 在本函式定義之後才建立，但函式呼叫必然發生在建立之後（chatFn/taskFn
+// 只在 polling 啟動後才會被呼叫），所以這裡按名稱查閱模組作用域變數是安全的。
+function tgDefaultModel() {
+  try { return telegramBot.getModel(); } catch (e) { return 'opus'; }
+}
+
 // chatFn: QA / read-only via claude-code --print (stdin prompt, avoids Windows length limits)
 // taskFn: C4 mutating task — same spawn but targeted workspace via HARNESS_PROJECT_ROOT env
 // listProjectsFn: C3 workspace picker from registry
-function _tgSpawnClaude(prompt, workspaceRoot, timeoutMs) {
-  return new Promise(function (resolve) {
-    const { spawn } = require('child_process');
-    const { cmd, prefix } = claudeLauncher();
-    const env = Object.assign({}, process.env);
-    if (workspaceRoot) env.HARNESS_PROJECT_ROOT = workspaceRoot;
-    const child = spawn(cmd,
-      [...prefix, '--print', '--dangerously-skip-permissions', '--model', 'sonnet'],
-      { shell: true, stdio: ['pipe', 'pipe', 'pipe'], env, cwd: workspaceRoot || HARNESS_HOME }
-    );
-    let output = '';
-    child.stdout.on('data', function (d) { output += d.toString(); });
-    child.stderr.on('data', function (d) { output += d.toString(); });
-    const killer = setTimeout(function () { try { child.kill(); } catch (e) {} }, timeoutMs || 120000);
-    child.on('close', function () { clearTimeout(killer); resolve(output.trim() || '（無回應）'); });
-    child.on('error', function (e) { clearTimeout(killer); resolve('⚠️ 回應失敗：' + e.message); });
-    try { child.stdin.write(prompt); child.stdin.end(); } catch (e) {}
+// modelArg: 明確指定模型（例如摘要固定傳 'sonnet'）；省略時吃 tgDefaultModel()。
+// TG-MODEL-5: 若用的是 opus 且輸出疑似撞限額（沿用既有 detectRateLimit，不另寫字串比對），自動
+// 改用 sonnet 重試一次，並在回覆前面加警示行。只退回一次，不無限重試。
+function _tgSpawnClaude(prompt, workspaceRoot, timeoutMs, modelArg) {
+  const model = modelArg || tgDefaultModel();
+  const wsRootForUsage = workspaceRoot || WORKSPACE_ROOT;
+  const runOnce = function (m) {
+    return new Promise(function (resolve) {
+      const { spawn } = require('child_process');
+      const { cmd, prefix } = claudeLauncher();
+      const env = Object.assign({}, process.env);
+      if (workspaceRoot) env.HARNESS_PROJECT_ROOT = workspaceRoot;
+      const tgCallStartT = Date.now();
+      // --output-format json (§UA-1): same shared parser as the other 2 Claude CLI call sites —
+      // falls back to plain text on any malformed/missing body, never resolves blank.
+      const child = spawn(cmd,
+        [...prefix, '--print', '--output-format', 'json', '--dangerously-skip-permissions', '--model', m],
+        { shell: true, stdio: ['pipe', 'pipe', 'pipe'], env, cwd: workspaceRoot || HARNESS_HOME }
+      );
+      let output = '';
+      child.stdout.on('data', function (d) { output += d.toString(); });
+      child.stderr.on('data', function (d) { output += d.toString(); });
+      const killer = setTimeout(function () { try { child.kill(); } catch (e) {} }, timeoutMs || 120000);
+      child.on('close', function () {
+        clearTimeout(killer);
+        const parsed = usageTracker.parseClaudeCliOutput(output, cleanCliOutput);
+        recordUsageForChat(wsRootForUsage, { trigger: 'telegram', background: false, sessionId: null, scheduleId: null }, null, 'claude', m, parsed.usage, parsed.costUsd, parsed.source, Date.now() - tgCallStartT);
+        resolve(parsed.text.trim() || '（無回應）');
+      });
+      child.on('error', function (e) { clearTimeout(killer); resolve('⚠️ 回應失敗：' + e.message); });
+      try { child.stdin.write(prompt); child.stdin.end(); } catch (e) {}
+    });
+  };
+  return runOnce(model).then(function (output) {
+    if (model === 'opus' && detectRateLimit('claude', output, '').limited) {
+      return runOnce('sonnet').then(function (retryOutput) {
+        return '⚠️ Opus 額度目前用滿，本則改用 Sonnet 回答\n\n' + retryOutput;
+      });
+    }
+    return output;
   });
+}
+
+// TGC7-01: normalise a workspace path for comparison (same convention as telegram.js _normWs).
+function _tgNormWs(p) { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } }
+
+// TGC8-02/03: the wctx shape buildChatPrompt/writeContextFile/saveChatSession expect, derived
+// from a plain workspace root — mirrors fireScheduledJob's wctx construction (same directory
+// convention: <root>/.harness/{runtime/chat_history,knowledge,commands}).
+function _tgWctxFor(workspaceRoot) {
+  const root = workspaceRoot || HARNESS_HOME;
+  return {
+    root,
+    chatHistoryDir: path.join(root, '.harness', 'runtime', 'chat_history'),
+    knowledgeDir:   path.join(root, '.harness', 'knowledge'),
+    commandsDir:    path.join(root, '.harness', 'commands'),
+  };
+}
+
+// TGC8-03: front-context for the task path, sourced from the workspace's active CHAT SESSION
+// (same file the free-chat path reads/writes) instead of the console log — same 12-entries /
+// 1000-chars-each量級 as TGC7's buildTgContextBlock, just a different source. Returns '' (never
+// throws) when sessionId is falsy or the session file doesn't exist yet — callers degrade to the
+// console-log-based buildTgContextBlock in that case (TGC8-03 容錯 contract).
+function buildTgSessionContextBlock(workspaceRoot, sessionId) {
+  if (!sessionId) return '';
+  try {
+    const chatHistoryDir = path.join(workspaceRoot || HARNESS_HOME, '.harness', 'runtime', 'chat_history');
+    const sessionPath = path.join(chatHistoryDir, `chat_${sessionId}.json`);
+    if (!fs.existsSync(sessionPath)) return '';
+    const data = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+    const msgs = Array.isArray(data.messages) ? data.messages.slice(-12) : [];
+    if (!msgs.length) return '';
+    return '近期對話紀錄：\n' + msgs.map(function (m) {
+      return (m.role === 'user' ? '指揮官' : 'Hana') + '：' + chatMsgText(m).slice(0, 1000);
+    }).join('\n') + '\n\n';
+  } catch (e) { return ''; }
+}
+
+// TGC8-04: list this workspace's general-purpose chat sessions (both web- and telegram-origin —
+// they're now the SAME pool, per SPEC-telegram.md §17 D2 "取代，不是並存"), newest first. Mirrors
+// getChatHistories()'s filtering (exclude schedule-origin and any view-scoped session tied to a
+// file/meeting/pm/context) but returns full `messages` too, since /chats /whichchat /back /recap
+// all need the transcript, not just the list metadata getChatHistories() returns.
+function _tgListChatSessions(workspaceRoot) {
+  const dir = path.join(workspaceRoot || HARNESS_HOME, '.harness', 'runtime', 'chat_history');
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.startsWith('chat_') || !file.endsWith('.json')) continue;
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+      const origin = data.origin || (data.sessionId && data.sessionId.startsWith('sched_') ? 'schedule' : 'human');
+      if (origin === 'schedule') continue;
+      if (data.filePath || data.meetingId || (Array.isArray(data.pmProjectIds) && data.pmProjectIds.length) || data.contextKind) continue;
+      let title = data.title;
+      if (!title) {
+        const firstUser = (data.messages || []).find(function (m) { return m.role === 'user' && typeof m.content === 'string'; });
+        title = firstUser ? firstUser.content.slice(0, 30) + (firstUser.content.length > 30 ? '...' : '') : '新對話';
+      }
+      out.push({ sessionId: data.sessionId, title, updatedAt: data.updatedAt, messages: Array.isArray(data.messages) ? data.messages : [] });
+    } catch (e) {}
+  }
+  return out.sort(function (a, b) { return (b.updatedAt || '').localeCompare(a.updatedAt || ''); });
+}
+
+// TGC8-04: /newchat — create an empty session (origin:'telegram') in this workspace's chat
+// history, optionally with a caller-given title. saveChatSession() itself never accepts a fresh
+// title (it only ever PRESERVES one from an existing file), so a title arg is applied with a
+// small direct patch right after the initial save.
+function _tgCreateChatSession(workspaceRoot, title) {
+  const wctx = _tgWctxFor(workspaceRoot);
+  const sessionId = 'session_' + Date.now();
+  saveChatSession(sessionId, [], [], wctx.chatHistoryDir, null, 'telegram', null, null, null, null);
+  if (title) {
+    try {
+      const p = path.join(wctx.chatHistoryDir, `chat_${sessionId}.json`);
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      data.title = title;
+      fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) { console.error('[Telegram] _tgCreateChatSession title patch failed:', e.message); }
+  }
+  return sessionId;
+}
+
+// TGC8-05: /recap — one LLM call to condense the whole session transcript into a short summary.
+// Deliberately NOT routed through buildChatPrompt (this isn't a chat turn, no persona/memory
+// shell needed) — a plain, purpose-built summarization prompt via the same _tgSpawnClaude used
+// elsewhere in this file.
+async function _tgRecapSession(workspaceRoot, sessionId) {
+  const wctx = _tgWctxFor(workspaceRoot);
+  const sessionPath = path.join(wctx.chatHistoryDir, `chat_${sessionId}.json`);
+  let data = null;
+  try { data = JSON.parse(fs.readFileSync(sessionPath, 'utf8')); } catch (e) { return '（找不到這本對話）'; }
+  const msgs = Array.isArray(data.messages) ? data.messages : [];
+  if (!msgs.length) return '（這本對話還沒有內容）';
+  const transcript = msgs.map(function (m) {
+    return (m.role === 'user' ? '指揮官' : 'Hana') + '：' + chatMsgText(m);
+  }).join('\n');
+  const prompt = '請把下面這段對話濃縮成一段約 150～300 字的重點摘要（用繁體中文，條列或短段落皆可，只回摘要本身，不要客套話）：\n\n' + transcript.slice(0, 20000);
+  // TG-MODEL-4: 機械式壓縮，固定用 sonnet，不吃使用者選的預設模型（省額度）。
+  return _tgSpawnClaude(prompt, workspaceRoot, 120000, 'sonnet');
+}
+
+// TGC7-01: shared "recent console history" prompt block for both chatFn and taskFn.
+// `context` is the raw console log array (telegram.js getConsoleLog()); filters to entries
+// belonging to the same chatId, and (when the entry carries a workspace field) the same
+// workspace — entries without a workspace field are legacy/unscoped and always kept (no data
+// migration, per SPEC-telegram.md §16.3). Final 12 entries, each capped at 1000 chars.
+function buildTgContextBlock(context, workspaceRoot, chatId) {
+  if (!context || !context.length) return '';
+  const activeWs = workspaceRoot ? _tgNormWs(workspaceRoot) : null;
+  const filtered = context.filter(function (m) {
+    if (chatId != null && m.chatId != null && String(m.chatId) !== String(chatId)) return false;
+    if (activeWs && m.workspace && _tgNormWs(m.workspace) !== activeWs) return false;
+    return true;
+  }).slice(-12);
+  if (!filtered.length) return '';
+  return '近期控制台紀錄：\n' +
+    filtered.map(function (m) {
+      return (m.role === 'user' ? '指揮官' : 'Hana') + '：' + (m.text || '').slice(0, 1000);
+    }).join('\n') + '\n\n';
 }
 
 // F5 helper: transcribe an audio file via the warm STT worker (server Whisper) → text.
@@ -6024,33 +8803,41 @@ const telegramBot = createTelegramBot(HARNESS_HOME, schedulerManager, {
   ttsVoiceFn: function (text) { return _ttsToOgg(text); },
   voiceLang: 'zh',
 
-  // C2 chat: QA / read-only responses
-  chatFn: function (text, context, ctx) {
+  // C2 chat / TGC8-02: 自由打字併入網頁對話本 — load chat_<sessionId>.json, append the user's
+  // message, build the prompt via the SAME shell the web chat uses (buildChatPrompt: 人設／長期
+  // 記憶／對話歷史／技能), spawn, append the reply, and persist via saveChatSession +
+  // writeContextFile. This REPLACES the old hand-assembled sysprompt+memoryBlock+consoleLog prompt
+  // — per SPEC-telegram.md §17 D2, Telegram free chat no longer has its own memory, it shares the
+  // web one. `context`/`chatId` are kept only as no-op-safe params (unused here, present so the
+  // call signature doesn't force a breaking change elsewhere).
+  chatFn: async function (text, context, ctx, chatId, sessionId) {
     const workspaceRoot = (ctx && ctx.root) || HARNESS_HOME;
-    const knowledgeDir = path.join(workspaceRoot, '.harness', 'knowledge');
-    const memoryBlock = injectMemoryBlock(knowledgeDir);
-    const sysprompt = '你是 Hana，Harness 的 AI 助理，正透過 Telegram 指揮控制台與指揮官對話。' +
-      '請直接、簡潔地回答。不要輸出程式碼或 HTML 到聊天中；需要時寫檔並回傳路徑。' +
-      '你的任務看板在 .worktable/TASK.md 與 .worktable/DASHBOARD.md；要找「我們的任務 / A / B / C 系列」就讀那裡。注意「task」指 worktable 路線圖，不是排程清單。' +
-      '「排程 / schedule」＝ Harness portal 排程器（絕對不是 CronList/CronCreate 工具，那是另一套、別用也別提）。排程資料在 ' + HARNESS_HOME + '/global-knowledge/schedules/schedules.json，用每筆的 workspace 欄位對應工作區——要查排程就讀這個檔（依目前脈絡工作區過濾）。要改某個排程的時間或停用，對它 PUT：curl -X PUT http://localhost:3400/api/schedules/<id> 送 JSON（改 trigger.atISO，或 enabled），server 會自動重算下次執行時間；新建用 POST、刪除用 DELETE。';
-    const contextBlock = context && context.length
-      ? '近期控制台紀錄：\n' +
-        context.slice(-5).map(function (m) {
-          return (m.role === 'user' ? '指揮官' : 'Hana') + '：' + (m.text || '').slice(0, 300);
-        }).join('\n') + '\n\n'
-      : '';
-    const ctxBlock = ctx
-      ? '目前脈絡工作區：' + ctx.label + '（' + ctx.root + '）\n\n'
-      : '目前脈絡工作區：_harness（' + HARNESS_HOME + '）\n\n';
-    // SN2-03: inject this workspace's unfinished sticky notes so "還有哪些待辦？" is answerable
-    // straight from Telegram chat, without a separate /notes lookup.
-    const notesBlock = injectNotesContext(workspaceRoot);
-    const prompt = sysprompt + '\n\n' + memoryBlock + ctxBlock + contextBlock + notesBlock + '指揮官說：' + text;
-    return _tgSpawnClaude(prompt, workspaceRoot, 120000);
+    const wctx = _tgWctxFor(workspaceRoot);
+    const sid  = sessionId || ('session_' + Date.now());
+    const sessionPath = path.join(wctx.chatHistoryDir, `chat_${sid}.json`);
+
+    let existing = null;
+    try { existing = JSON.parse(fs.readFileSync(sessionPath, 'utf8')); } catch (e) {}
+    const messages = (existing && Array.isArray(existing.messages)) ? existing.messages.slice() : [];
+    messages.push({ role: 'user', content: text, ts: new Date().toISOString() });
+
+    const contextFilePath = writeContextFile(sid, messages.slice(0, -1), wctx.chatHistoryDir);
+    const prompt = buildChatPrompt(messages, contextFilePath, wctx, null, 'claude', sid);
+    const reply  = await _tgSpawnClaude(prompt, workspaceRoot, 120000);
+
+    messages.push({ role: 'assistant', content: reply, ts: new Date().toISOString(), meta: { provider: 'claude', channel: 'telegram' } });
+    try {
+      saveChatSession(sid, messages, [], wctx.chatHistoryDir, existing && existing.filePath,
+        (existing && existing.origin) || 'telegram', null, null, null, null);
+    } catch (e) { console.error('[Telegram] chatFn saveChatSession failed:', e.message); }
+    return reply;
   },
 
   // C4 task: mutating work — spawn targeted at the confirmed workspace
-  taskFn: function (text, workspaceRoot) {
+  // TGC8-03: front-context now comes from the workspace's active CHAT SESSION (sessionId) —
+  // same source the free-chat path reads/writes — instead of the console log. `context`/`chatId`
+  // stay as a fallback for callers that don't (yet) resolve a sessionId (容錯，不得爆).
+  taskFn: function (text, workspaceRoot, context, chatId, sessionId) {
     const wsRoot = workspaceRoot || HARNESS_HOME;
     const knowledgeDir = path.join(wsRoot, '.harness', 'knowledge');
     const memoryBlock = injectMemoryBlock(knowledgeDir);
@@ -6058,10 +8845,21 @@ const telegramBot = createTelegramBot(HARNESS_HOME, schedulerManager, {
       '工作區路徑：' + wsRoot + '。' +
       '你的任務看板在 .worktable/TASK.md 與 .worktable/DASHBOARD.md；要找「我們的任務 / A / B / C 系列」就讀那裡。注意「task」指 worktable 路線圖，不是排程清單。' +
       '「排程 / schedule」＝ Harness portal 排程器（不是 CronList/CronCreate 工具，別用那套）。排程資料在 ' + HARNESS_HOME + '/global-knowledge/schedules/schedules.json（用 workspace 欄位過濾本工作區）。要改排程時間或停用，對它 PUT：curl -X PUT http://localhost:3400/api/schedules/<id> 送 JSON（改 trigger.atISO 或 enabled），server 會自動重算下次執行；別碰 CronCreate/CronList。' +
+      '若這次任務是要你去「觸發」某個排程立即執行（呼叫 POST http://localhost:3400/api/schedules/<id>/run），務必在 request body 帶上 origin，讓完成通知回到這個對話、不要廣播到所有對話。這裡的 chatId、sessionId、workspaceRoot 都是本次呼叫的確定值，直接照抄，不要自己猜：curl -X POST http://localhost:3400/api/schedules/<id>/run -H "Content-Type: application/json" -d \'{"origin":{"channel":"telegram","chatId":"' + chatId + '","sessionId":"' + sessionId + '"}}\'（本次 workspaceRoot = ' + wsRoot + '）。' +
       '請完整執行任務後，只回覆「結果摘要」與「產出檔路徑」（若有）。';
-    const prompt = sysprompt + '\n\n' + memoryBlock + '任務：' + text;
+    const contextBlock = sessionId
+      ? buildTgSessionContextBlock(wsRoot, sessionId)
+      : buildTgContextBlock(context, wsRoot, chatId);   // 舊呼叫點沒帶 sessionId 時的容錯退回
+    const prompt = sysprompt + '\n\n' + memoryBlock + contextBlock + '任務：' + text;
     return _tgSpawnClaude(prompt, wsRoot, 3600000); // 60-min timeout per architecture note
   },
+
+  // TGC8-04: /chats /whichchat /back
+  listChatSessionsFn: function (workspaceRoot) { return _tgListChatSessions(workspaceRoot); },
+  // TGC8-04: /newchat
+  createChatSessionFn: function (workspaceRoot, title) { return _tgCreateChatSession(workspaceRoot, title); },
+  // TGC8-05: /recap
+  recapSessionFn: function (workspaceRoot, sessionId) { return _tgRecapSession(workspaceRoot, sessionId); },
 
   // /meeting command: list and read meetings for a given workspace
   meetingsFn: function (workspaceRoot) {
@@ -6196,6 +8994,7 @@ function loadCommands(commandsDir = COMMANDS_DIR) {
         if (!parsed || !parsed.meta.name) continue;
         byName.set(parsed.meta.name, {
           name: parsed.meta.name,
+          file: path.join(dir, f),                // 絕對路徑：讓 agent 在任何工作區都讀得到技能本文
           description: parsed.meta.description || '',
           icon: parsed.meta.icon || 'terminal',
           type: parsed.meta.type || 'prompt',
@@ -6220,14 +9019,110 @@ function commandsIndexForPrompt(commandsDir = COMMANDS_DIR) {
   try {
     const cmds = loadCommands(commandsDir);
     if (!cmds.length) return '';
-    return '\n可用的指令／技能（使用者提到時你應知道它們存在；技能定義在 .harness/commands 或 global-knowledge/commands 下）：\n'
-      + cmds.map(c => `- /${c.name}：${c.description}`).join('\n') + '\n';
+    return '\n=== 你自己具備的能力（技能清單） ===\n'
+      + '下列每一項都是「你做得到」的事，不是外部工具的介紹。使用者的需求若對應到其中一項，'
+      + '**即使他沒有打 `/指令`**，你也要當成自己的能力去執行——先用讀檔工具讀出該技能檔的完整內容（下方括號內為絕對路徑），'
+      + '再照它的步驟做。**不要回答「我沒有這個能力」**；技能檔裡寫了需要的服務或前置條件，就照它說的去啟動或確認。\n'
+      + cmds.map(c => `- /${c.name}：${c.description}${c.file ? `（技能檔：${c.file}）` : ''}`).join('\n')
+      + '\n=== 能力清單結束 ===\n';
   } catch (e) { return ''; }
 }
 // "/name rest..." → { name, rest }; otherwise null. Only fires when the message LEADS with a slash.
 function detectCommand(text) {
   const m = (text || '').match(/^\/([a-zA-Z][\w-]*)\s*([\s\S]*)$/);
   return m ? { name: m[1], rest: m[2].trim() } : null;
+}
+
+// --- Output style (SPEC-output-style.md) ------------------------------------------------------
+// Claude Code CLI natively supports output styles: a `.md` file under `~/.claude/output-styles/`
+// (global) or `<workspace>/.claude/output-styles/` (project), selected via the `outputStyle` field
+// in the matching `settings.json`. These are THE SAME files Claude Code itself reads/writes — the
+// portal never maintains a duplicate config; writing the file IS the setting taking effect (no
+// separate "sync to CLI" step, unlike a naive custom-config design would need).
+function claudeConfigDir(scope, wctx) {
+  return scope === 'project' ? path.join((wctx && wctx.root) || WORKSPACE_ROOT, '.claude') : path.join(os.homedir(), '.claude');
+}
+function outputStylesDir(scope, wctx) { return path.join(claudeConfigDir(scope, wctx), 'output-styles'); }
+function claudeSettingsJsonPath(scope, wctx) { return path.join(claudeConfigDir(scope, wctx), 'settings.json'); }
+function readClaudeSettingsJson(scope, wctx) {
+  try {
+    const p = claudeSettingsJsonPath(scope, wctx);
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (e) {}
+  return {};
+}
+// Merge-write: settings.json is also written by Claude Code itself (model/theme/…), so this must
+// preserve unrelated fields rather than overwrite the whole file.
+function writeClaudeSettingsJson(scope, wctx, patch) {
+  const p = claudeSettingsJsonPath(scope, wctx);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const next = Object.assign({}, readClaudeSettingsJson(scope, wctx), patch);
+  fs.writeFileSync(p, JSON.stringify(next, null, 2), 'utf8');
+}
+// Shipped built-in styles (portal/output-styles/*.md) — seeded into ~/.claude/output-styles/ on
+// first use only (never overwrites a name the user already customized themselves).
+function ensureBuiltinOutputStyles() {
+  const shipDir = path.join(__dirname, 'output-styles');
+  const dir = outputStylesDir('global');
+  try {
+    if (!fs.existsSync(shipDir)) return;
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of fs.readdirSync(shipDir)) {
+      if (!f.endsWith('.md')) continue;
+      const dest = path.join(dir, f);
+      if (!fs.existsSync(dest)) fs.copyFileSync(path.join(shipDir, f), dest);
+    }
+  } catch (e) { console.error('[OutputStyle] seed failed:', e.message); }
+}
+function listOutputStylesInDir(dir, scope) {
+  const out = [];
+  try {
+    if (!fs.existsSync(dir)) return out;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.md')) continue;
+      const parsed = parseFrontmatter(fs.readFileSync(path.join(dir, f), 'utf8'));
+      const name = (parsed && parsed.meta.name) || f.replace(/\.md$/, '');
+      out.push({ name, description: (parsed && parsed.meta.description) || '', scope, file: path.join(dir, f) });
+    }
+  } catch (e) {}
+  return out;
+}
+// "Currently effective style" resolution (§3): project settings.json wins, else global, else 'default'.
+function activeOutputStyleName(wctx) {
+  const proj = readClaudeSettingsJson('project', wctx);
+  if (proj && proj.outputStyle) return proj.outputStyle;
+  const glob = readClaudeSettingsJson('global', wctx);
+  if (glob && glob.outputStyle) return glob.outputStyle;
+  return 'default';
+}
+function listOutputStyles(wctx) {
+  ensureBuiltinOutputStyles();
+  const active = activeOutputStyleName(wctx);
+  const byName = new Map();
+  // 'default' always exists as an option — it writes NO file / clears outputStyle, meaning
+  // Claude Code's native default behavior (no style extension appended).
+  byName.set('default', { name: 'default', description: '不套用任何風格（Claude Code 原生預設行為）', scope: 'builtin' });
+  for (const s of listOutputStylesInDir(outputStylesDir('global'), 'global')) byName.set(s.name, s);
+  for (const s of listOutputStylesInDir(outputStylesDir('project', wctx), 'project')) byName.set(s.name, s);
+  return [...byName.values()].map(s => Object.assign({}, s, { active: s.name === active }));
+}
+function setOutputStyle(name, scope, wctx) {
+  const s = scope === 'global' ? 'global' : 'project';
+  if (name === 'default') writeClaudeSettingsJson(s, wctx, { outputStyle: undefined });
+  else writeClaudeSettingsJson(s, wctx, { outputStyle: name });
+}
+// Fallback body for CLIs WITHOUT a native output-style mechanism (Codex/Gemini/Grok) — buildChatPrompt
+// splices this into the prompt when provider !== 'claude'. Claude Code itself needs none of this;
+// the file + settings.json above is all it reads.
+function activeOutputStyleBodyForFallback(wctx) {
+  const name = activeOutputStyleName(wctx);
+  if (!name || name === 'default') return '';
+  const s = listOutputStyles(wctx).find(x => x.name === name);
+  if (!s || !s.file) return '';
+  try {
+    const parsed = parseFrontmatter(fs.readFileSync(s.file, 'utf8'));
+    return (parsed && parsed.body) || '';
+  } catch (e) { return ''; }
 }
 
 // --- Long-term memory (Hermes-style: bounded files + add/replace/remove, two-tier) ----------
@@ -6448,7 +9343,8 @@ const DEFAULT_NAV = {
   notes: true,
   audioTopics: true,
   pm: true,
-  whiteboard: true
+  whiteboard: true,
+  uidesign: true
 };
 function buildDefaultManifest(root) {
   const has = (d) => { try { return fs.existsSync(path.join(root, d)); } catch (e) { return false; } };
@@ -6473,8 +9369,95 @@ function buildDefaultManifest(root) {
     worktable: { label: '工作台 (Worktable)', icon: 'layout-dashboard', path: '.worktable', progress: '.worktable/TASK.md' },
     chat: { label: 'AI 對話 (Chat)', icon: 'message-square' },
     sidebar: { sections },
-    tools
+    tools,
+    // WSX2 (SPEC-workspace-settings.md §8.3): plugin display order / hidden set. Both opt-out —
+    // a missing/malformed field means "show all, in discovery order", identical to today's behavior.
+    // WSXT1 (§14): openMode is a per-plugin-name map; missing entry = 'embed' (today's behavior).
+    plugins: { order: [], hidden: [], openMode: {}, slug: {}, openIn: {}, target: {}, externalUrl: {} },
+    // SBC-5 (SPEC-sidebar-card-carousel.md §7): defaults mirror "no sidebarCards node at all" —
+    // rotate every 8s, quota TTL 300s, every card shown, discovery order. A harness.json that
+    // omits this whole node must behave identically to before this feature existed.
+    sidebarCards: { rotateSeconds: 8, quotaRefreshSeconds: 300, hidden: [], order: [] }
   };
+}
+// SBC-5: coerce an arbitrary harness.json `sidebarCards` field — any type mismatch/out-of-range
+// value falls back to the matching default field rather than throwing (same per-field drop policy
+// as normalizePluginsManifest), so a hand-edited/corrupt harness.json never breaks the sidebar.
+function normalizeSidebarCardsManifest(raw, def) {
+  const base = def || { rotateSeconds: 8, quotaRefreshSeconds: 300, hidden: [], order: [] };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return Object.assign({}, base);
+  const out = Object.assign({}, base);
+  if (Number.isInteger(raw.rotateSeconds) && (raw.rotateSeconds === 0 || (raw.rotateSeconds >= 3 && raw.rotateSeconds <= 120))) out.rotateSeconds = raw.rotateSeconds;
+  if (Number.isInteger(raw.quotaRefreshSeconds) && (raw.quotaRefreshSeconds === 0 || (raw.quotaRefreshSeconds >= 30 && raw.quotaRefreshSeconds <= 3600))) out.quotaRefreshSeconds = raw.quotaRefreshSeconds;
+  if (Array.isArray(raw.hidden)) out.hidden = raw.hidden.filter(x => typeof x === 'string');
+  if (Array.isArray(raw.order)) out.order = raw.order.filter(x => typeof x === 'string');
+  return out;
+}
+function isValidRotateSeconds(v) { return Number.isInteger(v) && (v === 0 || (v >= 3 && v <= 120)); }
+function isValidQuotaRefreshSeconds(v) { return Number.isInteger(v) && (v === 0 || (v >= 30 && v <= 3600)); }
+const PLUGIN_OPEN_MODES = new Set(['embed', 'tab', 'standalone']);
+// WSXU (§19 D24): slug format — lowercase alnum + dash, must start with alnum, 1-40 chars.
+const PLUGIN_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+// WSXW (§26 D26): the two-dimension open model replacing the old openMode tri-state.
+const PLUGIN_OPEN_INS = new Set(['embed', 'tab']);
+const PLUGIN_TARGETS = new Set(['internal', 'external']);
+// WSXW (§26 D30): externalUrl is fed into window.open()/iframe src — only http(s) accepted, no
+// javascript:/data:/relative paths, capped length so a malformed harness.json can't bloat pages.
+function isValidExternalUrl(v) {
+  return typeof v === 'string' && v.length > 0 && v.length <= 500 && /^https?:\/\//i.test(v);
+}
+// WSX2: coerce an arbitrary harness.json `plugins` field into { order: string[], hidden: string[],
+// openMode: object, slug: object, openIn: object, target: object, externalUrl: object }. Any type
+// mismatch (not an object, non-array field, non-string entries) falls back to the empty default
+// rather than throwing — a malformed harness.json must never break the whole sidebar.
+function normalizePluginsManifest(raw) {
+  const asStrArray = (v) => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+  const empty = { order: [], hidden: [], openMode: {}, slug: {}, openIn: {}, target: {}, externalUrl: {} };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
+  // WSXT1 (§14): unknown keys or invalid values are dropped per-key, not the whole field — a
+  // broken harness.json must never take down the sidebar.
+  const openMode = {};
+  if (raw.openMode && typeof raw.openMode === 'object' && !Array.isArray(raw.openMode)) {
+    for (const k of Object.keys(raw.openMode)) {
+      const v = raw.openMode[k];
+      if (typeof v === 'string' && PLUGIN_OPEN_MODES.has(v)) openMode[k] = v;
+    }
+  }
+  // WSXU (§21): slug is a per-plugin-name map of page-url aliases. Unknown keys/malformed values
+  // are dropped per-key (same reasoning as openMode) — a broken harness.json must never take down
+  // the sidebar. Duplicate values are NOT de-duped here (this is the read path, not the write-time
+  // validator); a harness.json hand-edited into having duplicates just resolves both keys to the
+  // same URL, which is harmless and not this function's job to police.
+  const slug = {};
+  if (raw.slug && typeof raw.slug === 'object' && !Array.isArray(raw.slug)) {
+    for (const k of Object.keys(raw.slug)) {
+      const v = raw.slug[k];
+      if (typeof k === 'string' && typeof v === 'string' && PLUGIN_SLUG_RE.test(v)) slug[k] = v;
+    }
+  }
+  // WSXW (§28): openIn/target/externalUrl — same per-key drop policy as openMode/slug.
+  const openIn = {};
+  if (raw.openIn && typeof raw.openIn === 'object' && !Array.isArray(raw.openIn)) {
+    for (const k of Object.keys(raw.openIn)) {
+      const v = raw.openIn[k];
+      if (typeof v === 'string' && PLUGIN_OPEN_INS.has(v)) openIn[k] = v;
+    }
+  }
+  const target = {};
+  if (raw.target && typeof raw.target === 'object' && !Array.isArray(raw.target)) {
+    for (const k of Object.keys(raw.target)) {
+      const v = raw.target[k];
+      if (typeof v === 'string' && PLUGIN_TARGETS.has(v)) target[k] = v;
+    }
+  }
+  const externalUrl = {};
+  if (raw.externalUrl && typeof raw.externalUrl === 'object' && !Array.isArray(raw.externalUrl)) {
+    for (const k of Object.keys(raw.externalUrl)) {
+      const v = raw.externalUrl[k];
+      if (isValidExternalUrl(v)) externalUrl[k] = v;
+    }
+  }
+  return { order: asStrArray(raw.order), hidden: asStrArray(raw.hidden), openMode, slug, openIn, target, externalUrl };
 }
 function getManifest(root) {
   const def = buildDefaultManifest(root);
@@ -6493,7 +9476,11 @@ function getManifest(root) {
     worktable: Object.assign({}, def.worktable, m.worktable || {}),
     chat: Object.assign({}, def.chat, m.chat || {}),
     sidebar: { sections: (m.sidebar && Array.isArray(m.sidebar.sections)) ? m.sidebar.sections : def.sidebar.sections },
-    tools: (m.tools && typeof m.tools === 'object') ? m.tools : def.tools
+    tools: (m.tools && typeof m.tools === 'object') ? m.tools : def.tools,
+    plugins: m.plugins !== undefined ? normalizePluginsManifest(m.plugins) : def.plugins,
+    // SBC-5: omitted entirely in an existing harness.json -> def.sidebarCards (full defaults),
+    // identical to pre-SBC behavior.
+    sidebarCards: m.sidebarCards !== undefined ? normalizeSidebarCardsManifest(m.sidebarCards, def.sidebarCards) : def.sidebarCards
   };
 }
 // --- Plugin loading (SPEC-plugin-contract.md, TASK.md §P) ---
@@ -6515,6 +9502,22 @@ function isWorkspaceTrusted(root) {
 // `enabled`/`disabledReason` per the trust gate. Untrusted trust:"code" plugins are still RETURNED
 // (so the sidebar can show them, disabled, with a reason — §6 "未信任者側欄顯示但停用並標示原因")
 // rather than silently omitted.
+// SBC-4 (SPEC-sidebar-card-carousel.md §5): plugin.json's optional `cards[]` — each entry needs a
+// string id/title/icon/module or is dropped (not the whole plugin) so one malformed card entry
+// never breaks that plugin's other cards, same per-item drop policy used elsewhere in this file.
+function normalizePluginCards(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const c of raw) {
+    if (!c || typeof c !== 'object') continue;
+    if (typeof c.id !== 'string' || !c.id || seen.has(c.id)) continue;
+    if (typeof c.module !== 'string' || !c.module) continue;
+    seen.add(c.id);
+    out.push({ id: c.id, title: typeof c.title === 'string' ? c.title : c.id, icon: typeof c.icon === 'string' ? c.icon : 'square', module: c.module });
+  }
+  return out;
+}
 function getPlugins(wctx) {
   const list = pluginLoader.loadPlugins({
     shipDir: SHIP_PLUGINS_DIR,
@@ -6524,9 +9527,89 @@ function getPlugins(wctx) {
   const trusted = isWorkspaceTrusted(wctx.root);
   return list.map(p => {
     const gated = p.trust === 'code' && !trusted;
+    const reason = gated ? '未信任的工作區（trust:"code" 外掛需 registry 標記 trusted，或位於 Harness 自身開發樹）' : null;
+    // D7: cards are still returned (so the settings page can list them + the reason) even when
+    // gated — only the carousel-mounting step (frontend) skips them for an untrusted workspace.
+    const cards = normalizePluginCards(p.cards).map(c => Object.assign({}, c, { pluginName: p.name, enabled: !gated, disabledReason: reason }));
     return Object.assign({}, p, {
       enabled: !gated,
-      disabledReason: gated ? '未信任的工作區（trust:"code" 外掛需 registry 標記 trusted，或位於 Harness 自身開發樹）' : null
+      disabledReason: reason,
+      cards
+    });
+  });
+}
+// WSXU (§19 D24 / §21): resolve a plugin by either its `name` OR its configured `slug`, `name`
+// always wins on a collision — the lookup order is fixed (name first, slug second) so behavior
+// never depends on plugin discovery/load order. `list` is expected to already carry a `slug` field
+// per entry (i.e. the output of applyPluginManifestOrder()), but falls back gracefully if not.
+function findPluginByKey(list, key) {
+  const byName = list.find(p => p.name === key);
+  if (byName) return byName;
+  return list.find(p => p.slug && p.slug === key) || null;
+}
+// WSX2 (SPEC-workspace-settings.md §8.4): apply the workspace's manifest.plugins.{order,hidden}
+// on top of the discovered plugin list. Named-but-unordered plugins sort after the ordered ones,
+// by name. Hidden plugins are still RETURNED (flagged `hidden:true`) — the settings UI needs the
+// full list to let the operator un-hide something; only the sidebar (shell/sidebar.js) skips them.
+// This is intentionally the single place that does this — /api/status is the only consumer today.
+function applyPluginManifestOrder(list, pluginsCfg) {
+  const order = (pluginsCfg && Array.isArray(pluginsCfg.order)) ? pluginsCfg.order : [];
+  const hidden = new Set((pluginsCfg && Array.isArray(pluginsCfg.hidden)) ? pluginsCfg.hidden : []);
+  // WSXT1 (§14): per-plugin openMode map; unset = 'embed' (today's behavior, D16). WSXW keeps this
+  // as a read-only legacy field (D28) — it's now derived FROM openIn/target when those are set,
+  // and used to derive openIn/target when they are NOT set (migration path for old harness.json).
+  const openModeCfg = (pluginsCfg && pluginsCfg.openMode && typeof pluginsCfg.openMode === 'object') ? pluginsCfg.openMode : {};
+  // WSXU (§21): per-plugin-name slug map; unset/empty = no alias (name-only, today's behavior).
+  const slugCfg = (pluginsCfg && pluginsCfg.slug && typeof pluginsCfg.slug === 'object') ? pluginsCfg.slug : {};
+  // WSXW (§28): the two-dimension model. openIn/target only carry a value once the settings UI has
+  // written the new fields for that plugin; until then they're absent and D28's migration kicks in.
+  const openInCfg = (pluginsCfg && pluginsCfg.openIn && typeof pluginsCfg.openIn === 'object') ? pluginsCfg.openIn : {};
+  const targetCfg = (pluginsCfg && pluginsCfg.target && typeof pluginsCfg.target === 'object') ? pluginsCfg.target : {};
+  const externalUrlCfg = (pluginsCfg && pluginsCfg.externalUrl && typeof pluginsCfg.externalUrl === 'object') ? pluginsCfg.externalUrl : {};
+  const orderIndex = new Map(order.map((name, i) => [name, i]));
+  const sorted = list.slice().sort((a, b) => {
+    const ai = orderIndex.has(a.name) ? orderIndex.get(a.name) : Infinity;
+    const bi = orderIndex.has(b.name) ? orderIndex.get(b.name) : Infinity;
+    if (ai !== bi) return ai - bi;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+  return sorted.map(p => {
+    const slug = (typeof slugCfg[p.name] === 'string' && slugCfg[p.name]) ? slugCfg[p.name] : null;
+    const key = slug || p.name;
+    const hasNewFields = PLUGIN_OPEN_INS.has(openInCfg[p.name]) || PLUGIN_TARGETS.has(targetCfg[p.name]);
+    let openIn, target;
+    if (hasNewFields) {
+      openIn = PLUGIN_OPEN_INS.has(openInCfg[p.name]) ? openInCfg[p.name] : 'embed';
+      target = PLUGIN_TARGETS.has(targetCfg[p.name]) ? targetCfg[p.name] : 'internal';
+    } else {
+      // WSXW (§28 D28): migrate the legacy tri-state — embed->(embed,internal),
+      // tab->(tab,internal), standalone->(tab,internal). Unset legacy value = embed (D16).
+      const legacy = PLUGIN_OPEN_MODES.has(openModeCfg[p.name]) ? openModeCfg[p.name] : 'embed';
+      openIn = legacy === 'embed' ? 'embed' : 'tab';
+      target = 'internal';
+    }
+    const externalUrl = (target === 'external' && typeof externalUrlCfg[p.name] === 'string' && externalUrlCfg[p.name]) ? externalUrlCfg[p.name] : null;
+    // WSXW (§28): keep emitting openMode, reverse-derived from the new model, so front-ends not
+    // yet redeployed after this change don't break. embed+internal->embed, tab+internal->standalone,
+    // anything external->tab (closest legacy analog: opens outside the embedded panel).
+    const openMode = target === 'external' ? 'tab' : (openIn === 'embed' ? 'embed' : 'standalone');
+    return Object.assign({}, p, {
+      hidden: hidden.has(p.name),
+      openMode,
+      openIn,
+      target,
+      externalUrl,
+      slug,
+      // WSXU (§21/D20): every plugin lists all its routes, even embed-only ones — the settings UI
+      // needs to show "what URL would this be" regardless of openMode. api always uses `name`
+      // (D21: plugin code hardcodes /api/x/<name>/, slug must never touch it).
+      routes: {
+        embed: '/app/x/' + key,
+        standalone: '/x/' + key,
+        api: '/api/x/' + p.name + '/',
+        // WSXW (§28): front-end route for "embed + external URL" (an in-page iframe of externalUrl).
+        embedExternal: '/app/xurl/' + key
+      }
     });
   });
 }
@@ -6844,7 +9927,7 @@ function extractAgyError(logFile) {
   return null;
 }
 
-function saveChatSession(sessionId, messages, trace, dir, filePath, origin, schedInfo, pending, scope) {
+function saveChatSession(sessionId, messages, trace, dir, filePath, origin, schedInfo, pending, scope, chatContext) {
   // dir lets a background JOB save to ITS OWN workspace's history (captured at job start),
   // not the live (mutable) CHAT_HISTORY_DIR — so a job that finishes after the user switched
   // workspaces still writes to the right project.
@@ -6856,18 +9939,25 @@ function saveChatSession(sessionId, messages, trace, dir, filePath, origin, sche
   const sessionPath = path.join(targetDir, `chat_${sessionId}.json`);
   // Preserve a user-set custom title + the F2 filePath link across saves.
   let title, existingFilePath, existingOrigin, existingSchedule, existingMeetingId, existingPmIds;
+  let existingContextKind, existingContextKey, existingContextLabel;
   try {
     if (fs.existsSync(sessionPath)) {
       const ex = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
       title = ex.title; existingFilePath = ex.filePath;
       existingOrigin = ex.origin; existingSchedule = ex.schedule;
       existingMeetingId = ex.meetingId; existingPmIds = ex.pmProjectIds;
+      existingContextKind = ex.contextKind; existingContextKey = ex.contextKey; existingContextLabel = ex.contextLabel;
     }
   } catch (e) {}
   // 對話脈絡（文件 / 會議 / 專案）：跟 filePath 一樣要跨存檔保留，因為歷史列表靠它判斷
   // 「這是不是從『AI 對話』直接開的對話」——有脈絡的一律不列出（見 getChatHistories）。
   const meetingId = (scope && scope.meetingId) || existingMeetingId || null;
   const pmProjectIds = (scope && scope.pmProjectIds) || existingPmIds || null;
+  // CTX6 (SPEC-view-chat-context.md §7): 通用脈絡欄位（schedule/uidesign/whiteboard/notes/...），
+  // 與 filePath/meetingId/pmProjectIds 並存、不取代。只在有新值時覆蓋，否則保留舊值（跨存檔延續）。
+  const contextKind = (chatContext && chatContext.kind) || existingContextKind || null;
+  const contextKey = (chatContext && chatContext.key) || existingContextKey || null;
+  const contextLabel = (chatContext && chatContext.label) || existingContextLabel || null;
   // H1: origin — explicit param > preserved from file > backward-compat inference from sessionId prefix.
   const effectiveOrigin = origin || existingOrigin || (sessionId.startsWith('sched_') ? 'schedule' : 'human');
   const data = {
@@ -6880,6 +9970,9 @@ function saveChatSession(sessionId, messages, trace, dir, filePath, origin, sche
     filePath: filePath || existingFilePath || null,
     ...(meetingId ? { meetingId } : {}),
     ...(pmProjectIds ? { pmProjectIds } : {}),
+    // CTX6: generic view context (schedule/uidesign/whiteboard/notes/...), persisted so
+    // getChatHistories() can exclude it and GET /api/chat-sessions?ctxKey= can find it back.
+    ...(contextKind ? { contextKind, contextKey, contextLabel } : {}),
     updatedAt: new Date().toISOString(),
     messages,
     trace,
@@ -6891,17 +9984,96 @@ function saveChatSession(sessionId, messages, trace, dir, filePath, origin, sche
   fs.writeFileSync(sessionPath, JSON.stringify(data, null, 2), 'utf8');
 }
 
+// CBG-3 (SPEC-chat-background-task.md §3.2): per-session serialization lock, shared by EVERY
+// writer that touches a chat session file — the foreground turn's pending/checkpoint/finalize
+// saves AND a background task's result append. Without this, two writers racing a plain
+// read→modify→write would clobber each other (AC5). `_chatSessionLocks` holds a promise-chain
+// tail per sessionId; each caller's work is queued onto it, so writers for the SAME session always
+// run one-at-a-time and in call order, while different sessions never block each other.
+const _chatSessionLocks = new Map();
+function withChatSessionLock(sessionId, fn) {
+  const prev = _chatSessionLocks.get(sessionId) || Promise.resolve();
+  const next = prev.then(fn, fn).finally(() => {
+    if (_chatSessionLocks.get(sessionId) === next) _chatSessionLocks.delete(sessionId);
+  });
+  // Swallow so one caller's rejection doesn't poison the chain for the next queued writer; each
+  // caller still gets its own rejection via the returned `next` promise.
+  next.catch(() => {});
+  _chatSessionLocks.set(sessionId, next);
+  return next;
+}
+
+// Read just the `messages` array off a session file right now (not a cached copy) — used to
+// detect whether another writer appended something since the caller's own snapshot was taken.
+function readChatSessionMessages(sessionId, dir) {
+  try {
+    const p = path.join(dir || CHAT_HISTORY_DIR, `chat_${sessionId}.json`);
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(data.messages) ? data.messages : [];
+  } catch (e) { return []; }
+}
+
+// Merge-aware save — MUST be called from inside withChatSessionLock(). `knownMessages` is the
+// caller's own in-memory snapshot (a believed-prefix of what's on disk); `appendMsgs` are new
+// message(s) the caller wants to add after it. Reconciles against whatever is ACTUALLY on disk
+// right now: if another writer (e.g. a background task's append) slipped in extra messages after
+// `knownMessages` while this caller wasn't looking, those are preserved and the new message(s)
+// land after them — nobody's write is silently dropped (SPEC-chat-background-task.md AC5).
+function saveChatSessionMerged(sessionId, knownMessages, appendMsgs, trace, dir, filePath, origin, schedInfo, pending, scope, chatContext, insertFn) {
+  const diskMessages = readChatSessionMessages(sessionId, dir);
+  const extra = (diskMessages.length >= knownMessages.length) ? diskMessages.slice(knownMessages.length) : [];
+  // CMQ-5: `insertFn` (optional) places the new message(s) by question order instead of plain append.
+  const finalMessages = insertFn
+    ? insertFn(knownMessages.concat(extra), appendMsgs || [])
+    : knownMessages.concat(extra).concat(appendMsgs || []);
+  saveChatSession(sessionId, finalMessages, trace, dir, filePath, origin, schedInfo, pending, scope, chatContext);
+  return finalMessages;
+}
+
+// CBG-3: append ONE message (a background task's result) to an EXISTING chat session, under the
+// shared per-session lock. Never overwrites the whole file — reads whatever is on disk at the
+// moment the lock is actually acquired (so it naturally waits out any foreground turn currently
+// mid-write) and appends after it. Returns false (and logs, doesn't throw) if the session file
+// doesn't exist yet — a background task should only ever target a session that was already
+// persisted (the delegating turn's own send-time save, per SPEC-chat-durability §3.1).
+function appendMessageToChatSession(sessionId, dir, msg) {
+  return withChatSessionLock(sessionId, () => {
+    const targetDir = dir || CHAT_HISTORY_DIR;
+    const sessionPath = path.join(targetDir, `chat_${sessionId}.json`);
+    let existing = null;
+    try { existing = JSON.parse(fs.readFileSync(sessionPath, 'utf8')); } catch (e) {}
+    if (!existing) {
+      console.error(`[ChatBG] appendMessageToChatSession: session ${sessionId} not found under ${targetDir} — skipped`);
+      return false;
+    }
+    const messages = Array.isArray(existing.messages) ? existing.messages : [];
+    messages.push(msg);
+    saveChatSession(
+      sessionId, messages, existing.trace || [], targetDir,
+      existing.filePath, existing.origin, existing.schedule, null,
+      { meetingId: existing.meetingId, pmProjectIds: existing.pmProjectIds },
+      existing.contextKind ? { kind: existing.contextKind, key: existing.contextKey, label: existing.contextLabel } : null
+    );
+    return true;
+  });
+}
+
 // X1-X3 (SPEC-chat-durability): write the CURRENT half-finished turn to disk — used before
 // dispatching to a CLI (X1), on throttled mid-run checkpoints (X2), and by /api/chat/flush + the
 // Deploy-time flush (X3). `ctx.pendingSince` is set once per job so every checkpoint of the same
 // turn reports the same start time.
 function saveChatPending(ctx, trace) {
   if (!ctx.pendingSince) ctx.pendingSince = new Date().toISOString();
+  // CBG-3: go through the shared per-session lock + merge-aware save (not a bare saveChatSession)
+  // so a background task's append landing mid-turn isn't clobbered by the next checkpoint's
+  // from-memory rewrite of ctx.messages — see withChatSessionLock / saveChatSessionMerged above.
   try {
-    saveChatSession(ctx.activeSessionId, ctx.messages, trace || [], ctx.wctx && ctx.wctx.chatHistoryDir,
-      ctx.filePath, ctx.origin, ctx.schedInfo,
-      { since: ctx.pendingSince, model: ctx.modelArg, jobId: ctx.jobId },
-      { meetingId: ctx.meetingId, pmProjectIds: ctx.pmProjectIds });
+    withChatSessionLock(ctx.activeSessionId, () => {
+      saveChatSessionMerged(ctx.activeSessionId, ctx.messages, [], trace || [], ctx.wctx && ctx.wctx.chatHistoryDir,
+        ctx.filePath, ctx.origin, ctx.schedInfo,
+        { since: ctx.pendingSince, model: ctx.modelArg, jobId: ctx.jobId },
+        { meetingId: ctx.meetingId, pmProjectIds: ctx.pmProjectIds }, ctx.rawContext);
+    });
   } catch (e) { console.error('[Chat] pending save failed (continuing):', e.message); }
 }
 
@@ -6960,6 +10132,62 @@ function meetingGitCommit(meetingsDir, meetingId, action, actor) {
   } catch (e) { console.warn('[Meeting] meetingGitCommit failed:', e.message.slice(0, 200)); }
 }
 
+
+// ── MTG-ABRT-01：錄製行程「沒按停止就死掉」＝靜默中斷 ───────────────────────────────
+// 踩過的雷：venv 缺 CUDA 執行庫會把整個 meeting_record.py 行程硬殺（不是丟例外），錄音只留
+// 十幾秒、逐字稿全空，但 meta.status 仍停在 'recording'，畫面永遠顯示「🔴 錄製中」——指揮官
+// 只會覺得「怎麼沒在錄」，要事後翻檔案才發現。過去只有 /api/meeting/stop 才會補標 aborted，
+// 不按停止就永遠沒人知道。下面兩支讓行程退出的當下就把中斷寫進 meta 並對外通知。
+
+// 從 stderr 尾巴萃取一句「人看得懂」的中斷原因（給前端警告列直接顯示）。
+function meetingAbortReason(code, errTail) {
+  const lines = String(errTail || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  // 只抓「看起來像錯誤」的那一行。錄製程式平常就把進度訊息寫 stderr（例：「音源：mic…」），
+  // 直接拿最後一行會把這種正常訊息當成「中斷原因」講給指揮官聽，反而誤導。
+  const BAD = /(Error|Exception|Traceback|Fatal|failed|Failed|not found|No such|錯誤|失敗|找不到|無法)/;
+  let detail = '';
+  for (let i = lines.length - 1; i >= 0 && i >= lines.length - 25; i--) {
+    if (BAD.test(lines[i])) { detail = lines[i].slice(0, 300); break; }
+  }
+  // 4294967295 (=0xFFFFFFFF) 是 Windows 行程被外力終止的典型碼，別把它當成程式自己的結束碼顯示。
+  const killed = (code === null || code === undefined || code === 4294967295 || code < 0);
+  const codeTxt = killed ? '行程被強制結束' : ('結束碼 ' + code);
+  if (detail) return detail + '（' + codeTxt + '）';
+  return '錄製程式沒有正常結束（' + codeTxt + '），音檔與逐字稿可能不完整。';
+}
+
+// 推 Telegram：人不在畫面前也收得到（畫面警告列見 index.html mtgUpdateAlert）。
+function notifyMeetingAborted(meta, wctx) {
+  try {
+    const wsLabel = path.basename((wctx && wctx.root) || WORKSPACE_ROOT) || '';
+    schedulerManager.sinkManager.deliverOne('telegram', {
+      kind: 'meeting_aborted',
+      workspaceLabel: wsLabel,
+      title: meta.title || meta.meetingId,
+      reason: meta.abortReason || '',
+    }).catch(e => console.error('[Meeting] telegram push failed:', e.message));
+  } catch (e) { console.error('[Meeting] notifyMeetingAborted failed:', e.message); }
+}
+
+// 行程退出時判定是否為靜默中斷；是 → 標 meta、留痕、通知。回傳是否標記了中斷。
+function markMeetingAbortedIfCrashed(meetingId, meetingDir, code, errTail, wctx, reasonOverride) {
+  try {
+    if (fs.existsSync(path.join(meetingDir, 'STOP'))) return false;   // 指揮官按了停止＝正常收尾
+    const metaPath = path.join(meetingDir, 'meta.json');
+    let m = null;
+    try { m = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch (e) { return false; }
+    if (!m || m.status !== 'recording') return false;                 // 已寫 done/error＝正常結束
+    m.status = 'aborted';
+    m.finishedAt = new Date().toISOString();
+    m.abortReason = reasonOverride || meetingAbortReason(code, errTail);
+    fs.writeFileSync(metaPath, JSON.stringify(m, null, 2), 'utf8');
+    console.error('[Meeting] ' + meetingId + ' 錄製中斷：' + m.abortReason);
+    meetingGitCommit(path.dirname(meetingDir), meetingId, 'aborted (process died)', 'Hana');
+    notifyMeetingAborted(m, wctx);
+    return true;
+  } catch (e) { console.error('[Meeting] markMeetingAbortedIfCrashed failed:', e.message); return false; }
+}
+
 // ── MTG-SUM-01: shared primitive「跑 N 模型」(SPEC-meeting-summary §3 / SPEC-multi-model-panel) ──
 // Run N models SEQUENTIALLY over ONE prompt and return N results. Serial (not concurrent) to avoid
 // CLI auth contention (D4). Each model gets its own timeout; a failure/empty result is a forfeit
@@ -6999,13 +10227,21 @@ function _spawnCliPrintOnce({ provider, modelArg, prompt, wsRoot, timeoutMs } = 
       const { cmd, prefix } = claudeLauncher();
       const env = Object.assign({}, process.env, { GEMINI_CLI_TRUST_WORKSPACE: 'true' });
       if (wsRoot) env.HARNESS_PROJECT_ROOT = wsRoot;
-      const args = [...prefix, '--print', '--dangerously-skip-permissions', '--model', modelArg || 'sonnet'];
+      // --output-format json (§UA-1): same shared parser as the other 2 Claude CLI call sites —
+      // on a malformed/missing body it falls back to plain text, never an empty resolve().
+      const args = [...prefix, '--print', '--output-format', 'json', '--dangerously-skip-permissions', '--model', modelArg || 'sonnet'];
       const child = spawn(cmd, args, { cwd, shell: true, stdio: ['pipe', 'pipe', 'pipe'], env });
       let out = '', err = '', done = false;
+      const oneShotStartT = Date.now();
       const killer = setTimeout(() => { if (!done) { try { child.kill('SIGINT'); } catch (e) {} } }, to);
       child.stdout.on('data', d => out += d.toString());
       child.stderr.on('data', d => err += d.toString());
-      child.on('close', () => { if (done) return; done = true; clearTimeout(killer); resolve(cleanCliOutput(out || err)); });
+      child.on('close', () => {
+        if (done) return; done = true; clearTimeout(killer);
+        const parsedOneShot = usageTracker.parseClaudeCliOutput(out || err, cleanCliOutput);
+        recordUsageForChat(wsRoot, { trigger: 'chat', background: true, sessionId: null, scheduleId: null }, null, 'claude', modelArg || 'sonnet', parsedOneShot.usage, parsedOneShot.costUsd, parsedOneShot.source, Date.now() - oneShotStartT);
+        resolve(parsedOneShot.text);
+      });
       child.on('error', (e) => { if (done) return; done = true; clearTimeout(killer); reject(e); });
       try { child.stdin.write(prompt); child.stdin.end(); } catch (e) {}
       return;
@@ -7016,6 +10252,7 @@ function _spawnCliPrintOnce({ provider, modelArg, prompt, wsRoot, timeoutMs } = 
       const args = ['exec', '-m', model, '--dangerously-bypass-approvals-and-sandbox', '-c', 'model_reasoning_effort=low', '-c', 'mcp_servers={}', '--skip-git-repo-check', '--output-last-message', outFile, '-'];
       const child = spawn('codex', args, { cwd, shell: true, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
       let out = '', done = false;
+      const codexOneShotStartT = Date.now();
       const killer = setTimeout(() => { if (!done) { try { child.kill('SIGINT'); } catch (e) {} } }, to);
       child.stdout.on('data', d => out += d.toString());
       child.on('close', () => {
@@ -7024,6 +10261,8 @@ function _spawnCliPrintOnce({ provider, modelArg, prompt, wsRoot, timeoutMs } = 
         try { if (fs.existsSync(outFile)) reply = fs.readFileSync(outFile, 'utf8').trim(); } catch (e) {}
         try { fs.unlinkSync(outFile); } catch (e) {}
         if (!reply) reply = extractCodexReply(out) || cleanCliOutput(out);
+        const codexOneShotUsage = usageTracker.codexApproxUsage();
+        recordUsageForChat(wsRoot, { trigger: 'chat', background: true, sessionId: null, scheduleId: null }, null, 'codex', model, codexOneShotUsage.tokens, null, codexOneShotUsage.source, Date.now() - codexOneShotStartT);
         resolve(reply);
       });
       child.on('error', (e) => { if (done) return; done = true; clearTimeout(killer); try { fs.unlinkSync(outFile); } catch (_) {} reject(e); });
@@ -7071,9 +10310,11 @@ function _spawnCliPrintOnce({ provider, modelArg, prompt, wsRoot, timeoutMs } = 
       try { p = pty.spawn(agyPath, args, { name: 'xterm-256color', cols: 200, rows: 50, cwd, env: Object.assign({}, process.env, { GEMINI_CLI_TRUST_WORKSPACE: 'true', TERM: 'xterm-256color' }) }); }
       catch (e) { cleanup(); return reject(e); }
       let out = '', done = false;
-      const killer = setTimeout(() => { if (done) return; done = true; try { p.kill(); } catch (e) {} cleanup(); resolve(cleanCliOutput(out)); }, to);
+      const geminiOneShotStartT = Date.now();
+      const recordGeminiOneShot = () => recordUsageForChat(wsRoot, { trigger: 'chat', background: true, sessionId: null, scheduleId: null }, null, 'gemini', agyModelLabel, null, null, 'unavailable', Date.now() - geminiOneShotStartT);
+      const killer = setTimeout(() => { if (done) return; done = true; try { p.kill(); } catch (e) {} cleanup(); recordGeminiOneShot(); resolve(cleanCliOutput(out)); }, to);
       p.onData(d => { out += d; });
-      p.onExit(() => { if (done) return; done = true; clearTimeout(killer); cleanup(); const reply = cleanCliOutput(out); const parts = splitGeminiReply(reply); resolve((parts && parts.answer) || reply); });
+      p.onExit(() => { if (done) return; done = true; clearTimeout(killer); cleanup(); recordGeminiOneShot(); const reply = cleanCliOutput(out); const parts = splitGeminiReply(reply); resolve((parts && parts.answer) || reply); });
       p.on('error', (e) => { if (done) return; done = true; clearTimeout(killer); cleanup(); reject(e); });
       return;
     }
@@ -7109,7 +10350,8 @@ function _meetingSummaryPrompt(title, transcript, parts, existingSummaryMd) {
     '## ACTIONS_JSON\n（純 JSON 陣列，每筆格式 {"id":"1","item":"...","owner":"","due":"","done":false,"source":"extracted"}，'
     + '若能從逐字稿找到 owner/due 就填，找不到留空字串。輸出必須是合法 JSON 陣列，不要加 markdown code block。）'
   );
-  let p = '以下是一場會議的逐字稿，請用繁體中文輸出下列部分，嚴格遵守格式：\n\n' + sections.join('\n\n') + '\n\n會議標題：' + title + '\n';
+  let p = '以下是一場會議的逐字稿，來源逐字稿可能簡繁混排（例如標題簡體、內文繁體），請一併理解全部內容，'
+    + '不要因為字形不同而略過任何段落；請用繁體中文輸出下列部分，嚴格遵守格式：\n\n' + sections.join('\n\n') + '\n\n會議標題：' + title + '\n';
   if (existingSummaryMd && existingSummaryMd.trim()) {
     p += '\n（此模型已有的整體摘要，僅供你保持語氣與內容一致，不必重複輸出）：\n' + existingSummaryMd.trim() + '\n';
   }
@@ -7705,7 +10947,9 @@ function getChatHistories(chatHistoryDir = CHAT_HISTORY_DIR) {
         if (effectiveOrigin !== 'human') continue;
         // 只列「在 AI 對話面板裡直接開的對話」。針對特定脈絡（文件 / 會議 / 專案）開的浮動對話
         // 有自己的入口（GET /api/chat-sessions?filePath= 等），列在這裡只會讓人誤刪。
-        if (data.filePath || data.meetingId || (Array.isArray(data.pmProjectIds) && data.pmProjectIds.length)) continue;
+        // CTX6 (SPEC-view-chat-context.md §7): any session tagged with a generic view context
+        // (schedule/uidesign/whiteboard/notes/... via getChatContext()) is a 主題對話, not 自由對話.
+        if (data.filePath || data.meetingId || (Array.isArray(data.pmProjectIds) && data.pmProjectIds.length) || data.contextKind) continue;
         // Custom title wins; otherwise derive from the first user message.
         let title = data.title;
         if (!title) {
@@ -8143,6 +11387,25 @@ function _scheduleTriggerLabel(t) {
 }
 
 const CHAT_CONTEXT_PROVIDERS = {
+  // SPEC-view-chat-context.md §3.1 — 頭像在 CodeGraph 探索器開的對話：只給識別碼（symbol/檔案/
+  // 行號），不在這裡重複組一份 callers/callees/impact——Hana 自己就有 codegraph_* 工具（explore/
+  // search/callers/callees/impact/node），比 server 端再跑一次 CLI query 更即時也更完整。
+  codegraph: function (payload, wctx) {
+    if (!payload || !payload.symbol) {
+      return '\n=== CodeGraph 探索器（使用者在這個面板，但還沒點開任何 symbol）===\n'
+        + '若使用者問起某段程式，直接用你自己的 codegraph_explore/codegraph_search 等工具查，不必等使用者在畫面上點選。\n';
+    }
+    let p = '\n=== 使用者目前在 CodeGraph 探索器點開的 symbol（你正在跟使用者一起看它）===\n';
+    p += '名稱：' + payload.symbol + (payload.kind ? '（' + payload.kind + '）' : '') + '\n';
+    if (payload.filePath) p += '檔案：' + payload.filePath + (payload.startLine ? ':' + payload.startLine : '') + '\n';
+    p += '=== 結束 ===\n';
+    p += '需要更多細節（誰呼叫它、它呼叫誰、改了會影響什麼、原始碼）時，直接用你自己的 codegraph_* 工具查（codegraph_explore 通常一次就夠），不必請使用者去畫面上點。\n';
+    return p;
+  },
+  // SPEC-view-chat-context.md §3.1 — 便條貼面板的頭像對話。便條內容早已由 injectNotesContext()
+  // 無條件注入每一次聊天（SN2-03），這裡保留一個空 provider 只是讓「notes」這個 kind 有明確定義、
+  // 避免日後誤以為漏掛——不要在這裡重複注入內容。
+  notes: function () { return ''; },
   file: function (payload, wctx) {
     const filePath = payload && payload.filePath;
     if (!filePath || !wctx || !wctx.root) return '';
@@ -8215,6 +11478,48 @@ const CHAT_CONTEXT_PROVIDERS = {
       return '\n=== 使用者目前在甘特圖中勾選的專案（你正在和使用者一起看這 ' + list.length + ' 個排程，可直接針對它們回答或修改任務）===\n'
         + lines.join('\n') + '\n=== 勾選專案結束 ===\n';
     } catch (e) { return ''; /* pm context unreadable → skip */ }
+  },
+  // SPEC-issue-report.md §5.3／IR2-5：問題回報頁。清單層每筆一行；單筆層帶完整問題單＋timeline.md 全文。
+  // 本階段只讀（寫入、改狀態是 IR3）。問題單是 D2 的刻意例外——所有工作區共用一份，不套工作區過濾。
+  issue: function (payload) {
+    try {
+      const clip = function (s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n) + '…（已截斷）' : s; };
+      const typeLabel = function (t) { return t === 'feature' ? '新需求' : '問題'; };
+      if (!payload || payload.scope !== 'detail') {
+        const all = issuesStore.listIssues(HARNESS_HOME);
+        const open = all.filter(function (i) { return issuesStore.OPEN_STATUSES.indexOf(i.status) !== -1; }).length;
+        const lines = all.slice(0, 100).map(function (i) {
+          return '#' + i.id + ' [' + typeLabel(i.type) + '][' + i.status + '] ' + clip(i.title, 60) + '（畫面：' + (i.view || i.route || '—') + '，工作區：' + (i.workspace || '—') + '）';
+        });
+        return '\n=== 問題回報清單（指揮官在「問題回報」頁，尚未點開任何一筆；共 ' + all.length + ' 筆，未結案 ' + open + ' 筆）===\n'
+          + (lines.length ? lines.join('\n') : '（還沒有任何回報）') + (all.length > 100 ? '\n（只列最新 100 筆）' : '') + '\n=== 清單結束 ===\n'
+          + '本階段你只能讀取問題單、陪指揮官討論，不要修改問題單內容或狀態（那是下一階段功能）。要看某一筆完整內容，請指揮官點開那一筆，或自行讀 ' + path.join(issuesStore.issuesDir(HARNESS_HOME), '<編號>', 'issue.json') + '。\n';
+      }
+      const it = issuesStore.readIssue(HARNESS_HOME, payload.issueId);
+      if (!it) return '';
+      const tl = issuesStore.readTimeline(HARNESS_HOME, it.id);
+      const dir = path.join(issuesStore.issuesDir(HARNESS_HOME), String(it.id));
+      let p = '\n=== 指揮官正在看的問題單 #' + it.id + '（你正在和指揮官一起討論這一筆）===\n';
+      p += '類型：' + typeLabel(it.type) + '｜狀態：' + it.status + '｜建立：' + it.createdAt + '\n';
+      p += '標題：' + it.title + '\n說明：' + it.description + '\n';
+      p += '回報時所在畫面：' + (it.view || '—') + '（路由 ' + (it.route || '—') + '）｜工作區：' + (it.workspace || '—') + '｜平台版本：' + (it.version || '—') + '\n';
+      if (it.env) p += '環境：' + clip(JSON.stringify(it.env), 600) + '\n';
+      if (it.pick) p += '指認的位置：' + clip(JSON.stringify(it.pick), 600) + '\n';
+      if (it.chatContext) p += '回報當下頭像脈絡：' + clip(JSON.stringify(it.chatContext), 600) + '\n';
+      if (it.replay) p += '紀錄：' + it.replay.events + ' 筆事件' + (it.replay.fromPageLoad ? '（紀錄自頁面載入起，可能不足 ' + (it.replay.bufferMinutes || '') + ' 分鐘）' : '') + '\n';
+      const errs = Array.isArray(it.errors) ? it.errors : [];
+      if (errs.length) p += '\n【前端錯誤 ' + errs.length + ' 筆（最近 10 筆）】\n' + errs.slice(-10).map(function (e) { return '- ' + clip(typeof e === 'string' ? e : JSON.stringify(e), 700); }).join('\n') + '\n';
+      const reqs = Array.isArray(it.requests) ? it.requests : [];
+      const bad = reqs.filter(function (r) { return r && (r.ok === false || r.error || r.status >= 400 || r.status === 0); });
+      if (bad.length) p += '\n【失敗的 API 請求 ' + bad.length + ' 筆（共記 ' + reqs.length + ' 筆）】\n' + bad.slice(-10).map(function (r) { return '- ' + clip(JSON.stringify(r), 700); }).join('\n') + '\n';
+      if (Array.isArray(it.history) && it.history.length) p += '\n【處理紀錄】\n' + it.history.map(function (h) { return '- ' + h.at + ' ' + (h.from || '∅') + ' → ' + h.to + (h.note ? '（' + h.note + '）' : ''); }).join('\n') + '\n';
+      if (it.resolution) p += '\n【處理結果】' + clip(JSON.stringify(it.resolution), 1200) + '\n';
+      p += '\n【文字時間軸（timeline.md）】\n' + (tl ? clip(tl, 12000) : '（無）') + '\n';
+      p += '=== 問題單結束 ===\n';
+      p += '請先用這份資料直接說出：指揮官當時在哪個畫面、做了什麼、哪裡出錯，不必再問。需要更細（完整錯誤堆疊、原始事件）時，讀 ' + dir + '（issue.json、replay.json.gz、files/）。程式根因請用 codegraph 定位。\n'
+        + '本階段你只能讀取問題單，不要修改其內容或狀態（下一階段才開放）。\n';
+      return p;
+    } catch (e) { return ''; /* issue context unreadable → skip */ }
   },
   // SPEC-view-chat-context.md §3.5/CTX2: D2/D3 — 跟著畫面走。清單頁給本工作區每筆一行摘要；
   // 已進入某一筆的 detail 頁給該筆完整內容（task 指示全文 + 最近 5 筆執行記錄）。
@@ -8291,6 +11596,105 @@ const CHAT_CONTEXT_PROVIDERS = {
       });
       return '\n=== 排程清單（本工作區，共 ' + all.length + ' 筆）===\n' + lines.join('\n') + '\n=== 排程清單結束 ===\n' + authNote;
     } catch (e) { return ''; /* schedule context unreadable → skip */ }
+  },
+  // SPEC-view-chat-context.md §3.8 (CTX7) + SPEC-ui-designer.md §11 — 頭像在「UI 設計系統」開的對話。
+  // 這個 view 先前只回報 label、沒有 provider，Hana 拿不到任何資料，卻又答得很順 → 直接
+  // 憑印象把元件的預設文字拼成不存在的「畫面名稱」（2026-08-21 客戶專案實例）。所以這個 provider
+  // 的第一要務是「先給清單」：本工作區真正存在的元件／畫面／範本／演示各一行，附 id，讓
+  // Hana 不必猜也無從猜起；再依 payload 給使用者當下那一筆的細節。資料一律用 uidesignStore
+  // 從 <workspace>/.harness/uidesign/ 現讀，走 wctx.root，與所有 /api/ui/* 路由同一套工作區隔離。
+  uidesign: function (payload, wctx) {
+    try {
+      const root = (wctx && wctx.root) || WORKSPACE_ROOT;
+      const comps = uidesignStore.readIndex(root) || [];
+      const screens = uidesignStore.readScreenIndex(root) || [];
+      const templates = uidesignStore.readTemplateIndex(root) || [];
+      const flows = uidesignStore.readFlowIndex(root) || [];
+      const LIST_LIMIT = 80; // 夠涵蓋一個正常規模的設計系統；超過只給前 N 筆＋總數，避免灌爆 prompt
+      const listOf = function (arr, fmt) {
+        if (!arr.length) return '（無）';
+        const shown = arr.slice(0, LIST_LIMIT).map(fmt).join('\n');
+        return shown + (arr.length > LIST_LIMIT ? '\n（僅列出前 ' + LIST_LIMIT + ' 筆，總共 ' + arr.length + ' 筆）' : '');
+      };
+
+      let p = '\n=== UI 設計系統（本工作區實際存在的資料，以下是唯一真相，不得臆造不存在的名稱）===\n';
+      p += '\n【元件庫｜共 ' + comps.length + ' 個】\n' + listOf(comps, function (c) { return '- ' + c.name + '（' + c.category + '，id: ' + c.id + '）' + (c.description ? '：' + c.description : ''); }) + '\n';
+      p += '\n【畫面｜共 ' + screens.length + ' 張】\n' + listOf(screens, function (x) { return '- ' + x.name + '（id: ' + x.id + '）'; }) + '\n';
+      p += '\n【範本｜共 ' + templates.length + ' 個】\n' + listOf(templates, function (t) { return '- ' + t.name + '（id: ' + t.id + '）'; }) + '\n';
+      p += '\n【UI操作演示｜共 ' + flows.length + ' 條】\n' + listOf(flows, function (f) { return '- ' + f.name + '（' + (f.stepCount || 0) + ' 步，id: ' + f.id + '）'; }) + '\n';
+
+      // 使用者當下正在看的那一筆 → 給細節（畫面給元件逐項、演示給步驟逐項、元件給參數/變體）。
+      const screenDetail = function (id, title) {
+        const sc = uidesignStore.readScreen(root, id);
+        if (!sc) return '';
+        const els = (sc.elements || []).slice().sort(function (a, b) { return (a.y || 0) - (b.y || 0); });
+        const EL_LIMIT = 80;
+        const compName = {};
+        comps.forEach(function (c) { compName[c.id] = c.name; });
+        const lines = els.slice(0, EL_LIMIT).map(function (el) {
+          const ov = el.overrides || {};
+          const texts = Object.keys(ov).map(function (k) { return k + '=' + String(ov[k]).replace(/\s+/g, ' ').slice(0, 60); }).join('，');
+          return '- ' + (compName[el.componentId] || el.componentId) + (el.role ? '（' + el.role + '）' : '')
+            + '｜位置 ' + Math.round(el.x) + ',' + Math.round(el.y) + ' 尺寸 ' + Math.round(el.width) + '×' + Math.round(el.height)
+            + (texts ? '｜內容：' + texts : '') + '｜elId: ' + el.id;
+        });
+        let t = '\n【' + title + '：「' + sc.name + '」（id: ' + id + '）】\n';
+        t += '畫框：' + ((sc.frame && sc.frame.width) || '?') + '×' + ((sc.frame && sc.frame.height) || '?') + '（' + (sc.device || '') + '）｜元件 ' + els.length + ' 個\n';
+        if (sc.notes) t += '設計備註：' + String(sc.notes).slice(0, 1500) + '\n';
+        t += lines.join('\n') + (els.length > EL_LIMIT ? '\n（僅列出前 ' + EL_LIMIT + ' 個元件）' : '') + '\n';
+        return t;
+      };
+
+      if (payload && payload.flowId) {
+        const flow = uidesignStore.readFlow(root, payload.flowId);
+        if (flow) {
+          p += '\n=== 使用者當下正在編輯的 UI操作演示（你正在和他一起看這一條）===\n';
+          p += '名稱：' + flow.name + '（id: ' + flow.id + '）\n';
+          if (flow.description) p += '情境說明：' + String(flow.description).slice(0, 1500) + '\n';
+          const sName = {};
+          screens.forEach(function (x) { sName[x.id] = x.name; });
+          p += '步驟（共 ' + (flow.steps || []).length + ' 步）：\n';
+          p += (flow.steps || []).map(function (st, i) {
+            const nm = sName[st.screenId];
+            return '  ' + (i + 1) + '. ' + (st.caption || '（未填說明）')
+              + '｜畫面：' + (nm ? '「' + nm + '」' : '⚠ 這一步引用的畫面已不存在') + '（screenId: ' + (st.screenId || '無') + '）'
+              + (st.hotspot ? '｜已標熱區' : '｜未標熱區')
+              + (st.advance === 'hotspot' ? '（必須點擊熱區才前進）' : '')
+              + (st.note ? '｜備註：' + String(st.note).replace(/\s+/g, ' ').slice(0, 200) : '');
+          }).join('\n') + '\n';
+          // 演示是「把既有畫面串起來」，所以把每一步的畫面內容也一併攤開，Hana 才講得出畫面上有什麼。
+          const seen = {};
+          (flow.steps || []).forEach(function (st) {
+            if (!st.screenId || seen[st.screenId]) return;
+            seen[st.screenId] = true;
+            p += screenDetail(st.screenId, '這條演示用到的畫面');
+          });
+          p += '=== 演示結束 ===\n';
+        }
+      } else if (payload && payload.screenId) {
+        p += '\n=== 使用者當下正在編輯的畫面（你正在和他一起看這一張）===\n'
+          + screenDetail(payload.screenId, '畫面') + '=== 畫面結束 ===\n';
+      } else if (payload && payload.componentId) {
+        const c = uidesignStore.readComponent(root, payload.componentId);
+        if (c) {
+          p += '\n=== 使用者當下正在編輯的元件 ===\n';
+          p += '名稱：' + c.name + '（' + c.category + '，id: ' + payload.componentId + '）\n';
+          if (c.description) p += '說明：' + c.description + '\n';
+          p += '參數：' + ((c.params || []).map(function (x) { return x.key + '（' + (x.label || '') + '，預設：' + String(x.default === undefined ? '' : x.default).slice(0, 40) + '）'; }).join('、') || '無') + '\n';
+          p += '變體：' + ((c.variants || []).map(function (v) { return v.name; }).join('、') || '無') + '\n';
+          p += '=== 元件結束 ===\n';
+        }
+      }
+
+      p += '=== UI 設計系統結束 ===\n';
+      p += '【鐵則】回答與這個功能有關的問題時，只能引用上面清單裡真實存在的名稱與 id；清單裡沒有的畫面／元件／演示就是不存在，'
+        + '要嘛據實說沒有、要嘛提議建立，絕不可自行拼湊出一個看似合理的名稱。若上面的資訊不夠，直接用 GET /api/ui/screens、'
+        + '/api/ui/components、/api/ui/templates、/api/ui/flows（帶 X-Workspace）查，不要用猜的。\n';
+      p += '你可以直接改：POST/PUT/DELETE /api/ui/components[/:id]（元件）、/api/ui/screens[/:id]（畫面）、/api/ui/flows[/:id]（UI操作演示）、'
+        + '/api/ui/templates[/:id]（範本）。畫面與演示是指揮官的資產，**刪除或整批覆寫前先問**；新增、改文案、加步驟不必先問。'
+        + '設計取捨請遵循本工作區的設計指南（GET /api/ui/guideline）與技能 /ui-design、/ui-demo。\n';
+      return p;
+    } catch (e) { return ''; /* UI 設計資料讀不到 → 略過注入，仍照常回答 */ }
   },
   // SPEC-view-chat-context.md §3.1 (CTX4) + SPEC-whiteboard.md §8 — 頭像在白板頁開的對話。
   // 「跟著畫面走」：payload.boardId 指的就是使用者眼前那張白板；沒有 boardId（vendor 還在載）就
@@ -8413,7 +11817,7 @@ const CHAT_CONTEXT_PROVIDERS = {
   },
 };
 
-function buildChatPrompt(messages, contextFilePath, wctx, context) {
+function buildChatPrompt(messages, contextFilePath, wctx, context, provider, chatSessionId) {
   const lastMsg = messages[messages.length - 1];
   const lastText = chatMsgText(lastMsg);
   const guestFramework = buildGuestFrameworkText(lastMsg && lastMsg.turns);
@@ -8421,6 +11825,15 @@ function buildChatPrompt(messages, contextFilePath, wctx, context) {
 
   let p = '（你正在一個聊天視窗中回答使用者。請直接、簡潔地回答下方「使用者問題」。若使用者要求你修改檔案或執行任務，你已獲完整授權，可直接動手、無需再請求許可。除非使用者明確要求，否則不要執行開機檢查流程、不要輸出系統/狀態報告。'
     + '【重要】聊天回覆只給「結果與重點」，不要把整份 HTML、整段程式碼、或大量檔案內容貼進對話。需要產生 HTML／程式碼／長文件時，請「寫成檔案」（放在工作區，例如簡報放 presentations/，其他放暫存或對應目錄），然後只在回覆中告訴我檔案路徑與一兩句摘要讓我檢視；嚴禁把產出的整頁 HTML 或 `<style>`/`<script>` 貼回聊天。）\n';
+  // SPEC-output-style.md §6: Claude Code has a NATIVE output-style mechanism (a file under
+  // ~/.claude/output-styles/ + settings.json's outputStyle field) — for provider==='claude' this
+  // prompt is deliberately left untouched, the style takes effect via the CLI's own file reads.
+  // The other CLIs (Codex/Gemini/Grok) have no such mechanism, so they get the style body spliced
+  // into the prompt as a fallback.
+  if (provider && provider !== 'claude') {
+    const styleBody = activeOutputStyleBodyForFallback(wctx);
+    if (styleBody) p += `\n=== 請以下列風格回覆 ===\n${styleBody}\n=== 風格指示結束 ===\n`;
+  }
   // D: inject the frozen long-term memory block (USER/AGENT global + MEMORY/PERSONA project).
   p += injectMemoryBlock(wctx.knowledgeDir);
   // …and the skill/command index, so the agent is aware of available skills (e.g. 簡報通則).
@@ -8497,6 +11910,17 @@ function buildChatPrompt(messages, contextFilePath, wctx, context) {
         + '\n--- 附件清單結束 ---\n';
     }
   }
+  // CBGV-2 (SPEC-chat-background-task.md §3.6.2，取代舊版 CBGO-1 措辭)：對話裡轉背景的三條路，
+  // 講清楚各自怎麼做、結果回不回得來——sessionId 是本輪確定值，直接照抄，不要自己猜。
+  if (chatSessionId) {
+    p += '\n【對話裡轉背景的三條路】'
+      + '①要在這次對話裡把一件長工做掉：直接 POST /api/chat/delegate（帶 sessionId:"' + chatSessionId + '"），'
+      + '它天然不會出現在排程清單、完成後結果自動回寫這條對話。'
+      + '②若情況特殊改用 POST /api/schedules 建一次性任務（trigger:{"type":"once"}）再 POST /api/schedules/<id>/run 觸發：'
+      + 'request body 務必帶 origin:{"kind":"chat","sessionId":"' + chatSessionId + '"}（workspaceRoot = ' + (wctx && wctx.root) + '）'
+      + '且顯式帶 chatTask:true——這樣它才會從排程清單隱藏、結果回寫到這條對話；忘記帶，排程照樣建立/觸發成功，但會留在排程清單製造噪音，結果也回不到這裡。'
+      + '③指揮官明確要的「週期性定時排程」照常建、不要帶 chatTask，它本該留在排程清單讓他看得到。\n';
+  }
   if (contextFilePath) {
     p += `\n本次對話的完整歷史記錄在檔案：${contextFilePath}（Markdown）。`;
     p += '若使用者的問題提到先前的內容、或你需要更早的脈絡，請先用讀檔工具讀取該檔案再回答。下方僅附最近幾輪對話作為即時參考。\n';
@@ -8516,6 +11940,81 @@ function buildChatPrompt(messages, contextFilePath, wctx, context) {
 // running even if the browser disconnects; the HTTP request is just one observer that receives the
 // final result if still connected. Reattach-on-reopen UI builds on this.
 const jobs = new Map();   // jobId -> ctx/job
+
+// ── CMQ-P1 (SPEC-chat-concurrent-messages.md)：連續送訊息的佇列 ─────────────────────────────
+// 每條對話一個佇列；純邏輯在 chat-queue.js（可單獨自測），這裡只注入 server 才有的東西：
+// 怎麼啟動一個 job、怎麼中止、怎麼問輕量模型、怎麼廣播。
+const chatQueueLib = require('./chat-queue');
+function cmqStartJob(entry) {
+  const ctx = entry.ctx;
+  if (!ctx || ctx.status === 'done') return;
+  ctx.status = 'running'; ctx.startT = Date.now();
+  // 等過隊的（排隊／併入／被指示先停前一個）：前面的回覆已落檔，這時才組 prompt，才看得到前一個的成果。
+  if (entry.mode && entry.mode !== 'solo' && entry.mode !== 'parallel' && typeof ctx.cmqRebuildPrompt === 'function') {
+    try { ctx.fullPrompt = ctx.cmqRebuildPrompt(entry.text); } catch (e) { console.error('[CMQ] rebuild prompt failed (using original):', e.message); }
+  }
+  if (ctx.provider === 'gemini') chatViaGemini(ctx);
+  else if (ctx.provider === 'codex') chatViaCodex(ctx);
+  else if (ctx.provider === 'grok') chatViaGrok(ctx);
+  else chatViaClaude(ctx);
+}
+const chatQueue = chatQueueLib.createChatQueue({
+  start: cmqStartJob,
+  // 中止執行中的：被「併入」取代者靜默結束（respondChat 看 cmqSuperseded 不落檔、不當回覆）。
+  abort: (entry, reason) => {
+    const ctx = entry.ctx; if (!ctx) return;
+    if (reason === 'superseded') ctx.cmqSuperseded = true;
+    abortJob(ctx.jobId);
+  },
+  // 還沒開始就被取代／取消的排隊者：HTTP 連線要收尾，job 標記完成。
+  cancelQueued: (entry) => { if (entry.ctx) cmqEndWithoutReply(entry.ctx, entry.superseded ? 'superseded' : 'cancelled'); },
+  // 關係判斷：一次輕量模型呼叫（沿用 Telegram 那條已有的 claude 輕量呼叫，不另造）。失敗＝unknown＝排隊。
+  classify: async ({ prevTexts, newText, entry }) => {
+    const out = await _tgSpawnClaude(chatQueueLib.buildClassifyPrompt(prevTexts, newText), entry.ws, 25000, 'haiku');
+    return out;
+  },
+  mergeText: (last, cur) => last.text + '\n\n【補充（第 ' + cur.questionNo + ' 問）】' + cur.text,
+  onChange: (entry, reason) => {
+    try { broadcastChatTaskChange({ reason, sessionId: entry.sessionId, workspace: entry.ws }); } catch (e) {}
+  },
+  log: (m) => console.log('[CMQ] ' + m),
+});
+// 一個 job 結束（正常、失敗、被中止）都要通知佇列，才會接續下一個。
+function cmqRelease(ctx) {
+  if (ctx && ctx.cmq) { try { chatQueue.finish(ctx.cmq, ctx.aborted ? 'aborted' : 'done'); } catch (e) { console.error('[CMQ] release error:', e.message); } }
+}
+// 被取代或取消者：不落任何回覆，只把等待中的 HTTP 請求結案。
+function cmqEndWithoutReply(ctx, why) {
+  if (!ctx || ctx.status === 'done') return;
+  ctx.status = 'done'; ctx.result = ''; ctx.history = ctx.messages;
+  if (!ctx.detached && ctx.res && !ctx.res.headersSent && !ctx.res.writableEnded) {
+    try {
+      ctx.res.writeHead(200, { 'Content-Type': 'application/json' });
+      ctx.res.end(JSON.stringify({ sessionId: ctx.activeSessionId, reply: why === 'superseded' ? '（這一問已併入後面的補充一起處理，請看該則回覆）' : '（已取消排隊）', history: ctx.messages, jobId: ctx.jobId, superseded: why === 'superseded', cancelled: why !== 'superseded', questionNo: ctx.cmq && ctx.cmq.questionNo }));
+    } catch (e) {}
+  }
+  setTimeout(() => { try { jobs.delete(ctx.jobId); } catch (e) {} }, 5 * 60 * 1000);
+}
+// 把一個剛建好的 job 交給佇列（取代原本直接 chatViaXxx）。opts.mergeable=false → 斜線指令等不可被併入。
+function cmqStampQuestion(ctx) {
+  const lastMsg = ctx.messages[ctx.messages.length - 1];
+  // 對話內第幾個提問＝使用者訊息序數（確定性，重開對話仍一致；不另存會漂移的計數器）
+  ctx.cmqQuestionNo = ctx.messages.filter(m => m && m.role === 'user').length;
+  if (lastMsg && lastMsg.role === 'user') { try { lastMsg.questionNo = ctx.cmqQuestionNo; } catch (e) {} }
+}
+function cmqSubmit(ctx, opts) {
+  opts = opts || {};
+  const lastMsg = ctx.messages[ctx.messages.length - 1];
+  if (ctx.cmqQuestionNo == null) cmqStampQuestion(ctx);
+  const questionNo = ctx.cmqQuestionNo;
+  const text = lastMsg ? chatMsgText(lastMsg) : '';
+  const entry = { jobId: ctx.jobId, ws: ctx.wctx.root, sessionId: ctx.activeSessionId, questionNo, text, origText: text, mergeable: opts.mergeable !== false, ctx, readOnly: null };
+  ctx.cmq = entry;
+  ctx.cmqRebuildPrompt = opts.rebuildPrompt || null;
+  if (!opts.rebuildPrompt) entry.mergeable = false;
+  ctx.status = 'queued';
+  chatQueue.submit(entry);   // 不 await：HTTP 請求維持開著，job 完成時由 respondChat 回應
+}
 
 // Kill every LONG-LIVED child this server spawned — the persistent STT worker, meeting recorders,
 // loopback captures, and any live CLI/pty job procs. Called right before a restart exit. WHY: on Windows
@@ -8561,6 +12060,8 @@ function procAlive(p) {
 // 10-minute safety deadline (gating on listRunningJobs). Probing the process drops these zombies so a
 // restart fires promptly, while a genuinely-working job (live process) still correctly holds the line.
 function jobIsRunning(j) {
+  // CMQ: a queued turn is pending work that a restart would lose — count it as live (it has no proc yet).
+  if (j.status === 'queued') return true;
   if (j.status !== 'running') return false;
   if (Date.now() - (j.startT || 0) < 15000) return true;   // just spawned — proc may not be attached yet
   return procAlive(j.proc);
@@ -8569,11 +12070,22 @@ function jobIsRunning(j) {
 function listRunningJobs() {
   return [...jobs.values()].filter(jobIsRunning).map(j => ({
     jobId: j.jobId, sessionId: j.activeSessionId, provider: j.provider, model: j.modelArg,
-    workspace: j.wctx && j.wctx.root, startTime: j.startT, status: j.status
+    workspace: j.wctx && j.wctx.root, startTime: j.startT, status: j.status,
+    // CHAT-JOB-ISO: carry the job's origin tag ('schedule' | 'distill' | undefined=human chat) so
+    // callers can tell background work apart from conversations. Kept on the FULL list (not filtered
+    // here) because deferred restart / deploy gating must still count background jobs.
+    origin: j.origin || null
   }));
 }
 function abortJob(jobId) {
   const j = jobs.get(jobId);
+  // CMQ: abort of a still-queued turn = leave the queue (nothing is running to kill).
+  if (j && j.status === 'queued' && j.cmq) {
+    j.aborted = true; j.cmq.status = 'aborted'; j.cmq.finishedAt = Date.now();
+    cmqEndWithoutReply(j, 'cancelled');
+    try { broadcastChatTaskChange({ reason: 'chat-queue-finished', sessionId: j.activeSessionId, workspace: j.wctx && j.wctx.root }); } catch (e) {}
+    return true;
+  }
   if (!j || j.status !== 'running') return false;
   j.aborted = true;
   try { if (j.proc) j.proc.kill('SIGINT'); } catch (e) {}
@@ -8586,13 +12098,18 @@ function abortJob(jobId) {
 
 // D2/D3 shape validation: `postRun`, if present in a POST/PUT body, must be `{deploy: boolean}` —
 // unknown keys are stripped, non-boolean `deploy` is rejected. Mutates `patch.postRun` in place.
-function validatePostRunPatch(patch) {
+// SCHED-DEPLOY-NEXT (§4.8): the one extra key kept is `nextAfterDeploy` (an existing schedule id,
+// not self, only with deploy=true). On PUT, omitting it keeps the value already on disk.
+function validatePostRunPatch(patch, { selfId = null, existing = null } = {}) {
   if (!('postRun' in patch)) return { ok: true };
   const raw = patch.postRun;
   if (raw === null || typeof raw !== 'object' || typeof raw.deploy !== 'boolean') {
     return { ok: false, error: 'postRun.deploy 必須為 boolean' };
   }
+  const nx = deployNext.sanitizeNextAfterDeploy(raw, { selfId, existing, schedules: schedulerManager.loadSchedules() });
+  if (!nx.ok) return { ok: false, error: nx.error };
   patch.postRun = { deploy: raw.deploy }; // strip unknown keys
+  if (nx.value) patch.postRun.nextAfterDeploy = nx.value;
   return { ok: true };
 }
 
@@ -8681,31 +12198,51 @@ async function triggerScheduledDeploy(schedule, run) {
   // forever with no deploy ever having run. Must listen on the child directly.
   try {
     const { spawn } = require('child_process');
-    // stderr is piped (not ignored) so that a pwsh-level failure that happens BEFORE the
-    // script's own Tee-Object starts writing (bad encoding, exec-policy block, pwsh crashing
-    // outright) still leaves a trace — previously 'ignore' meant that text vanished with no
-    // record anywhere, even in deploy.log.
-    const child = spawn('pwsh', ['-NoProfile', '-Command', psCmd], { detached: true, stdio: ['ignore', 'ignore', 'pipe'], cwd: HARNESS_HOME });
-    const stderrChunks = [];
-    child.stderr.on('data', (d) => { stderrChunks.push(d); });
+    // WHY THE `cmd /c start` MIDDLEMAN (do not "simplify" this back to spawning pwsh directly):
+    //  - `spawn('pwsh', ..., { detached: true })` maps to Windows DETACHED_PROCESS (no console).
+    //    pwsh -Command under it exits within ~1s having run nothing, while reporting success.
+    //    That is why EVERY scheduled deploy since launch failed with an empty deploy.log.
+    //  - Dropping `detached` fixes the no-console problem but loses survival: the child then dies
+    //    together with this server process — and Deploy_Harness.ps1's whole job is to stop this
+    //    server, so the deploy would kill itself halfway. Verified both failures A/B locally.
+    //  - `cmd /c start` launches pwsh as an independent process WITH a console: it both runs the
+    //    script fully and outlives this process being force-killed. Verified locally.
+    // Cost of the middleman: cmd exits immediately, so we cannot pipe the grandchild's stderr and
+    // cannot learn its exit code here. Evidence lives in deploy.log (Tee-Object) + the watchdog
+    // below + reconcilePendingDeploy() at next boot.
+    const child = spawn('cmd', ['/c', 'start', '', '/min', 'pwsh', '-NoProfile', '-Command', psCmd],
+                        { detached: true, stdio: 'ignore', windowsHide: true, cwd: HARNESS_HOME });
     child.on('error', (e) => {
       console.error('[Deploy] spawn error (async):', e.message);
       clearPendingDeploy();
       schedulerManager.updateRun(schedule.id, run.id, { deploy: { status: 'failed', finishedAt: new Date().toISOString(), error: e.message } });
     });
-    // On a SUCCESSFUL deploy, Deploy_Harness.ps1 restarts :3400 — which kills THIS node process
-    // before 'exit' can ever fire here, so this listener only ever runs on failure (pwsh itself
-    // exited without the server being restarted). Record exit code + any captured stderr so the
-    // next run isn't reconciled into 'unknown' with zero evidence (see reconcilePendingDeploy).
-    child.on('exit', (code, signal) => {
-      const stderrText = Buffer.concat(stderrChunks).toString('utf8').trim();
-      console.error(`[Deploy] pwsh exited early (code=${code} signal=${signal}) for ${schedule.id} run ${run.id} — deploy did not complete`);
-      try {
-        fs.appendFileSync(logPath, `\nHARNESS_DEPLOY_SPAWN_EXIT=${code} signal=${signal || ''}\n${stderrText}\n`);
-      } catch (e2) {}
+    // cmd itself returns as soon as `start` has handed off — code 0 here says nothing about the
+    // deploy, so only a NON-zero exit (couldn't launch at all) is treated as failure.
+    child.on('exit', (code) => {
+      if (!code) return;
+      console.error(`[Deploy] launcher exited ${code} for ${schedule.id} run ${run.id} — deploy never started`);
+      try { fs.appendFileSync(logPath, `
+HARNESS_DEPLOY_LAUNCH_EXIT=${code}
+`); } catch (e2) {}
       clearPendingDeploy();
-      schedulerManager.updateRun(schedule.id, run.id, { deploy: { status: 'failed', finishedAt: new Date().toISOString(), exitCode: code, signal: signal || undefined, stderr: stderrText || undefined } });
+      schedulerManager.updateRun(schedule.id, run.id, { deploy: { status: 'failed', finishedAt: new Date().toISOString(), exitCode: code } });
     });
+    // Watchdog replacing the stderr capture we gave up: a healthy deploy writes to deploy.log
+    // within seconds. If 60s later the file is still empty AND this run still owns the pending
+    // marker, pwsh never really ran — record that instead of leaving the marker stuck. (On a
+    // successful deploy this server is long gone before the timer fires.)
+    const watchdog = setTimeout(() => {
+      let size = -1;
+      try { size = fs.statSync(logPath).size; } catch (e2) {}
+      if (size > 0) return;
+      const marker = readPendingDeploy();
+      if (!marker || marker.runId !== run.id) return;
+      console.error(`[Deploy] watchdog: deploy.log still empty after 60s for ${schedule.id} run ${run.id} — treating as failed`);
+      clearPendingDeploy();
+      schedulerManager.updateRun(schedule.id, run.id, { deploy: { status: 'failed', finishedAt: new Date().toISOString(), error: 'deploy.log empty after 60s — pwsh never started' } });
+    }, 60000);
+    if (watchdog.unref) watchdog.unref();
     child.unref();
   } catch (e) {
     console.error('[Deploy] spawn error:', e.message);
@@ -8744,10 +12281,31 @@ function reconcilePendingDeploy() {
     list[idx].lastDeployAt     = finishedAt;
     schedulerManager.saveSchedules(list);
   }
+  // SCHED-DEPLOY-NEXT (§4.8): only a SUCCESS deploy continues to postRun.nextAfterDeploy. Re-read
+  // the schedules fresh (the marker may be minutes old). failed/unknown never continue — and a
+  // rolled-back OLD release doesn't carry this code at all, which is the correct outcome too.
+  let continued = null;
+  try {
+    const d = deployNext.decideNextAfterDeploy({ status, scheduleId, schedules: schedulerManager.loadSchedules() });
+    if (d.next) {
+      const r = schedulerManager.triggerNow(d.next.id); // no origin — same as chainNext (broadcast notices)
+      continued = { id: d.next.id, name: d.next.name, ok: !!(r && r.ok), error: r && !r.ok ? r.error : null };
+      console.log(`[Deploy] next-after-deploy: ${scheduleId} → ${d.next.id} (${d.next.name}) ${continued.ok ? 'triggered' : 'NOT triggered: ' + continued.error}`);
+    } else if (d.reason !== 'not-set') {
+      console.log(`[Deploy] next-after-deploy skipped for ${scheduleId}: ${d.reason}`);
+    }
+  } catch (e) { console.error('[Deploy] next-after-deploy error:', e.message); }
+  if (continued) {
+    schedulerManager.updateRun(scheduleId, runId, { deploy: { status, startedAt, finishedAt, exitCode, logPath, nextAfterDeploy: continued } });
+  }
   if (sched) {
     const sinks = (sched.delivery && sched.delivery.length) ? sched.delivery : ['web', 'telegram'];
     const summary = status === 'success'
-      ? `⬆ ${sched.name} 佈署完成，已上線。`
+      ? (continued
+          ? (continued.ok
+              ? `⬆ ${sched.name} 佈署完成，已上線。部署完成，已接續「${continued.name}」。`
+              : `⬆ ${sched.name} 佈署完成，已上線。⚠ 接續「${continued.name}」未開跑（${continued.error}）。`)
+          : `⬆ ${sched.name} 佈署完成，已上線。`)
       : status === 'failed'
         ? `⚠ ${sched.name} 佈署失敗，已自動回滾。log 見 ${logPath}`
         : `⚠ ${sched.name} 佈署結果未知（逾時或找不到記錄）。log 見 ${logPath}`;
@@ -8759,6 +12317,38 @@ function reconcilePendingDeploy() {
   }
   clearPendingDeploy();
   console.log(`[Deploy] reconciled pending deploy for ${scheduleId} (run ${runId}) → ${status}`);
+}
+
+// CBG-3/CBG-4 (SPEC-chat-background-task.md §3.2): when a chatTask schedule's run reaches a
+// terminal state (success/failed/blocked/partial/aborted — NOT limited-waiting, which isn't done
+// yet), append the result as a new assistant message to the ORIGINATING chat session
+// (schedule.origin.sessionId) — not the scratch sched_<runId> session fireScheduledJob used to run
+// the CLI turn itself. Telegram notification needs no extra code: schedule.delivery defaults to
+// ['web','telegram'] and the existing sinkManager.deliver() call already fires it for every
+// schedule, chatTask or not (D4/CBG-4: reuse the existing channel, don't build a second one).
+function deliverChatTaskResult(schedule, run, ctx, status, summaryText, elapsedMs) {
+  // CBGO-4 (SPEC-chat-background-task.md §3.6 決策③): the judgment is now "has a chat origin",
+  // NOT "chatTask:true". A schedule built in-chat but left on the schedule list (chatTask stays
+  // false — 決策①) must still report back here. `chatTask` from now on only decides whether
+  // GET /api/schedules filters it out of the list — nothing about completion routing.
+  if (!schedule.origin || schedule.origin.kind !== 'chat' || !schedule.origin.sessionId) return;
+  const sessionId = schedule.origin.sessionId;
+  const wsRoot = schedule.origin.workspace || schedule.workspace || WORKSPACE_ROOT;
+  const chatHistoryDir = path.join(wsRoot, '.harness', 'runtime', 'chat_history');
+  const content = (ctx && ctx.result) ? ctx.result : (summaryText || '（背景任務未產生文字回覆）');
+  const assistantMsg = {
+    role: 'assistant',
+    content,
+    ts: new Date().toISOString(),   // TS-1：背景任務回寫的訊息同樣帶時間戳
+    meta: { bgTaskId: schedule.id, status, elapsedMs, origin: 'background', provider: ctx && ctx.provider, model: ctx && ctx.modelArg },
+    trace: (ctx && ctx.finalTrace && ctx.finalTrace.length) ? ctx.finalTrace : undefined,
+  };
+  Promise.resolve(appendMessageToChatSession(sessionId, chatHistoryDir, assistantMsg))
+    .then(ok => {
+      if (ok) broadcastChatTaskChange({ reason: 'chat-task-finished', sessionId, workspace: wsRoot, scheduleId: schedule.id });
+      else console.error(`[ChatBG] deliverChatTaskResult: session ${sessionId} missing, result not delivered to chat (schedule ${schedule.id})`);
+    })
+    .catch(e => console.error('[ChatBG] deliverChatTaskResult append failed:', e.message));
 }
 
 // ── Scheduled job runner ──────────────────────────────────────────────────
@@ -8806,6 +12396,10 @@ function fireScheduledJob(schedule, run) {
   scheduledPrompt += deployPolicyNote(schedule);
   // H4: append value-assessment instruction so the agent judges noteworthy insights at run end
   scheduledPrompt += '\n\n---\n[系統指令：任務完成後，在回覆**最末尾**加上以下 JSON 價值判定（必填，勿省略）：\n<memory-candidate>\n{"noteworthy":false}\n</memory-candidate>\n若本次執行有值得長期記住的洞見（踩過的雷、重要決策依據、系統規律），改為：\n<memory-candidate>\n{"noteworthy":true,"insight":"一兩句精煉洞見","bucket":"MEMORY|USER|AGENT|PERSONA"}\n</memory-candidate>\nbucket 選擇：MEMORY=專案事實教訓、USER=指揮官偏好、AGENT=Hana 行為、PERSONA=角色特化。此標籤由系統自動剝除、不影響正式輸出。]';
+  // NOTIFY-SUM: let each schedule's prompt decide what one-line result gets pushed to Telegram/web,
+  // instead of the system's fixed "執行完成，產出已儲存。" (e.g. FTP schedule: "沒有新檔案" vs
+  // "新下載了 a.csv, b.csv"). Same append-then-strip pattern as <memory-candidate>/<run-outcome>.
+  scheduledPrompt += '\n\n---\n[系統指令：任務完成後，在回覆最末尾（value 判定之前或之後皆可）加上以下標記，一句話寫出「要推播給指揮官看的這次執行結果重點」（例如：沒有新檔案／新下載了 a.csv, b.csv／已寄出 3 封草稿）：\n<notify-summary>一句話重點</notify-summary>\n若沒有值得特別回報的重點，可省略此標記，系統會使用預設摘要。此標籤由系統自動剝除、不影響正式輸出，也不會出現在存檔的 transcript 裡。]';
   const messages = [{ role: 'user', content: scheduledPrompt }];
   const contextFilePath = writeContextFile(sessionId, [], wctx.chatHistoryDir);
   const ctx = {
@@ -8835,13 +12429,33 @@ function fireScheduledJob(schedule, run) {
           interrupted: { reason: 'limit', resetAt: meta.resetAt || null, partial },
           usage:       { runtimeMs: ctx.elapsedMs || 0 },
           // B4: persist delivery intent atomically with status → survives a restart before sending.
-          delivery:    { sinks, status: 'limited-waiting', summary: '達到 API 限額，將於 ' + resumeAt + ' 自動續跑。', scheduleName: schedule.name, deliveredSinks: [] },
+          // TGC10-03: carry the run's manual-trigger origin (null for auto) through to delivery.
+          delivery:    { sinks, status: 'limited-waiting', summary: '達到 API 限額，將於 ' + resumeAt + ' 自動續跑。', scheduleName: schedule.name, deliveredSinks: [], origin: run.origin || null },
         });
         if (partial) schedulerManager.saveArtifact(schedule.id, run.id, 'transcript', partial);
         const queued = schedulerManager.scheduleResume(schedule, run, meta.resetAt, partial);
         console.log(`[Scheduler] run ${run.id} limited-waiting — resume ${queued ? 'queued at ' + meta.resetAt : 'maxResumes reached'}`);
         schedulerManager.recordRunOutcome(schedule.id, 'limited-waiting');
         schedulerManager.flushRunDelivery(schedule.id, run.id);
+        return;
+      }
+      // SCH-STOP: 指揮官按了停止鍵中止這顆排程 job。ctx.aborted 由 abortJob() 設定；
+      // claude/gemini 執行路徑收到中止都會把 meta.reason 標成 'aborted'。優先於下面泛用的
+      // isFailed 判定，避免被誤記成 failed（進而推高熔斷計數、被誤判需要重試）。
+      // 語意＝叫停不是還原：不記錄 candidate/outcome，直接收尾並 return——絕不落到 chainNext / postRun.deploy。
+      if (ctx.aborted || (meta && meta.interrupted && meta.reason === 'aborted')) {
+        const sinks = (schedule.delivery && schedule.delivery.length) ? schedule.delivery : ['web', 'telegram'];
+        schedulerManager.updateRun(schedule.id, run.id, {
+          status:      'aborted',
+          finishedAt:  new Date().toISOString(),
+          usage:       { runtimeMs: ctx.elapsedMs || 0 },
+          delivery:    { sinks, status: 'aborted', summary: '🛑 已由指揮官中止（已產生的變更不會自動還原）', scheduleName: schedule.name, deliveredSinks: [], origin: run.origin || null },
+        });
+        if (ctx.result) schedulerManager.saveArtifact(schedule.id, run.id, 'transcript', ctx.result);
+        schedulerManager.recordRunOutcome(schedule.id, 'aborted');
+        schedulerManager.flushRunDelivery(schedule.id, run.id);
+        console.log(`[Scheduler] run ${run.id} aborted by commander`);
+        deliverChatTaskResult(schedule, run, ctx, 'aborted', '🛑 已由指揮官中止（已產生的變更不會自動還原）', ctx.elapsedMs || 0);
         return;
       }
       // H4: strip <memory-candidate> block from result before isFailed check and artifact save
@@ -8866,6 +12480,18 @@ function fireScheduledJob(schedule, run) {
           if (st) outcomeMark = { status: st.trim(), reason: rs.trim() };
         }
       }
+      // NOTIFY-SUM: strip <notify-summary>…</notify-summary> — agent's own one-line takeaway for
+      // the delivery notification, letting the schedule's prompt decide what gets reported
+      // (e.g. "沒有新檔案" vs "新下載了 a.csv, b.csv"). Same strip pattern as memory-candidate/run-outcome.
+      let notifySummary = null;
+      if (ctx.result) {
+        const sumMatch = ctx.result.match(/<notify-summary>([\s\S]*?)<\/notify-summary>/);
+        if (sumMatch) {
+          ctx.result = ctx.result.replace(/<notify-summary>[\s\S]*?<\/notify-summary>\s*/, '').trimEnd();
+          const t = sumMatch[1].trim();
+          if (t) notifySummary = t;
+        }
+      }
       const isFailed = !ctx.result || ctx.result.startsWith('❌');
       let   status   = isFailed ? 'failed' : 'success';
       // SSTAT-01: an agent-declared `blocked` overrides the computed success — a clean run that
@@ -8874,12 +12500,20 @@ function fireScheduledJob(schedule, run) {
       if (outcomeMark && outcomeMark.status === 'blocked' && !isFailed) {
         status        = 'blocked';
         outcomeReason = outcomeMark.reason || null;
+      } else if (outcomeMark && outcomeMark.status === 'partial' && !isFailed) {
+        // SSTAT-P: agent shipped real changes but flagged something for the commander to
+        // confirm. Distinct from `blocked` (no work done) — this is "done, but check X".
+        status        = 'partial';
+        outcomeReason = outcomeMark.reason || null;
       }
       const deliverSummary = isFailed
         ? '執行失敗' + (ctx.result ? '：' + ctx.result.slice(0, 80) : '')
         : status === 'blocked'
           ? '⚠ 未動工：' + (outcomeReason || '依前置護欄停止、待你決定')
-          : '執行完成，產出已儲存。';
+          : status === 'partial'
+            ? '✅ 完成·待確認：' + (outcomeReason || '已完成，有事項待你確認')
+            // NOTIFY-SUM: agent-supplied one-liner wins over the fixed default when present.
+            : (notifySummary || '執行完成，產出已儲存。');
       const sinks = (schedule.delivery && schedule.delivery.length) ? schedule.delivery : ['web', 'telegram'];
       const runPatch = {
         status,
@@ -8888,7 +12522,8 @@ function fireScheduledJob(schedule, run) {
         error:      isFailed ? (ctx.result || 'unknown error').slice(0, 500) : null,
         outcomeReason,
         // B4: persist delivery intent atomically with status, so an interrupted send is re-flushed on boot.
-        delivery:   { sinks, status, summary: deliverSummary, scheduleName: schedule.name, deliveredSinks: [] },
+        // TGC10-03: carry the run's manual-trigger origin (null for auto) through to delivery.
+        delivery:   { sinks, status, summary: deliverSummary, scheduleName: schedule.name, deliveredSinks: [], origin: run.origin || null },
         valueAssessed: true,
       };
       // H4: save candidate sidecar if noteworthy
@@ -8906,21 +12541,33 @@ function fireScheduledJob(schedule, run) {
       schedulerManager.recordRunOutcome(schedule.id, status);
       schedulerManager.flushRunDelivery(schedule.id, run.id);
       console.log(`[Scheduler] run ${run.id} finished — status=${status}`);
+      deliverChatTaskResult(schedule, run, ctx, status, deliverSummary, ctx.elapsedMs || 0);
       // SCHED-CHAIN: on a genuine success, auto-trigger the next schedule in the chain.
-      // Only real 'success' chains — failed / blocked / limited-waiting deliberately do NOT,
-      // so a broken Phase A never silently kicks off Phase B. Reuses the existing manual
-      // trigger path (triggerNow ignores `enabled`, guards against double-firing a running one).
-      if (status === 'success' && schedule.chainNext && schedule.chainNext !== schedule.id) {
-        const chained = schedulerManager.triggerNow(schedule.chainNext);
-        console.log(`[Scheduler] chainNext ${schedule.chainNext} → ${chained ? JSON.stringify(chained) : 'not found'}`);
-      } else if (status === 'success' && !schedule.chainNext && schedule.postRun && schedule.postRun.deploy === true) {
+      // Only real 'success' chains — failed / blocked / limited-waiting / partial deliberately do
+      // NOT, so a broken Phase A never silently kicks off Phase B, and a `partial` run (done but
+      // something needs the commander's sign-off) never auto-chains or auto-deploys either.
+      // Reuses the existing manual trigger path (triggerNow ignores `enabled`, guards against
+      // double-firing a running one).
+      // SCHC-1: `schedule` here is the closure captured when the job STARTED — if the commander
+      // edits/clears chainNext or postRun while the job is running (the exact bug they hit: a
+      // chain already mid-flight had its chainNext cleared, but the stale closure still fired the
+      // next hop), that edit must win. Re-read from disk right before acting, mirroring Z5-3's
+      // "recheck at the moment of the act, not at onComplete-time" pattern below.
+      const fresh = schedulerManager.getSchedule(schedule.id);
+      if (!fresh) {
+        // SCHC-2: schedule was deleted while this run was in flight — neither chain nor deploy.
+        console.log(`[Scheduler] ${schedule.id} no longer exists at completion — skipping chain/deploy`);
+      } else if (status === 'success' && fresh.chainNext && fresh.chainNext !== schedule.id) {
+        const chained = schedulerManager.triggerNow(fresh.chainNext);
+        console.log(`[Scheduler] chainNext ${fresh.chainNext} → ${chained ? JSON.stringify(chained) : 'not found'}`);
+      } else if (status === 'success' && !fresh.chainNext && fresh.postRun && fresh.postRun.deploy === true) {
         // SCHED-DEPLOY Z2: mutually exclusive with chaining above — only a chain-tail schedule
         // (no chainNext) that opted into postRun.deploy gets deployed by the server.
-        triggerScheduledDeploy(schedule, run).catch(e => console.error('[Deploy] triggerScheduledDeploy error:', e.message));
+        triggerScheduledDeploy(fresh, run).catch(e => console.error('[Deploy] triggerScheduledDeploy error:', e.message));
       }
     },
   };
-  ctx.fullPrompt = buildChatPrompt(messages, contextFilePath, wctx);
+  ctx.fullPrompt = buildChatPrompt(messages, contextFilePath, wctx, null, provider);
   jobs.set(jobId, ctx);
   schedulerManager.updateRun(schedule.id, run.id, { jobId });
 
@@ -8932,6 +12579,188 @@ function fireScheduledJob(schedule, run) {
 
 // Wire the scheduler's fireJob callback now that the function is defined.
 schedulerManager.setFireJob(fireScheduledJob);
+
+// ── KD: 知識精華收斂（Knowledge Distill）— spec: specs/SPEC-knowledge-distill.md ──────────
+// KD1：提案產生。技能只產 proposal.json（一個字都不碰記憶檔）；真正寫入是 KD4 的 apply，
+// 且一律走既有 applyMemoryOps。工作區隔離照 SPEC-scheduler 鐵則：一律 resolveWorkspace(req)
+// + path.resolve() 正規化，提案檔只落在該工作區自己的 .harness/runtime/distill/ 底下。
+function distillDir(wctx)          { return path.join(wctx.root, '.harness', 'runtime', 'distill'); }
+function distillProposalPath(wctx) { return path.join(distillDir(wctx), 'proposal.json'); }
+function readDistillProposal(wctx) {
+  try {
+    const p = distillProposalPath(wctx);
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (e) { return null; }
+}
+// KD3: 指揮官送出備註時，server 端把備註寫進該列 thread 並轉成 commented——這一步不需要模型，
+// 純粹是狀態轉換，跟 KD3-2「Hana 重新思考」是分開的兩件事（那是 fireDistillJob 之後的事）。
+function writeDistillProposal(wctx, proposal) {
+  const p = distillProposalPath(wctx);
+  try { fs.mkdirSync(path.dirname(p), { recursive: true }); } catch (e) {}
+  fs.writeFileSync(p, JSON.stringify(proposal, null, 2), 'utf8');
+}
+// One in-flight distill job per workspace, keyed by the SAME normalised root the scheduler uses
+// (so D:\x and d:/x are one workspace, not two). Holds only bookkeeping — the real work is a normal
+// entry in `jobs`, so abort / zombie-detection / restart handling all come for free.
+const distillJobs = new Map();  // normalisedRoot -> { jobId, mode, model, rowIds, startedAt, status, error, summary }
+function distillKey(root) { try { return path.resolve(String(root || '')).toLowerCase(); } catch (e) { return ''; } }
+function getDistillJob(wctx) {
+  const j = distillJobs.get(distillKey(wctx.root));
+  if (!j) return null;
+  // A job whose underlying CLI died without its onComplete firing must not pin the workspace
+  // forever (the same zombie problem jobIsRunning() solves for chat turns).
+  if (j.status === 'running') {
+    const live = jobs.get(j.jobId);
+    if (!live || !jobIsRunning(live)) return Object.assign({}, j, { status: 'unknown' });
+  }
+  return j;
+}
+// 3.3 完整性檢查（防漏）：拿當下的候選清單比對提案的 candidateLedger——沒被登進任何列的候選就是
+// 漏登，前端據此顯示警告並鎖住套用鈕。回傳的是「檢查結果」而非直接改提案（提案是模型的產出，
+// server 不代改）。
+function checkDistillCompleteness(wctx, proposal) {
+  const result = { complete: true, unregistered: [], deferred: [], danglingRowIds: [], candidateCount: 0, ledgerCount: 0 };
+  if (!proposal) return result;
+  let candidates = [];
+  try { candidates = schedulerManager.collectCandidates(wctx.root) || []; } catch (e) { candidates = []; }
+  const ledger = Array.isArray(proposal.candidateLedger) ? proposal.candidateLedger : [];
+  const rowIdSet = new Set((Array.isArray(proposal.rows) ? proposal.rows : []).map(r => String(r && r.id)));
+  const keyOf = (sid, rid) => String(sid) + '::' + String(rid);
+  const genAt = proposal.generatedAt ? String(proposal.generatedAt) : null;
+  result.candidateCount = candidates.length;
+  result.ledgerCount = ledger.length;
+  for (const c of candidates) {
+    const entry = ledger.find(e => keyOf(e && e.scheduleId, e && e.runId) === keyOf(c.scheduleId, c.runId));
+    // Registered but with an EMPTY rowIds counts as unregistered too: a candidate that maps to no
+    // row can never satisfy 3.3's "all derived rows decided" rule, so it would silently stick on
+    // the pending list forever.
+    if (!entry || !Array.isArray(entry.rowIds) || entry.rowIds.length === 0) {
+      const miss = {
+        scheduleId: c.scheduleId, runId: c.runId, scheduleName: c.scheduleName,
+        startedAt: c.startedAt || null,
+        insight: (c.candidate && c.candidate.insight) || '',
+        reason: entry ? 'rowIds 為空' : '未登進 candidateLedger',
+      };
+      // 候選比提案「晚出生」（排程在彙整跑完之後才產生心得）不是提案缺漏——這一定會發生，
+      // 且無論怎麼重跑都可能再發生一次。把它歸為 deferred：只提示「留到下一輪」，不鎖住套用。
+      if (genAt && c.startedAt && String(c.startedAt) > genAt) result.deferred.push(miss);
+      else result.unregistered.push(miss);
+    }
+  }
+  for (const e of ledger) {
+    for (const rid of (Array.isArray(e.rowIds) ? e.rowIds : [])) {
+      if (!rowIdSet.has(String(rid))) result.danglingRowIds.push({ scheduleId: e.scheduleId, runId: e.runId, rowId: rid });
+    }
+  }
+  // Ledger entries for candidates that are no longer pending (already reviewed elsewhere) are NOT
+  // an error — the single-candidate 採用/丟棄 path still exists (spec 8) and may have cleared one.
+  result.complete = result.unregistered.length === 0 && result.danglingRowIds.length === 0;
+  return result;
+}
+
+// KD5-2: 一次全新彙整（非 rethink）成功產出提案後，推一則 Telegram 輕推。只讀「本工作區自己」的
+// proposal.json（distillProposalPath 本來就落在 wctx.root 底下，不會跨工作區），沿用既有 sink
+// （schedulerManager.sinkManager.deliverOne('telegram', ...)）而非另造管道——同 SN4 note_reminder
+// 的用法：不做 chat-context 過濾、只在訊息內容標明是哪個工作區（單一指揮官帳號下等效於隔離）。
+function notifyDistillReady(wctx) {
+  const proposal = readDistillProposal(wctx);
+  if (!proposal || !Array.isArray(proposal.rows) || proposal.rows.length === 0) return;
+  const pending  = proposal.rows.filter(r => r && r.status === 'pending').length;
+  const disputed = proposal.rows.filter(r => r && r.status === 'disputed').length;
+  if (pending === 0 && disputed === 0) return; // 沒有需要指揮官看的東西，不推空訊息
+  const wsLabel = path.basename(wctx.root || WORKSPACE_ROOT) || (wctx.root || WORKSPACE_ROOT);
+  schedulerManager.sinkManager.deliverOne('telegram', {
+    kind: 'distill_ready',
+    workspaceLabel: wsLabel,
+    pendingCount: pending,
+    disputedCount: disputed,
+  }).catch(e => console.error('[Distill] telegram push failed:', e.message));
+}
+// Kick the /knowledge-distill skill as a DETACHED job, mirroring fireScheduledJob's shape (same
+// jobs map, same buildChatPrompt shell, same provider routing) — deliberately NOT a second agent
+// pipeline. `mode` is 'run' (full distill) or 'rethink' (KD3: only the commented rows).
+function fireDistillJob(wctx, modelValue, mode, rowIds) {
+  const key = distillKey(wctx.root);
+  const existing = getDistillJob(wctx);
+  if (existing && existing.status === 'running') return { ok: false, error: '本工作區已有彙整在跑', jobId: existing.jobId };
+
+  const { provider, modelArg } = parseChatModel(modelValue || 'claude::opus');
+  const jobId     = 'distill_job_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const sessionId = 'distill_' + Date.now();
+  const proposalPath = distillProposalPath(wctx);
+  try { fs.mkdirSync(distillDir(wctx), { recursive: true }); } catch (e) {}
+
+  const args = [
+    'mode:' + (mode === 'rethink' ? 'rethink' : 'run'),
+    '工作區（workspace，絕對路徑）：' + wctx.root,
+    '提案檔（proposalPath）：' + proposalPath,
+    '專案 knowledge 目錄：' + wctx.knowledgeDir,
+    '全域 knowledge 目錄（globalKnowledgeDir）：' + GLOBAL_KNOWLEDGE_DIR,
+    'baseUrl：http://127.0.0.1:' + PORT,
+    '本次模型（寫進 proposal.model）：' + (modelValue || 'claude::opus'),
+    mode === 'rethink' ? ('要重新思考的列（rowIds）：' + (Array.isArray(rowIds) ? rowIds.join(', ') : '')) : '',
+  ].filter(Boolean).join('\n');
+
+  // Expand the skill body ourselves (the same reason fireScheduledJob does): a detached job never
+  // passes through the /api/chat slash-command path, so without this the model would only see the
+  // bare slash line and would have to go find the skill file itself.
+  let prompt = '/knowledge-distill\n' + args;
+  try {
+    const def = loadCommands(wctx.commandsDir).find(d => d.name === 'knowledge-distill');
+    if (def && def.type === 'prompt') {
+      let body = def.body;
+      if (def.extends) {
+        const base = loadCommands(wctx.commandsDir).find(d => d.name === def.extends);
+        if (base) body = base.body + '\n\n--- 以上為繼承的通則；以下為本技能的特化 ---\n\n' + body;
+      }
+      prompt = body.includes('{{args}}') ? body.replace(/\{\{\s*args\s*\}\}/g, args) : (body + '\n\n---\n本次參數：\n' + args);
+    }
+  } catch (e) { /* best-effort: fall back to the bare slash line */ }
+
+  const messages = [{ role: 'user', content: prompt }];
+  const contextFilePath = writeContextFile(sessionId, [], wctx.chatHistoryDir);
+  const ctx = {
+    req: {}, res: { on: () => {} },
+    messages, activeSessionId: sessionId,
+    modelArg, provider, startT: Date.now(), jobId,
+    wctx: snapshotWctx(wctx),
+    status: 'running',
+    detached: true,
+    origin: 'distill',
+    onComplete: (c, meta) => {
+      const rec = distillJobs.get(key);
+      if (!rec || rec.jobId !== jobId) return;
+      const interrupted = !!(meta && meta.interrupted);
+      rec.status = interrupted ? 'interrupted' : (c.aborted ? 'aborted' : 'done');
+      rec.finishedAt = new Date().toISOString();
+      rec.elapsedMs = c.elapsedMs || (Date.now() - c.startT);
+      rec.summary = (c.result || '').slice(0, 2000);
+      if (interrupted) rec.error = (meta.reason === 'limit') ? '達到 API 限額，未完成' : '執行中斷';
+      console.log('[Distill] job ' + jobId + ' (' + mode + ') -> ' + rec.status);
+      // KD5-2: Telegram 輕推——只在「全新彙整」（非 rethink）成功產出提案時推一次，且只算「這個
+      // 工作區自己」的 proposal.json（沿用 note_reminder 的 sink 用法：broadcast + workspaceLabel，
+      // 不做 chat-context 過濾——單一指揮官帳號下等效，隔離的重點是「數字只算本工作區」）。
+      if (rec.status === 'done' && (rec.mode || mode) !== 'rethink') {
+        try { notifyDistillReady(wctx); } catch (e) { console.error('[Distill] notify failed:', e.message); }
+      }
+    },
+  };
+  ctx.fullPrompt = buildChatPrompt(messages, contextFilePath, wctx, null, provider);
+  jobs.set(jobId, ctx);
+  distillJobs.set(key, {
+    jobId, mode: mode === 'rethink' ? 'rethink' : 'run', model: modelValue || 'claude::opus',
+    rowIds: Array.isArray(rowIds) ? rowIds : null,
+    startedAt: new Date().toISOString(), status: 'running', workspace: wctx.root,
+  });
+
+  if (provider === 'gemini') chatViaGemini(ctx);
+  else if (provider === 'codex') chatViaCodex(ctx);
+  else if (provider === 'grok') chatViaGrok(ctx);
+  else chatViaClaude(ctx);
+  return { ok: true, jobId };
+}
+
 
 // Register built-in web sink: persists notifications to notifications.json for portal UI.
 // Telegram (§C) wires in as a second sink: schedulerManager.sinkManager.register('telegram', fn)
@@ -9030,8 +12859,62 @@ async function runNoteReminderScan() {
 }
 schedulerManager.setNoteReminderFn(runNoteReminderScan);
 
+// §UA（SPEC-usage-analytics.md D4/D5）：從一個 chat/schedule ctx 判定這筆用量事件的
+// trigger/background/sessionId/scheduleId。排程(fireScheduledJob)建的 ctx 一律 origin==='schedule'，
+// 但若底層 schedule 本身是「對話衍生的一次性任務」（chatTask:true 或 origin.kind==='chat'，見
+// §CBG/§CBGV），D5 拍板：改記 trigger:'chat' + background:true（它是對話的延伸，不是指揮官排的
+// 定時任務），schedInfo.chatOrigin/chatSessionId 由 fireScheduledJob 建 ctx 時一併標好。
+function usageTriggerInfoFor(ctx) {
+  if (ctx && ctx.origin === 'schedule' && ctx.schedInfo) {
+    const sched = ctx.schedInfo;
+    const chatDerived = !!sched.chatOrigin;
+    return {
+      trigger: chatDerived ? 'chat' : 'schedule',
+      background: chatDerived,
+      sessionId: chatDerived ? (sched.chatSessionId || null) : null,
+      scheduleId: sched.scheduleId || null,
+    };
+  }
+  return {
+    trigger: 'chat',
+    background: false,
+    sessionId: (ctx && ctx.activeSessionId) || null,
+    scheduleId: null,
+  };
+}
+
+// 落檔的單一入口（UA-3）：永不拋出例外，寫檔失敗只記 log，不中斷對話/排程主流程。
+function recordUsageForChat(wsRoot, triggerInfo, skill, provider, model, tokens, costUsd, source, elapsedMs) {
+  try {
+    usageTracker.recordUsageEvent(wsRoot || WORKSPACE_ROOT, {
+      trigger: triggerInfo.trigger,
+      background: !!triggerInfo.background,
+      skill: skill || null,
+      sessionId: triggerInfo.sessionId || null,
+      scheduleId: triggerInfo.scheduleId || null,
+      provider: usageTracker.mapProviderId(provider),
+      model: model || null,
+      tokens: tokens || null,
+      costUsd: (typeof costUsd === 'number') ? costUsd : null,
+      elapsedMs: (typeof elapsedMs === 'number') ? elapsedMs : null,
+      source: source || 'unavailable',
+    });
+  } catch (e) { console.error('[usage] recordUsageForChat failed (non-fatal):', e.message); }
+}
+
+// 供 chatViaClaude/chatViaCodex/chatViaGemini（ctx-based，chat／schedule 共用）呼叫：從 ctx 自動
+// 推 trigger/skill/session/schedule，再落檔。startT 用來算 elapsedMs（與 respondChat 內部算法一致）。
+function recordCliUsage(ctx, provider, model, tokens, costUsd, source, startT) {
+  const info = usageTriggerInfoFor(ctx);
+  const elapsedMs = Date.now() - (startT || Date.now());
+  recordUsageForChat((ctx && ctx.wctx && ctx.wctx.root), info, ctx && ctx.skillName, provider, model, tokens, costUsd, source, elapsedMs);
+}
+
 function respondChat(ctx, replyText, trace, extraMeta) {
   if (ctx.status === 'done') return;   // guard against double-finish (e.g. abort + exit)
+  // CMQ-4: this turn was superseded by a later "補充" message and merged into it — it must NOT leave a
+  // (half-done) reply behind. End quietly and let the queue start the merged job.
+  if (ctx.cmqSuperseded) { cmqEndWithoutReply(ctx, 'superseded'); cmqRelease(ctx); return; }
   // /memory turns: the CLI's reply is a JSON set of add/replace/remove ops (per the policy).
   // The portal parses + applies them to the bounded files, then swaps in a confirmation.
   if (ctx.memoryIntent) {
@@ -9056,23 +12939,65 @@ function respondChat(ctx, replyText, trace, extraMeta) {
   }
   const elapsedMs = Date.now() - (ctx.startT || Date.now());
   const meta = Object.assign({ provider: ctx.provider, model: ctx.modelArg, elapsedMs }, extraMeta || {});
-  const assistantMsg = { role: 'assistant', content: replyText, meta };
-  const updatedHistory = [...ctx.messages, assistantMsg];
+  // CBG-6 (SPEC-chat-background-task.md §3.5): carry this turn's trace on the assistant message
+  // itself, not just the session-level `trace` field (which only ever held the LAST turn's trace
+  // and is overwritten every save — reopening an older conversation always showed no tool activity
+  // for every turn but the most recent one). Session-level `trace` below is left untouched for
+  // backward compat (SPEC-chat-durability's checkpoint/pending logic still reads it).
+  // TS-1：訊息時間戳——助理訊息的時間在落檔當下蓋（使用者訊息的 ts 由前端送出時蓋，見 index.html
+  // sendChatMessage）。舊對話沒有這個欄位，前端就不顯示時間，不做任何推估。
+  const assistantMsg = { role: 'assistant', content: replyText, ts: new Date().toISOString(), meta, trace: (trace && trace.length) ? trace : undefined };
+  // CMQ-1/5: tag the reply with the question it answers; when it ran alongside/behind other messages,
+  // open it with a quote of the original question so it is never ambiguous which one it answers.
+  if (ctx.cmq) {
+    assistantMsg.replyTo = ctx.cmq.questionNo;
+    if (ctx.cmq.mode && ctx.cmq.mode !== 'solo') {
+      meta.mode = ctx.cmq.mode === 'preempt' ? 'queued' : ctx.cmq.mode;
+      if (ctx.cmq.mergedFrom) meta.mergedFrom = ctx.cmq.mergedFrom;
+      assistantMsg.content = chatQueueLib.quoteHeader(ctx.cmq.questionNo, ctx.cmq.origText, ctx.cmq.mergedFrom) + replyText;
+    }
+  }
+  let updatedHistory = [...ctx.messages, assistantMsg];
+  let cmqSavedP = null;
   // Save to the JOB's own workspace history (not the live, possibly-switched, global dir).
   // H1: pass origin + schedInfo so scheduled sessions are tagged and filtered from the history list.
-  try { saveChatSession(ctx.activeSessionId, updatedHistory, trace, ctx.wctx && ctx.wctx.chatHistoryDir, ctx.filePath, ctx.origin, ctx.schedInfo, null, { meetingId: ctx.meetingId, pmProjectIds: ctx.pmProjectIds }); }
-  catch (e) { console.error('[Chat] saveChatSession failed (continuing):', e.message); }
+  // CBG-3: go through the shared per-session lock + merge-aware save — a background task's result
+  // may have appended to this SAME session while this turn was running; a bare overwrite using only
+  // ctx.messages (captured at turn start) would silently drop it (AC5).
+  try {
+    cmqSavedP = withChatSessionLock(ctx.activeSessionId, () => {
+      // CMQ-5: a sibling turn of the same conversation may still be running → keep the `pending`
+      // marker alive for it (finalize normally clears it), and place this reply in question order.
+      const sib = ctx.cmq ? chatQueue.activeSibling(ctx.cmq) : null;
+      const sibPending = (sib && sib.ctx) ? { since: sib.ctx.pendingSince || new Date().toISOString(), model: sib.ctx.modelArg, jobId: sib.ctx.jobId } : null;
+      return saveChatSessionMerged(ctx.activeSessionId, ctx.messages, [assistantMsg], trace, ctx.wctx && ctx.wctx.chatHistoryDir, ctx.filePath, ctx.origin, ctx.schedInfo, sibPending, { meetingId: ctx.meetingId, pmProjectIds: ctx.pmProjectIds }, ctx.rawContext,
+        ctx.cmq ? (all, add) => add.reduce((acc, m) => chatQueueLib.insertReplyOrdered(acc, m), all) : null);
+    });
+  } catch (e) { console.error('[Chat] saveChatSession failed (continuing):', e.message); }
   // Mark the job done + stash the result so a reopened browser can fetch it (reattach phase).
-  ctx.status = 'done'; ctx.result = replyText; ctx.history = updatedHistory;
+  ctx.status = 'done'; ctx.result = assistantMsg.content; ctx.history = updatedHistory;
   ctx.elapsedMs = elapsedMs; ctx.finalTrace = trace; ctx.thinking = meta.thinking || null;
   // Hook for scheduled jobs: let the scheduler update the Run record on completion.
   if (typeof ctx.onComplete === 'function') try { ctx.onComplete(ctx, meta); } catch (e) { console.error('[Job] onComplete error:', e.message); }
   // Respond to the waiting browser ONLY if it is still connected.
-  if (!ctx.detached && ctx.res && !ctx.res.headersSent && !ctx.res.writableEnded) {
-    try {
-      ctx.res.writeHead(200, { 'Content-Type': 'application/json' });
-      ctx.res.end(JSON.stringify({ sessionId: ctx.activeSessionId, reply: replyText, history: updatedHistory, trace, provider: ctx.provider, model: ctx.modelArg, elapsedMs, thinking: meta.thinking || null, jobId: ctx.jobId, interrupted: meta.interrupted || false, reason: meta.reason || null, resetAt: meta.resetAt || null }));
-    } catch (e) { console.error('[Chat] response write error:', e.message); }
+  const sendResponse = (hist) => {
+    if (!ctx.detached && ctx.res && !ctx.res.headersSent && !ctx.res.writableEnded) {
+      try {
+        ctx.res.writeHead(200, { 'Content-Type': 'application/json' });
+        ctx.res.end(JSON.stringify({ sessionId: ctx.activeSessionId, reply: assistantMsg.content, history: hist, trace, provider: ctx.provider, model: ctx.modelArg, elapsedMs, thinking: meta.thinking || null, jobId: ctx.jobId, interrupted: meta.interrupted || false, reason: meta.reason || null, resetAt: meta.resetAt || null, replyTo: assistantMsg.replyTo || null }));
+      } catch (e) { console.error('[Chat] response write error:', e.message); }
+    }
+  };
+  if (ctx.cmq && cmqSavedP) {
+    // CMQ-5: the client replaces its transcript with `history`, so for a conversation with several
+    // messages in flight it must be the FINAL merged list (nothing the user sent meanwhile is lost),
+    // known only once the locked save has run. Release the queue only after that.
+    cmqSavedP.then((finalMsgs) => { if (Array.isArray(finalMsgs)) { ctx.history = finalMsgs; sendResponse(finalMsgs); } else sendResponse(updatedHistory); })
+      .catch(() => sendResponse(updatedHistory))
+      .then(() => cmqRelease(ctx));
+  } else {
+    sendResponse(updatedHistory);
+    cmqRelease(ctx);
   }
   // Keep the finished job briefly (for reattach), then garbage-collect.
   setTimeout(() => { try { jobs.delete(ctx.jobId); } catch (e) {} }, 5 * 60 * 1000);
@@ -9204,6 +13129,8 @@ function chatViaGemini(ctx, attempt) {
     // Part B — rate-limited. Record it; if real partial work came through, save it as resumable (Part C).
     if (rl.limited) {
       recordLimitOutcome('gemini', agyModelLabel, { status: 'limited', resetAt: rl.resetAt, error: 'RESOURCE_EXHAUSTED' });
+      // §UA-2: Antigravity/Gemini 官方不給用量資料（D3），一律 tokens:null + source:'unavailable'，不補 0。
+      recordCliUsage(ctx, 'gemini', agyModelLabel, null, null, 'unavailable', startT);
       cleanFiles();
       if (replyText && replyText.length > 40 && !ctx.memoryIntent) {
         const { answer } = splitGeminiReply(replyText);
@@ -9215,6 +13142,7 @@ function chatViaGemini(ctx, attempt) {
     if (!replyText) {
       const authStatus = agyAuthStatus(logText);
       if (authStatus === 'auth_failed') {
+        recordCliUsage(ctx, 'gemini', agyModelLabel, null, null, 'unavailable', startT);
         cleanFiles();
         return respondChat(ctx, '⚠️ **尚未登入 Antigravity CLI**。請在終端機執行 `agy` 完成 Google 登入後再試。', geminiTrace(1));
       }
@@ -9236,11 +13164,13 @@ function chatViaGemini(ctx, attempt) {
       const msg = (ctx.aborted ? '⛔ 已中止。'
         : `⚠️ agy 暫時取用失敗（其實已登入），已自動重試 ${attempt - 1} 次仍無回應。請稍後再試，或先改用 Claude。`
           + (errMessage ? `\n（${errMessage}）` : '')) + progressInfo;
+      recordCliUsage(ctx, 'gemini', agyModelLabel, null, null, 'unavailable', startT);
       return respondChat(ctx, msg, geminiTrace(1));
     }
 
     // Part B — a real answer ⇒ this model is OK right now.
     recordLimitOutcome('gemini', agyModelLabel, { status: 'ok' });
+    recordCliUsage(ctx, 'gemini', agyModelLabel, null, null, 'unavailable', startT);
     cleanFiles();
     // Part C — interrupted-but-has-partial (user abort / timeout): mark for resume.
     const interruptedMeta = (ctx.aborted || errMessage) && !ctx.memoryIntent
@@ -9270,7 +13200,11 @@ function chatViaClaude(ctx) {
   // first space is dropped). stdin preserves the whole prompt verbatim.
   // --dangerously-skip-permissions: auto-approve all tool use so Claude can actually edit
   // files / run tasks in the workspace (no interactive approval channel in --print mode).
-  const args = [...prefix, '--print', '--dangerously-skip-permissions', '--model', mappedModel];
+  // --output-format json (§UA/UA-1): lets us read back `usage`/`total_cost_usd` for the usage
+  // ledger. The ONLY parser allowed to interpret this output is usageTracker.parseClaudeCliOutput
+  // (shared by all 3 Claude CLI call sites) — it has its own fallback-to-plain-text guard, so a
+  // malformed/missing JSON body never blanks the user's reply (see its header comment).
+  const args = [...prefix, '--print', '--output-format', 'json', '--dangerously-skip-permissions', '--model', mappedModel];
   const displayCommand = `${label} --print --model ${mappedModel} "${ctx.fullPrompt.slice(0, 80)}..."`;
   const startT = Date.now();
   console.log(`[Chat] Claude (claude-code) starting, model=${mappedModel} ...`);
@@ -9285,7 +13219,11 @@ function chatViaClaude(ctx) {
   child.on('close', (code) => {
     processExited = true; clearTimeout(absTimeout);
     console.log(`[Chat] Claude exited code=${code} after ${Math.round((Date.now() - startT) / 1000)}s`);
-    let replyText = cleanCliOutput(stdoutData || stderrData);
+    // UA-1: single shared parser. On anything but a clean {result, usage} JSON body it falls back
+    // to cleanCliOutput(raw) as plain text — same behaviour as before this change, just routed
+    // through one function instead of each call site re-implementing the fallback.
+    const parsedCli = usageTracker.parseClaudeCliOutput(stdoutData || stderrData, cleanCliOutput);
+    let replyText = parsedCli.text;
     const rl = detectRateLimit('claude', stdoutData + '\n' + stderrData, '');
     let extraMeta = null;
     if (rl.limited) {                                         // Part B — limit
@@ -9297,9 +13235,11 @@ function chatViaClaude(ctx) {
     else if (replyText && !replyText.startsWith('❌')) recordLimitOutcome('claude', mappedModel, { status: 'ok' });   // Part B — ok
     // Part C — interrupted-but-has-partial (abort / timeout): mark for resume.
     if (!extraMeta && (ctx.aborted || (timedOut && code !== 0)) && replyText && !replyText.startsWith('❌')) extraMeta = { interrupted: true, reason: ctx.aborted ? 'aborted' : 'timeout' };
+    // §UA-3: record this execution's token bill (best-effort, never blocks/throws).
+    recordCliUsage(ctx, 'claude', mappedModel, parsedCli.usage, parsedCli.costUsd, parsedCli.source, startT);
     respondChat(ctx, replyText, [{ toolName: 'claude_cli_execution', args: { command: displayCommand, exitCode: code }, resultPreview: replyText.slice(0, 500) }], extraMeta);
   });
-  child.on('error', (err) => { processExited = true; ctx.status = 'done'; if (ctx.detached) return; if (!ctx.res.headersSent) { try { ctx.res.writeHead(500, { 'Content-Type': 'application/json' }); ctx.res.end(JSON.stringify({ error: `Failed to spawn Claude CLI: ${err.message}` })); } catch (e) {} } });
+  child.on('error', (err) => { processExited = true; ctx.status = 'done'; cmqRelease(ctx); if (ctx.detached) return; if (!ctx.res.headersSent) { try { ctx.res.writeHead(500, { 'Content-Type': 'application/json' }); ctx.res.end(JSON.stringify({ error: `Failed to spawn Claude CLI: ${err.message}` })); } catch (e) {} } });
   try { child.stdin.write(ctx.fullPrompt); child.stdin.end(); } catch (e) {}
 }
 
@@ -9366,9 +13306,12 @@ function chatViaCodex(ctx) {
     else if (!replyText) replyText = '❌ **錯誤**: Codex 未回傳內容（可能仍在思考或逾時）。';
     else if (!replyText.startsWith('❌')) recordLimitOutcome('codex', model, { status: 'ok' });   // Part B — ok
     if (!extraMeta && (ctx.aborted || (timedOut && code !== 0)) && replyText && !replyText.startsWith('❌')) extraMeta = { interrupted: true, reason: ctx.aborted ? 'aborted' : 'timeout' };
+    // §UA-2: Codex 無法像 Claude 一樣要求 --output-format json 給出帳單；approx 讀本機 rollout 紀錄。
+    const codexUsage = usageTracker.codexApproxUsage();
+    recordCliUsage(ctx, 'codex', model, codexUsage.tokens, null, codexUsage.source, startT);
     respondChat(ctx, replyText, [{ toolName: 'codex_cli_execution', args: { command: displayCommand, model, exitCode: code }, resultPreview: replyText.slice(0, 500) }], extraMeta);
   });
-  child.on('error', (err) => { processExited = true; ctx.status = 'done'; clearTimeout(absTimeout); try { fs.unlinkSync(outFile); } catch (e) {} if (ctx.detached) return; if (!ctx.res.headersSent) { try { ctx.res.writeHead(500, { 'Content-Type': 'application/json' }); ctx.res.end(JSON.stringify({ error: `Failed to spawn Codex CLI: ${err.message}` })); } catch (e) {} } });
+  child.on('error', (err) => { processExited = true; ctx.status = 'done'; cmqRelease(ctx); clearTimeout(absTimeout); try { fs.unlinkSync(outFile); } catch (e) {} if (ctx.detached) return; if (!ctx.res.headersSent) { try { ctx.res.writeHead(500, { 'Content-Type': 'application/json' }); ctx.res.end(JSON.stringify({ error: `Failed to spawn Codex CLI: ${err.message}` })); } catch (e) {} } });
   try { child.stdin.write(codexPrompt); child.stdin.end(); } catch (e) {}
 }
 
@@ -9419,7 +13362,7 @@ function chatViaGrok(ctx) {
     if (!extraMeta && (ctx.aborted || (timedOut && code !== 0)) && replyText && !replyText.startsWith('❌')) extraMeta = { interrupted: true, reason: ctx.aborted ? 'aborted' : 'timeout' };
     respondChat(ctx, replyText, [{ toolName: 'grok_cli_execution', args: { command: displayCommand, model, exitCode: code }, resultPreview: replyText.slice(0, 500) }], extraMeta);
   });
-  child.on('error', (err) => { processExited = true; ctx.status = 'done'; clearTimeout(absTimeout); cleanup(); if (ctx.detached) return; if (!ctx.res.headersSent) { try { ctx.res.writeHead(500, { 'Content-Type': 'application/json' }); ctx.res.end(JSON.stringify({ error: `Failed to spawn Grok CLI: ${err.message}` })); } catch (e) {} } });
+  child.on('error', (err) => { processExited = true; ctx.status = 'done'; cmqRelease(ctx); clearTimeout(absTimeout); cleanup(); if (ctx.detached) return; if (!ctx.res.headersSent) { try { ctx.res.writeHead(500, { 'Content-Type': 'application/json' }); ctx.res.end(JSON.stringify({ error: `Failed to spawn Grok CLI: ${err.message}` })); } catch (e) {} } });
 }
 
 // --- Provider/model discovery for the dropdown (only installed CLIs are returned) ---

@@ -299,3 +299,12 @@ export function unmount() {
   if (container) { container.classList.add('hidden'); container.innerHTML = ''; }
   container = null;
 }
+
+// SPEC-view-chat-context.md §3.1/§3.3 — 頭像在便條貼面板開的對話。內容本身早已由
+// server.js 的 injectNotesContext() 無條件注入每一次聊天（見 SN2-03），這裡只負責讓浮動視窗
+// 標題正確顯示「討論：便條貼」，不必也不應該再重複注入一次便條內容。
+export function getChatContext() {
+  const scopeLabel = notesState.scope === 'all' ? '全部工作區' : '本工作區';
+  const tabLabel = notesState.tab === 'done' ? '已完成' : '看板';
+  return { kind: 'notes', key: 'notes:' + notesState.scope + ':' + notesState.tab, label: '便條貼（' + scopeLabel + '・' + tabLabel + '）', payload: {} };
+}

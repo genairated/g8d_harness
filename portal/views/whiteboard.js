@@ -104,7 +104,7 @@ function shellHtml() {
     + '<span id="wb-save-status" class="text-[11px] text-slate-400 dark:text-slate-500 ml-1"></span>'
     + '</div>'
     + '<div class="flex items-center gap-2">'
-    + '<button id="wb-beautify-toggle" title="自動美化：手繪直線/框/圓自動變正" class="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 text-xs font-medium flex items-center gap-1"><i data-lucide="wand-2" class="h-3.5 w-3.5"></i><span id="wb-beautify-toggle-label">自動美化：開</span></button>'
+    + '<button id="wb-beautify-toggle" title="自動美化：手繪直線拉直、圓圈變正圓（不重畫成其他形狀）" class="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 text-xs font-medium flex items-center gap-1"><i data-lucide="wand-2" class="h-3.5 w-3.5"></i><span id="wb-beautify-toggle-label">自動美化：開</span></button>'
     + '<button id="wb-interpret-btn" title="🔍 AI 判讀：框選一段筆跡，辨識文字或自訂 prompt 判讀" class="px-2.5 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-medium flex items-center gap-1"><i data-lucide="search" class="h-3.5 w-3.5"></i>AI 判讀</button>'
     + '<button id="wb-export-btn" title="匯出 PNG" class="px-2.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-medium flex items-center gap-1"><i data-lucide="image-down" class="h-3.5 w-3.5"></i>匯出 PNG</button>'
     + '<button id="wb-save-btn" title="手動儲存" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium flex items-center gap-1"><i data-lucide="save" class="h-3.5 w-3.5"></i>儲存</button>'

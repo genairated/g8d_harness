@@ -73,10 +73,16 @@ function flowToBpmn(flow) {
   // marker the portal reads to choose vertical vs horizontal auto-layout. Survives until the first
   // editor save (after which baked DI owns the orientation). Default: vertical (直列).
   if ((flow.orientation || 'vertical') === 'vertical') x += '<!-- harness:orientation=vertical -->\n';
+  // BST1: Style Pack id (bpmn-js modeler appearance, e.g. "visio") is not BPMN semantics, but must
+  // survive a flow.json → .bpmn regeneration too (e.g. /doc-flowchart AI rebuild) — mirrored via a
+  // custom `harness:` namespace attribute on <bpmn:definitions>. Omitted for the default 'bpmn' style
+  // so freshly-generated diagrams stay byte-identical to pre-BST1 output.
+  const styleId = flow.style && flow.style !== 'bpmn' ? String(flow.style) : '';
   x += '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"' +
        ' xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"' +
        ' xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"' +
        ' xmlns:di="http://www.omg.org/spec/DD/20100524/DI"' +
+       (styleId ? ' xmlns:harness="http://harness.local/bpmn" harness:style="' + escXml(styleId) + '"' : '') +
        ' id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">\n';
   x += '  <bpmn:collaboration id="Collaboration_1">\n';
   x += '    <bpmn:participant id="Participant_1" name="' + escXml(title) + '" processRef="Process_1" />\n';
@@ -183,6 +189,12 @@ function bpmnToFlow(xml) {
   // preserve orientation so a regenerated bpmn keeps the chosen direction (DI says isHorizontal,
   // or the comment marker if the file was never opened in the editor)
   flow.orientation = (/isHorizontal="false"/.test(xml) || /harness:orientation=vertical/i.test(xml)) ? 'vertical' : 'horizontal';
+  // BST1 鐵則: .bpmn 存檔會反向同步回 .flow.json（portal/server.js 的 /api/file/save）— style 欄位必須
+  // 在這條往返中被保留，否則使用者選的風格會在下一次存檔被洗掉。讀 <bpmn:definitions> 上的
+  // harness:style（由編輯器 bpmnInjectStyleAttrs 寫入）；未標記＝bpmn 原生，不寫入 flow.style。
+  const defTagMatch = xml.match(/<(?:\w+:)?definitions\b[^>]*>/);
+  const styleMatch = defTagMatch && /harness:style="([^"]*)"/.exec(defTagMatch[0]);
+  if (styleMatch && styleMatch[1]) flow.style = styleMatch[1];
   return flow;
 }
 

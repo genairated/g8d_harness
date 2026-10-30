@@ -1,11 +1,13 @@
 // render-service/record.js — PRES-REC-02: screenshot + TTS WAV → ffmpeg MP4
-// Strategy: Playwright screenshots each slide → Windows SAPI WAV per slide
+// Strategy: Playwright screenshots each SEGMENT → TTS audio per segment
 //           → ffmpeg: image+audio per clip → concat all clips → final MP4
+// Segment = one slide (legacy decks, whole data-transcript) or one cue (PRES-CUE decks: the frame
+// after that cue's action + its `say` + its `pause` of held silence). See screenshot.slidesToSegments.
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execSync } = require('child_process');
-const { slidesToPngs } = require('./screenshot');
+const { slidesToSegments } = require('./screenshot');
 const { transcriptsToWavs } = require('./tts');           // offline SAPI fallback
 const { transcriptsToAudio } = require('./tts-edge');     // online neural (matches browser voice-config)
 
@@ -94,13 +96,14 @@ async function recordDeck(deckUrl, outputPath, opts = {}) {
   fs.mkdirSync(tmpDir, { recursive: true });
 
   try {
-    // 1. Screenshot every slide (Playwright headless)
-    const slides = await slidesToPngs(deckUrl, { width, height, waitMs: slideWaitMs });
-    if (!slides.length) throw new Error('找不到 .slide 元素，請確認 deck 使用 presentation-core 架構');
+    // 1. Screenshot every segment (Playwright headless) — one per slide, or one per cue on cue slides
+    const segs = await slidesToSegments(deckUrl, { width, height, waitMs: Math.max(slideWaitMs, 450) });
+    if (!segs.length) throw new Error('找不到 .slide 元素，請確認 deck 使用 presentation-core 架構');
+    const slideCount = new Set(segs.map(s => s.slide)).size;
 
-    // 2. Generate per-slide audio — edge-tts online neural voice (matches the browser's voice-config);
+    // 2. Generate per-segment audio — edge-tts online neural voice (matches the browser's voice-config);
     //    fall back to the offline SAPI engine if edge-tts is unavailable.
-    const transcripts = slides.map(s => s.transcript || '');
+    const transcripts = segs.map(s => s.say || '');
     let audio;
     try {
       audio = await transcriptsToAudio(transcripts, tmpDir, { voice: edgeVoice, rate: edgeRate });
@@ -109,30 +112,34 @@ async function recordDeck(deckUrl, outputPath, opts = {}) {
       audio = await transcriptsToWavs(transcripts, tmpDir, { rate: ttsRate, voice: ttsVoice });
     }
 
-    // 3. Build per-slide MP4 clips. Clip length = the audio's REAL duration (ffprobe) + a tiny tail,
-    //    so there's no long silent gap after the narration. Collect durations for the VTT cues.
+    // 3. Build per-segment MP4 clips. Clip length = the audio's REAL duration (ffprobe) + a tiny tail
+    //    + the cue's pause (held as padded silence, `apad`), so cue timing/pauses survive into the video.
+    //    Collect durations for the VTT cues.
     const clipPaths = [];
     const durations = [];
-    for (let i = 0; i < slides.length; i++) {
-      const pngPath = path.join(tmpDir, `slide_${String(i).padStart(3, '0')}.png`);
-      fs.writeFileSync(pngPath, slides[i].pngBuffer);
-      const clipPath = path.join(tmpDir, `clip_${String(i).padStart(3, '0')}.mp4`);
+    for (let i = 0; i < segs.length; i++) {
+      const pngPath = path.join(tmpDir, `seg_${String(i).padStart(4, '0')}.png`);
+      fs.writeFileSync(pngPath, segs[i].pngBuffer);
+      const clipPath = path.join(tmpDir, `clip_${String(i).padStart(4, '0')}.mp4`);
       const wav = audio[i] && audio[i].wavPath;
+      const pauseSec = (segs[i].pauseMs || 0) / 1000;
 
       if (wav && fs.existsSync(wav)) {
-        const dur = probeDuration(wav) + 0.4; // small tail so the last word isn't clipped
+        const dur = probeDuration(wav) + 0.4 + pauseSec; // small tail so the last word isn't clipped
         durations.push(dur);
         execSync(
           `ffmpeg -y -loop 1 -framerate 2 -i "${pngPath}" -i "${wav}" ` +
           `-c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p ` +
-          `-c:a aac -b:a 128k -t ${dur.toFixed(3)} "${clipPath}"`,
+          `-af apad -c:a aac -b:a 128k -ar 44100 -ac 1 -t ${dur.toFixed(3)} "${clipPath}"`,
           { timeout: 180000, stdio: 'pipe' }
         );
       } else {
-        durations.push(silentSlideSecs);
+        // no narration: legacy slides hold silentSlideSecs; a silent cue holds its pause (min 1s)
+        const dur = segs[i].cue >= 0 ? Math.max(1, pauseSec) : silentSlideSecs;
+        durations.push(dur);
         execSync(
-          `ffmpeg -y -loop 1 -framerate 2 -i "${pngPath}" -t ${silentSlideSecs} ` +
-          `-c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -an "${clipPath}"`,
+          `ffmpeg -y -loop 1 -framerate 2 -i "${pngPath}" -f lavfi -i anullsrc=r=44100:cl=mono ` +
+          `-c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 128k -t ${dur.toFixed(3)} "${clipPath}"`,
           { timeout: 60000, stdio: 'pipe' }
         );
       }
@@ -156,7 +163,7 @@ async function recordDeck(deckUrl, outputPath, opts = {}) {
     const vttPath = absOut.replace(/\.mp4$/i, '.vtt');
     writeVtt(vttPath, transcripts, durations);
 
-    return { outputPath: absOut, vttPath, slideCount: slides.length };
+    return { outputPath: absOut, vttPath, slideCount, segmentCount: segs.length };
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   }

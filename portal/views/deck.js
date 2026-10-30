@@ -112,9 +112,12 @@ async function recordMp4(deckName) {
     const data = await res.json();
     if (data.ok) {
       const mp4File = (data.path || '').split('/').pop();
-      const mp4Url = '/api/presentations/exports/' + encodeURIComponent(mp4File);
+      // PXW-05: <video>/<track> can't send X-Workspace — carry the workspace in the query so the
+      // server serves the file from THIS workspace's presentations/exports (not the startup default).
+      const wsQ = workspace ? '?workspace=' + encodeURIComponent(workspace) : '';
+      const mp4Url = '/api/presentations/exports/' + encodeURIComponent(mp4File) + wsQ;
       const vttFile = data.vtt ? data.vtt.split('/').pop() : null;
-      const vttUrl = vttFile ? '/api/presentations/exports/' + encodeURIComponent(vttFile) : null;
+      const vttUrl = vttFile ? '/api/presentations/exports/' + encodeURIComponent(vttFile) + wsQ : null;
       if (statusEl) {
         statusEl.className = 'mb-2';
         statusEl.innerHTML =

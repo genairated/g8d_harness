@@ -513,3 +513,18 @@ export function unmount() {
   container = null;
   activeCgNode = null;
 }
+
+// SPEC-view-chat-context.md §3.1/§3.3 — 頭像在 CodeGraph 探索器開的對話：跟著使用者當下點開的
+// symbol 走。有選中 symbol 就把它（名稱/檔案/行號/種類）當識別碼帶給後端 provider，讓 Hana 用她
+// 自己的 codegraph_* 工具直接查關係，不必在這裡重複組一份 callers/callees/impact 文字。
+export function getChatContext() {
+  if (activeCgNode) {
+    return {
+      kind: 'codegraph',
+      key: 'codegraph:' + activeCgNode.filePath + ':' + activeCgNode.name,
+      label: 'CodeGraph：' + activeCgNode.name,
+      payload: { symbol: activeCgNode.name, filePath: activeCgNode.filePath, startLine: activeCgNode.startLine, kind: activeCgNode.kind },
+    };
+  }
+  return { kind: 'codegraph', key: 'codegraph:explorer', label: 'CodeGraph 探索器', payload: {} };
+}

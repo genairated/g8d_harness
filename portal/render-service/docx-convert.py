@@ -419,6 +419,18 @@ def extract_flow_anchors(docx_path):
     from docx import Document
     rt  = _image_rel_targets(docx_path)
     emf = {rid for rid, t in rt.items() if os.path.splitext(t)[1].lower() in ('.emf', '.wmf')}
+    # FX-B 回寫過真身（docx-bpmn-bake --in-place）之後，該圖元的 media 已從 EMF 換成本器自產的
+    # word/media/hana_bpmn_<stem>.png——若只認 EMF，烤過一次就再也認不出這是流程圖：擬真層對不到位
+    # （橫幅誤報「圖序對不上」、無法疊回可編輯 SVG），重烤也會 skip。故把自產標記 hana_bpmn_* 視同
+    # 流程圖錨點，並還原出原始 stem（imageN）當 bpmnSlot，收斂回同一套身分對位。
+    baked = {}
+    for rid, t in rt.items():
+        base = os.path.basename(t.lstrip('/'))
+        if not base.lower().startswith('hana_bpmn_'):
+            continue
+        st = os.path.splitext(base)[0][len('hana_bpmn_'):]
+        st = re.sub(r'_\d+$', '', st) or st          # 重烤時的 _<n> 去重尾綴 → 還原原始 stem
+        baked[rid] = st
     doc = Document(docx_path)
     out = []
     for p in doc.element.body.iter(_W + 'p'):
@@ -438,6 +450,9 @@ def extract_flow_anchors(docx_path):
             if rid and rid in emf:
                 out.append({'rid': rid, 'docPrId': docpr, 'paraId': para_id,
                             'sourceMedia': _media_path(rt[rid])})
+            elif rid and rid in baked:
+                out.append({'rid': rid, 'docPrId': docpr, 'paraId': para_id,
+                            'sourceMedia': _media_path(rt[rid]), 'bpmnSlot': baked[rid]})
         # Generated docx (doc-new / docx-inject) carries NO embedded EMF — its flowcharts are
         # BPMN_<slot> bookmark placeholders (empty 〔流程圖…〕 paragraphs). Surface them as anchors too
         # so the fidelity overlay (index.html _synthDocFlowSvg) can place bpmn-svg onto [data-el=paraId]

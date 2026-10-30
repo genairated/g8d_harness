@@ -31,3 +31,5 @@ export function getChatContext() {
 ```
 
 Rule: `payload` carries identifiers only (id, scope) — never content. The backend provider re-reads the actual content from the source of truth (file/store) on every request, so it can never go stale or be spoofed by the client.
+
+Implementing `getChatContext()` automatically gets you 主題對話歷史續接 (resuming past conversations under the same `key`) and 清單隔離 (never mixed into the free-form「AI 對話」list) for free — see `SPEC-view-chat-context.md` §7. No extra work needed.

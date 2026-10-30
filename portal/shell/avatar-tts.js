@@ -159,9 +159,6 @@
         }
       } else if (event.data && event.data.type === 'HANA_PORTAL_AVATAR_VISIBLE_CHANGED') {
         const visible = event.data.visible;
-        localStorage.setItem('hana_avatar_visible', visible ? '1' : '0');
-        const chk = document.getElementById('hana-avatar-visible-toggle');
-        if (chk) chk.checked = !!visible;
         const widget = document.getElementById('hana-float-widget');
         if (widget) {
           widget.classList.toggle('avatar-hidden', !visible);
@@ -385,14 +382,13 @@
     })();
 
     // ── Global avatar manual show/hide toggle ──
+    // AVT-FIX：不再持久化（localStorage hana_avatar_visible 與「顯示動漫形象」勾選框已移除）；
+    // 只剩頭像 × 隱藏 / 還原鈕與簡報 iframe 的同步訊息，重新整理後一律顯示。
     window.toggleHanaAvatarVisible = function (visible) {
-      localStorage.setItem('hana_avatar_visible', visible ? '1' : '0');
       const widget = document.getElementById('hana-float-widget');
       if (widget) {
         widget.classList.toggle('avatar-hidden', !visible);
       }
-      const chk = document.getElementById('hana-avatar-visible-toggle');
-      if (chk) chk.checked = !!visible;
 
       // Notify the active presentation iframe if present
       const frame = document.getElementById('html-preview-frame');
@@ -407,12 +403,6 @@
         }
       }
     };
-
-    // Initialize the avatar visibility from local storage
-    (function () {
-      const visible = localStorage.getItem('hana_avatar_visible') !== '0';
-      window.toggleHanaAvatarVisible(visible);
-    })();
 
     // ── Presentation Unified speech bridge functions ──
     window.hanaSpeak = function (text, onendCallback) {
