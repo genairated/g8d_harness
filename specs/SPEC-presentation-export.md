@@ -78,6 +78,12 @@ slidesToPngs(deckUrl, { width: 1920, height: 1080, waitMs: 300 })
 - 截圖時隱藏 core 注入的播放外殼（progress bar / footer / drawer），只保留 `#viewport` 內容。在 `evaluate` 步驟加 `document.body.classList.add('exporting')` 並在 `core.css` 補 `.exporting .core-shell { display:none }` 即可。
 - deck 頁面不播 TTS（`data-autoplay` 不觸發）——raw 模式本就無自動播放需使用者手勢，無頭環境沒手勢故不觸發。
 
+### 4.3 PRES-CUE 頁（2026-10-23）
+
+- 有 `data-cues` 的頁：設為 active 後呼叫 `window.__presCore.finalizeSlide(i)`，截「**全部 cue 執行完**」的最終畫面（數字到終值、線條畫完、輪播停在最後一個 cue 指定的那張、時間軸到最後一格）；**雷射筆不畫**（`body.exporting:not(.export-keep-laser) .cue-laser{display:none}`）。
+- 備忘稿：優先 `data-transcript`；沒有時把各 cue 的 `say` 串起來，確保備忘稿是全文。
+- 沒有 `data-cues` 的頁：流程與以前完全相同。
+
 ---
 
 ## 5. PptxGenJS 流程（`export.js`）
@@ -151,10 +157,18 @@ POST /api/presentations/:name/export
 { "ok": false, "error": "..." }
 ```
 
+### 簡報根目錄（PXW，2026-10-23）
+
+- **簡報根目錄＝當前工作區**（`X-Workspace` 標頭，或 `?workspace=` 查詢參數）；該工作區 `presentations/<name>.html` 不存在時，**才退回 `HARNESS_HOME/presentations`**。兩處都沒有 → 404，錯誤訊息點名找過的兩個完整路徑（`tried` 陣列）。實作：`server.js` 的 `locateDeck(req, name, suffix)`。
+- 同一套解析用於：`POST /api/presentations/:name/export`、`POST /api/presentations/:name/record`、`GET /api/block-decks`（列「工作區＋Harness home」聯集、同名以工作區為準）、`POST /api/block-decks/:name/export`（`suffix='.blocks.json'`，圖片相對路徑也以命中的根目錄解析）。
+- 傳給 `/raw` 的 `workspace=` 一律是**實際命中**的那個根目錄。
+- 語音設定 `loadVoiceConfig(HARNESS_HOME)` 刻意**不隨工作區**（全域語音設定）。
+- `GET /api/presentations/exports/<file>`：`<video>`／`<track>` 無法帶標頭，前端在網址加 `?workspace=`；有帶就先從該工作區的 `presentations/exports` 取檔，找不到或沒帶 → 退回 `HARNESS_HOME/presentations/exports`（原行為）。防穿越檢查（檔名不得含路徑分隔、`isPathSafe`）不變。
+
 ### 流程
 
 ```
-1. 確認 presentations/<name>.html 存在（否則 404）
+1. 依上述規則找到 presentations/<name>.html（否則 404，列出找過的路徑）
 2. 呼叫 slidesToPngs(url)
 3. 呼叫 buildPptx(slides, name)
 4. 回傳 path + slide 數
@@ -179,12 +193,15 @@ POST /api/presentations/:name/export
 ## 8. 輸出路徑
 
 ```
-$HARNESS_HOME/
+<命中的簡報根目錄>/            ← 當前工作區；deck 不在工作區時才是 $HARNESS_HOME
   presentations/
     exports/
       <deckName>.pptx      ← 保真 pptx（每頁一圖）
-      <deckName>.pdf        ← 未來 Phase 2 延伸
+      <deckName>.mp4/.vtt  ← 錄影＋字幕
+      <deckName>-editable.pptx ← block deck 可編輯版
 ```
+
+- 匯出檔一律存回 **deck 所在的那個根目錄**的 `presentations/exports/`——客戶專案的簡報匯出就落在客戶專案自己的資料夾，不會跑到 Harness 底下。API 回傳的 `path` 是相對該根目錄的路徑，前端下載連結同時帶 `&workspace=`。
 
 - `exports/` 目錄由 export API handler 自動 `mkdir -p`。
 - `/raw` endpoint 已支援靜態檔服務，無需額外設定即可下載。
@@ -202,6 +219,13 @@ $HARNESS_HOME/
 | 逐字稿 | 已從 `data-transcript` 取得並存 pptx 備忘稿 | 送離線/雲端 TTS 轉 wav，再嵌進 pptx / 合成影片 |
 | API | `POST /api/presentations/:name/export` | 加 `"format": "video"` 分支 |
 | 輸出目錄 | `presentations/exports/` | 同目錄加 `.mp4` / `.wav` |
+
+### 9.1 錄影（mp4）的 cue 時序（PRES-CUE，2026-10-23）
+
+- 錄影改以「**片段**」為單位（`screenshot.slidesToSegments`）：沒有 cue 的頁＝一個片段（整段 `data-transcript`，與以前相同）；有 cue 的頁＝**每個 cue 一個片段**：畫面是「做完該 cue 動作的當下」（`__presCore.cueState(i,k)`，含雷射筆），聲音是該 cue 的 `say`，片段長度＝語音實長＋0.4 秒＋該 cue 的 `pause`（用 `apad` 補靜音），所以 **cue 順序與停頓會照實出現在影片裡**。字幕（vtt）也按片段切。
+- **做不到、照實記待辦**：片段內是**靜態畫面**——數字滾動、線條逐段畫出、滑桿移動、雷射筆脈動這類「動作過程」不會出現在 mp4，只會在 cue 切換時「跳」到下一個狀態。要錄出動態過程需改用真正的螢幕錄影（Playwright `recordVideo` 依 cue 時序即時播放＋另外合成語音），列為 **PRES-CUE-REC-02 待辦**。
+- 頁與頁之間沒有額外的 1.5 秒停頓（錄影節奏由每段 pause 決定）；無旁白的 cue 片段至少 1 秒。
+- 順帶修正：無旁白的片段改帶一條靜音音軌（以前是沒有音軌），讓所有片段的音訊格式一致、`concat` 不會掉聲音。
 
 ---
 
@@ -229,3 +253,4 @@ $HARNESS_HOME/
 | Date | Version | Author | Description |
 |:-----|:--------|:-------|:------------|
 | 2026-06-20 | v1.0 | Hana(Claude) | 初版。無頭引擎選 Playwright、截圖 1920×1080、PptxGenJS 保真匯出、Phase 2 接點說明。 |
+| 2026-10-23 | v1.1 | Hana(Claude) | §PXW：簡報根目錄改為「當前工作區優先、找不到才退回 HARNESS_HOME」（匯出 pptx／錄影 mp4／block deck 列表與匯出），404 點名找過的兩個路徑，匯出檔存回命中根目錄的 `presentations/exports/`；`GET /api/presentations/exports/<file>` 支援 `?workspace=`（§6 簡報根目錄、§8）。PRES-CUE：pptx 輸出全部 cue 執行完的最終畫面（不畫雷射筆）＋備忘稿全文（§4.3）；mp4 改以 cue 為片段、照 cue 順序與 pause 出片，動作過程不錄（靜態畫面，待辦 PRES-CUE-REC-02，§9.1）。**異動原因**：客戶專案工作區匯出回「找不到 deck」、結案報告 P9 需要匯出；指揮官 2026-10-23 拍板通用簡報能力歸平台。 |

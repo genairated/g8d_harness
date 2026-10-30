@@ -147,3 +147,95 @@ agent 在「刻意沒動工就停下」時，於報告**最後**附一行機器�
 2. **是否本期一起做 `noop`（灰·無事可做）**？還是只先做 `blocked`、`noop` 之後再說？（預設：先只做 blocked）
 3. **中文 label 用詞**：徽章「⚠ 受阻·待你」／動態列「未動工·待處理」——用詞可換（例：受阻／待處理／已停下等你）。
 4. **Telegram 回報**：blocked 的推播要不要**特別醒目**（例：標題加 ⚠、或只在 web 顯示不吵手機）？（預設：照 schedule.delivery，摘要文案改成「⚠ 未動工：<reason>」）
+
+---
+
+## 8. 新增狀態 `partial`（✅ 完成·待確認）｜Charles 2026-09-09 拍板
+
+> 規格版本 v0.2。**觸發事件**：指揮官在「客戶專案」工作區連續執行數筆程式開發排程，回報狀態全是
+> `blocked`（amber ⚠「受阻·待你」），但實際查證發現**工作已經做完**，只是 agent 有幾個問題想確認。
+> 指揮官因此誤以為那幾筆卡住沒動。**根因：狀態格子不夠用，agent 找不到「做完了但有事要問」的格子，只好往 `blocked` 塞。**
+
+### 8.1 問題定義
+
+`blocked` 的原始定義（§3.1）很嚴格：**完全沒動工**、依前置護欄停下等人。
+但實務上最常見的結局是第三種：**做完了、有交付，只是有幾個決策點想請指揮官確認**。
+現行三格（success／failed／blocked）沒有它的位置：
+
+- 報 `success`（綠）→ 待確認事項被淹沒，指揮官不會回頭看。
+- 報 `blocked`（amber ⚠）→ **看板顯示「受阻」，指揮官誤判它沒做事**（本次實際發生）。
+
+這是**分類不足造成的系統性誤報**，不是 agent 亂寫。
+
+### 8.2 業界對照（不自創）
+
+主流 CI 都有「跑完了但要你看一眼」這一格，本規格照抄、不自創語意：
+
+| 系統 | 該格名稱 | 語意 |
+|---|---|---|
+| Jenkins | `UNSTABLE`（黃球） | 建置成功但測試有問題 → 要人看 |
+| GitLab CI | `passed with warnings` | 通過但有警告 |
+| GitHub Actions | `neutral` | 完成、非成功也非失敗 |
+
+→ 本系統取名 `partial`，中文「**完成·待確認**」。
+
+### 8.3 語意與呈現（拍板）
+
+> **agent 已完成任務主體、有實際交付（改了檔案／產出了東西），但存在需要指揮官確認或決定的事項。**
+> 不是受阻（工作已推進），也不是純成功（有事待你看）。
+
+| 屬性 | 值 |
+|---|---|
+| status key | `partial` |
+| 中文 label | **「✅ 完成·待確認」** |
+| 圖示 | ✅（配藍色徽章，與綠色成功區隔） |
+| 字色／底色 | `text-blue-700 dark:text-blue-400` ／ `bg-blue-100 dark:bg-blue-900/30` |
+
+**為什麼是藍**：藍在本系統既有語意是「資訊／進行中」，不帶警告意味；amber 保留給「**要你介入才能繼續**」，
+綠保留給「完全沒事」。**藍＝已交付、有事供你參考**，與 amber 的「停住等你」清楚切開，一眼可辨。
+（`running` 也用藍，但兩者不會同時出現在同一筆 run 的終態，且 label/圖示不同，實務上不混淆。）
+
+### 8.4 判定準則：改成一個二選一硬條件（本節是修正誤報的關鍵）
+
+現行 `/task` 技能對 `blocked` 的描述是**描述性**的（「前置護欄擋下、沒動工就停」），模型會自行詮釋，
+於是「做完但有疑問」被詮釋成 `blocked`。改成**可機械判定的問句**：
+
+> **「這次執行，你有沒有實際修改／新增任何檔案？」**
+> - **有 → 一律不准報 `blocked`。** 有待確認事項就報 `partial`，沒有就報 `success`。
+> - **沒有 →** 是因為前置條件不滿足而刻意停下 → `blocked`；是因為本來就沒事可做 → `success`（或未來的 `noop`）。
+
+標記格式沿用 §4.1，新增 `partial`，並要求 `reason` 同時交代**已完成什麼**與**待確認什麼**：
+
+```
+<run-outcome status="partial" reason="已完成 X、Y、Z；待確認：A 的欄位命名要沿用舊表還是改名" />
+```
+
+### 8.5 實作落點
+
+- `portal/server.js` `onComplete`（≈ L10459）：`outcomeMark.status === 'partial' && !isFailed` → `status='partial'`、
+  `outcomeReason = reason`；`deliverSummary` 分支新增「✅ 完成·待確認：<reason>」。
+- `portal/scheduler.js` `recordRunOutcome`（L468）：`partial` **視同成功**歸零 `consecutiveFailures`
+  （它確實做完了，不該推向熔斷）——與 `blocked`（不歸零也不累加）不同，這是刻意的差異。
+- **串接（chainNext）與自動部署（postRun.deploy）：`partial` 一律不觸發。**（server.js L10500 的條件維持 `status === 'success'`。）
+  理由：既然有事待確認，就不該讓下一階段或部署自動跑下去。
+- `portal/views/schedule.js`：`STATUS_BADGE` 加 `partial`（藍）、`STATUS_LABEL` 加 `partial: '✅ 完成·待確認'`、
+  `statusIcon`（L732）加 `partial: '✅'`。
+- `portal/telegram.js`（L393、L1102）：icon 分流新增 `partial → '✅'`，摘要文案帶 reason。
+- `portal/commands/task.md`（`/task` 技能）：把 §8.4 的二選一硬條件寫進去，取代現行描述性說法；
+  並要求 `partial` 的 reason 同時寫「已完成什麼／待確認什麼」。
+
+### 8.6 已知限制（誠實聲明）
+
+本機制仍**依賴 agent 自我標記**，系統無法自動驗證它到底做了沒。§8.4 的硬條件能大幅降低誤判率，
+但**不保證 100% 不再誤報**。真要根治需由系統自行比對檔案異動（例如 run 前後的 git diff），
+屬於更大的題目，**本期明確不做**。
+
+### 8.7 驗收（DoD）
+
+- [x] mock `ctx.result` 帶 `<run-outcome status="partial" reason="…" />` → run 記錄 `status=partial`、`outcomeReason` 有值。（鏡射邏輯腳本驗證，見 DASHBOARD 2026-09-09 SSTAT-P 記錄）
+- [x] 面板顯示**藍色 ✅「完成·待確認」**，與綠色 success、amber blocked 三者一眼可辨；深淺色皆可讀。（程式已改，`portal/views/schedule.js` 用既有 dark: class 慣例；**視覺呈現待指揮官部署後手動驗證**）
+- [x] `partial` **歸零** `consecutiveFailures`；`blocked` 維持既有（不歸零不累加）——未回歸。（單元測試驗證通過）
+- [x] `partial` **不觸發** chainNext、**不觸發** postRun.deploy。（條件本為嚴格 `status==='success'`，程式碼審視＋鏡射測試確認）
+- [x] Telegram 推播顯示 ✅ 與 reason，且 `<run-outcome>` 標記不出現在正文與存檔 transcript。（icon 分流已改；reason 沿用既有 `deliverSummary` 管道，未起真 bot 端對端測試，判斷風險低）
+- [x] 既有 success／failed／blocked／limited-waiting 行為完全未變。（回歸測試通過）
+- [ ] `Deploy_Harness.ps1` 冒煙通過。（**本次刻意未部署**——系統指令明令不自動 Deploy，由指揮官自行決定時機後才能勾這項）

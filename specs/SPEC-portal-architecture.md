@@ -106,3 +106,28 @@
 - 一個示範工作區能用 `plugin.json` 掛一個「平台沒有的」側欄項目＋view＋API，不改平台程式。
 - 所有既有功能（11 面板＋簡報＋TTS＋排程＋Telegram＋工作區隔離）行為不退。
 - Deploy 冒煙測全綠；自癒回滾仍有效。
+
+---
+
+## 6. 側欄卡片輪播殼（SPEC-sidebar-card-carousel.md，2026-10-08 增補）
+
+側欄頂端（品牌區塊下方）原本是一張寫死的工作台卡，現在是一個**輪播殼**，結構：
+
+```
+#sb-carousel                               ← 容器；sb-collapse 收合時整區隱藏＋停計時器
+  #sb-carousel-track                       ← 卡片軌道，一次只顯示一張（.sb-carousel-slide-active）
+    .sb-carousel-slide[data-card-id="worktable"]       ← 內建，靜態（§SPEC-sidebar-worktable-card.md）
+    .sb-carousel-slide[data-card-id="quota:<id>"]      ← 內建，動態（一家模型一張，§SPEC-model-quota.md §3.2）
+    .sb-carousel-slide[data-card-id="plugin:<name>:<id>"]  ← 外掛貢獻，受信任才載入（§SPEC-plugin-contract.md §2/§5）
+  #sb-carousel-prev / #sb-carousel-next     ← hover 浮出的左右箭頭
+  #sb-carousel-dots                        ← 圓點列（僅 1 張可見卡時隱藏）
+```
+
+- **卡片註冊表**：`portal/shell/card-carousel.js`（`window.sbCardCarousel`）只管生命週期/排序/輪播/圓點/箭頭的通用機制；
+  實際「這次要註冊哪些卡」由 `portal/index.html` 的 `rebuildCardCarousel()` 決定（讀 `manifest.sidebarCards` ＋
+  `/api/model-quota` ＋ `/api/status` 的 `plugins[].cards`）。
+- 卡片模組合約是既有 view 合約（§3 的 `mount(container,ctx)`/`unmount()`/`ctx.apiFetch`）的子集，版面天條更嚴
+  （最多 3 行、不設固定高度、不注入全域 CSS、不開 overlay/modal）。
+- 卡片模組檔案由 `portal/server.js` 新增的 `/views/xcard/<pluginName>/<cardId>.js` 路由服務，鏡射既有
+  `/views/x/<name>.js`（外掛 view 模組）那條路由的信任閘＋路徑安全檢查寫法。
+- 詳細設計決策、設定節點、卡片合約全文見 `specs/SPEC-sidebar-card-carousel.md`。

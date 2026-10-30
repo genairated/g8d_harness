@@ -232,3 +232,11 @@
 | 2026-07-01 | v0.6 | 老闆 + Hana | 老闆拍板 **說話者身分結構化**（§6b.4）。**根因**：來賓身分只是脆弱的 `> 名字：` 引用文字前綴，整條鏈無結構化資料告訴 Hana「這是另一位真實在場者對你講話」→ ① icon 分不出我/來賓、② Hana 把來賓段當「你自己講的怪話」。**修法**：升級成訊息上的**有序 `turns:[{speaker,name,text}]`** 結構。拍板：**A** 兩顆獨立泡泡（非同泡泡上下分區）；**B** 排序固定**來賓在前、我在後**（不用時間戳——loopback 轉錄有延遲、代貼、起算點無法界定；按電腦音訊＝來賓要講、我的話多為備註）；前端 `appendMessageToUI`＋浮動 chat render 依 speaker 畫琥珀色來賓泡泡（avatar=名字首字、名字雜湊配色、空=來賓）；後端 `buildChatPrompt` 偵測 guest 段注入隱藏框架讓 Hana 直接稱呼來賓回應。取代 `buildGuestQuote` 單則合成。新增 §6b.6 影響範圍、DoD F6e、待拍板 #16。 |
 | 2026-07-01 | v0.4 | 老闆 + Hana | 老闆拍板 F6 三項精修：**①「對方」框改「來賓」＋即時逐字**：收音鈕按下該框變**唯讀**、辨識片段**滾動回填**（邊收邊出字），停止後變**可寫**可手打；新增 `GET /api/stt/loopback/partial` 即時逐字輪詢、收音迴圈滾動切段。**② 說話者「取名」**：第二框標籤改成**名字 textbox**，老闆打誰在講→Hana 用該名認人，**留空顯示/標記為「來賓（Guest）」**；名字框永遠可編輯。**③ 送出模型**：**合併送為預設**＋「只發我這段」/「只發來賓這段」兩單獨送小連結（不用 switch 互斥）。DoD 增 F6a2/F6a3；待拍板 9 標記已拍板、新增 12–14。全文「對方」統一為「來賓」。 |
 | 2026-07-03 | v0.7 | 老闆 + Claude(Opus) | 新增兩項語音精修（§6b.7／6b.8）：**① 通話簡短回話模式**——通話對方沒耐心聽長文，`buildChatPrompt` 偵測到 guest 段時，除既有「稱呼來賓名」再疊加「精準扼要」框架（1–3 句、直接給結論／關鍵數字，去掉鋪陳／免責／Sources 清單）；無 guest 的一般對話不受影響；預設自動觸發、不做開關。**② chat STT 模型可選**——比照 AI 會議選單，chat 語音輸入加 small/medium 選單（預設 small、localStorage 持久化），F4 麥克風＋F6 loopback 共用、不再寫死 medium；順帶把 loopback 互動 beam_size 5→1。實測確認 STT 現況＝faster-whisper medium 跑在 GPU（cuda/float16，非誤掉 CPU）。新增 DoD F6f/F6g、待拍板 #17/#18。 |
+
+## 附錄：AVT-FIX（2026-10-30）— 頭像懸停遮擋 + 整頁對話頭像規則修訂（取代上方 §5「頭像隱藏」）
+
+- **整頁「AI 對話」**：頭像**照常顯示**（麥克風／筆記／問題回報／設定仍可用），只隱藏「頭像對話」鈕（`#hana-chat-btn`）。`views/chat.js` mount/unmount 改加/移除 `.hana-no-chat`，不再加 `.avatar-hidden`。
+- **移除**「顯示動漫形象」勾選框（`index.html` 設定面板）與 `localStorage.hana_avatar_visible` 的讀寫（`shell/avatar-tts.js`）；頭像右上 × 隱藏 / 還原鈕保留，但僅限當次頁面（重整即顯示）。簡報 overlay（`presentation-player/hana-overlay.js`）自帶的勾選框與其儲存**未動**。
+- **遮擋修法（結構性）**：`#hana-float-widget` 外框改 `pointer-events:none`，只有直接子元素（頭像包裝、功能鈕列、還原鈕）`auto`；`gap` 改為頭像包裝的 `padding-right:8px`，讓懸停從頭像移到鈕列不中斷。日後新增按鈕不需再調。
+- **限制**：頭像圖片本身的方框（160×182）與功能鈕列的長條仍會吃滑鼠；若頭像被拖到輸入列正上方，仍會蓋住（屬頭像本體）。簡報頁的 server.js 注入 CSS 未套用此修法。
+| 2026-10-30 | v0.8 | Hana | AVT-FIX：外框不攔截滑鼠；整頁對話只藏頭像對話鈕、移除顯示動漫形象勾選框與 hana_avatar_visible。 |

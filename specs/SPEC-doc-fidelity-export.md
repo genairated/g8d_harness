@@ -115,7 +115,32 @@ BPMN 只活在 portal 的**擬真預覽渲染層**（`_renderDocFidelity` → `_
 
 ---
 
-## 9. Changelog
+## 9. FX-D — 長流程圖「自動切片＋自動續頁」（已實作）
+
+> 動機（2026-08-25 與 老闆）：`.../情境詳細解決方案_連板插件與批號精準分配.docx` 的主流程圖在擬真真身裡**下半截被切掉**。老闆拍板：**A（拆階段子流程）＋ D（自動切片＋自動續頁）兩者都要**，並明確排除「獨佔一頁」（B）與「自動縮小」（C）——「有些流程圖就是會超大，獨佔一頁也不夠；縮小更不是我要的」。
+
+### 9.1 根因
+`docx-preview` 的每一頁是 `section.docx`，**頁高用 `min-height` 設、`overflow:hidden`**。合成進去的 BPMN 圖高於「該頁剩餘空間」時：內容會把該 section **撐長**，Chromium 列印再把這張長高的頁任意斷開 → 螢幕上被切、PDF 上斷裂／疊字。三條路徑（螢幕擬真／全螢幕／列印 PDF）都收斂在 `_synthDocFlowSvg`，故一次修好三處。
+
+### 9.2 做法（`portal/index.html`，`_paginateFlowBoxes` 一族）
+1. **量測**：`_flowPageGeom()` 用 `min-height` 推頁底（**不可用撐長後的 `rect.bottom`**），得該頁可用高度。
+2. **找安全切點**：`_flowBlockBands()` 蒐集每個 `.djs-element` 方框的 y 區間（合併重疊）；**連線可切、池／泳道容器可切**（高度 > 全圖 60% 者視為容器，否則永遠找不到切點），**一般節點方框絕不切穿**。`_flowSafeCut()` 由目標高度往上退到最近方框的上緣。
+3. **切片與續頁**：第一段留原位（剩餘空間 < `FLOW_PAGE_MIN_FIRST`=140px 就整張圖移到續頁，不留窄縫）；其餘段各自複製一張**續頁**（`_flowNewContPage()` 沿用原頁 class／inline style／頁首頁尾），依序 `after()` 插入。各段**維持原比例**——不縮放、不丟內容。
+4. **標題**：續頁標「`<圖名>`（續 N）」。圖名取該框的 `.doc-flow-caption`；單一流程圖不在頁面標題時，退回 `data-flow-label`（＝`assets/imageN_<圖名>.bpmn` 的檔名後綴）；都沒有才用「流程圖」。
+5. **可重入**：重畫／改 BPMN 後 `_undoFlowPagination()` 先全部還原再重算，不會累積殘留續頁。
+6. **誠實降級**：切點退無可退（段高 < 目標 18%）時，`console.warn('[FX-D] …')` 記一筆再照高度切；退回原始 PNG 的圖框不切。
+
+### 9.3 邊界
+- **只動擬真「呈現層」，不碰 `source.docx` 真身**（與 §3 A 同一層）；PDF 匯出因走同一支函式而自動受惠。
+- 與 §4/§5（B／C 烤進 docx）**尚未整合**：烤進真身時目前仍是「一張圖一個圖元」，長圖的分頁由 Word 自己處理。若日後要讓交付 docx 也有續頁，需在 `docx-bpmn-bake.py` 端重做同樣的切片（**尚未實作**）。
+
+### 9.4 搭配 A（文件面規範，非程式）
+長流程優先**拆成階段子流程**：一張原圖對多個 `assets/imageN_<階段名>.bpmn` fence，擬真層會依序堆疊並各自標題（見 §6 開放決策 5「多子流程一圖」）。**A 讓客戶好讀，D 保證再長也不遺失**——兩者搭配使用，見 `/doc-flowchart` 技能與專案 memory `doc-long-flow-split-and-paginate`。
+
+---
+
+## 10. Changelog
 | Date | Version | Author | Description |
 |:-----|:--------|:-------|:------------|
 | 2026-07-09 | v0.1 | 老闆 + Hana | 初版。診斷「網頁看得到、匯出/開檔看不到」根因（BPMN 只活在擬真呈現層，匯出走 md 投影／md→docx 重建、真身從未寫入 BPMN；pptx/workbook PDF 已擬真、獨缺 docx）。三階段：A 擬真＋BPMN PDF（列印擬真呈現層，低風險先做，Sonnet）／B 擬真 docx 交付檔（OOXML 影像置換→exports/，不動真身，Opus）／C 烤進 source.docx 真身（同 B 引擎＋快照＋已變更語意，Sonnet）。B/C 共用 `docx-bpmn-bake.py`，對位沿用 §13.11 paraId/doc.md fence 身分、置換沿用 `image-writeback.py`。老闆拍板：先做 A，B/C 後續、spec 先寫齊、三 task＋手動 schedule 全設好待手動執行。 |
+| 2026-08-25 | v0.2 | 老闆 + Hana | 新增 §10 FX-D 長流程圖自動切片＋自動續頁（擬真呈現層 `_paginateFlowBoxes` 一族，已實作並部署 v80+）。老闆拍板 A＋D 並排除 B（獨佔一頁）／C（自動縮小）。 |

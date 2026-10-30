@@ -1,6 +1,6 @@
 # SPEC-schedule-deploy-control — 排程的「佈署」一級控制
 
-> 狀態：草案（決策已由指揮官 2026-08-03 拍板，見 §2）
+> 狀態：草案（決策已由指揮官 2026-08-03 拍板，見 §2；§4.8 部署成功後接續 2026-10-23 追加）
 > 相關：`portal/scheduler.js`（schedule 資料結構 / run 生命週期）、`portal/server.js`（`fireScheduledJob` 的 onDone、SCHED-CHAIN）、`portal/views/schedule.js`（清單與編輯表單）、`Deploy_Harness.ps1`
 > 任務：`.worktable/TASK.md` §Z
 
@@ -145,6 +145,35 @@ server 啟動、scheduler 初始化階段（與既有 `flushRunDelivery` 開機�
 - **避開撞車**：啟動佈署前檢查是否還有**其他 run 正在執行**（既有的 running 判定）。有的話**每 30 秒重試、最多等 10 分鐘**；逾時仍照常佈署，並在 log 與通知中明確記「等待逾時，可能中斷了其他執行中的排程」。理由：佈署會重啟 server，手動連跑多筆獨立排程時很容易重疊。
 - **執行期複檢 D2**：真的要 spawn 之前再讀一次該 schedule，若 `chainNext` 非空 → 放棄佈署、記 log（防止資料被外部手改繞過 API 驗證）。
 
+### 4.8 部署成功後接續（SCHED-DEPLOY-NEXT，2026-10-23）
+
+> 起因：客戶專案「結案報告」是一條 P0（平台，要部署）→ P1～P9（客戶專案，只寫內容）的接力鏈。D2 規定佈署只能放在鏈尾，所以 P0 不能用 `chainNext` 接 P1；但 P1 又必須等 P0 的新引擎**上線之後**才能開跑。解法是把「接續」掛在**部署成功**這個時間點，而不是 run 成功的時間點。
+
+**資料**：`postRun.nextAfterDeploy: "<排程 id>"`（選填）。
+
+```jsonc
+"postRun": { "deploy": true, "nextAfterDeploy": "sched_…" }
+```
+
+**規則**
+- 只有 `postRun.deploy === true` 的排程可設；**D2 不變**——`chainNext` 仍必須為空（佈署仍只在鏈尾）。
+- 值必須是**存在**的排程 id、**不可是自己**；可**跨工作區**（`triggerNow` 本來就以 id 找全域排程，被接的那支照它自己的 `workspace` 跑）。
+- **觸發點**：新版 server 開機時的 `reconcilePendingDeploy()` 判定該次部署 **success**（`HARNESS_DEPLOY_EXIT=0`）之後，**重讀**排程清單，若有 `nextAfterDeploy` 就 `triggerNow(它)`；log 與通知寫明「部署完成，已接續「<名稱>」」，接續結果也記進該 run 的 `deploy.nextAfterDeploy`（`{id,name,ok,error}`）。`triggerNow` 回 `already-running` 等失敗時，通知改寫「⚠ 接續「<名稱>」未開跑（原因）」。
+- 部署 **failed／unknown 一律不接續**。回滾回來的舊版本本來就沒有這段程式，也不會接——這是正確結果。
+- 被接的排程已**歸檔** → 不接（記 log `target-archived`）；來源排程被刪、目標不存在、指向自己 → 不接（各記原因）。停用（`enabled:false`）的目標**照接**——與 `chainNext` 一致，被接的排程可維持停用。
+- 純邏輯抽在 `portal/deploy-next.js`（`decideNextAfterDeploy`／`sanitizeNextAfterDeploy`，無 I/O），單元測試 `portal/checks/deploy-next.test.js`（success 接、failed／unknown 不接、id 不存在不接、指向自己不接，另含歸檔、未設、來源已刪與 API 驗證共 16 項）。
+
+**API 驗證**（`validatePostRunPatch`，§4.1）
+- 原本會剝掉 `postRun` 的未知欄位；現在**唯一保留** `nextAfterDeploy`，並驗證上述規則（不合法回 400、檔案不寫入）。
+- **PUT 沒帶 `nextAfterDeploy`** → 沿用磁碟上的值（只改 `deploy` 的呼叫端不會默默洗掉接續設定）；把 `deploy` 關掉時一併清除；明確帶 `null`／空字串 → 清除。
+- `scheduler.createSchedule()` 建立時保留通過驗證的值。
+
+**UI**（`portal/views/schedule.js` 編輯表單）
+- 「執行成功後自動重新佈署」勾選框下方加「**部署成功後接續**（選填，可跨工作區）」下拉；未勾佈署時 disable 並清空。
+- 選項來源是專用端點 `GET /api/schedules/deploy-targets`：列**全部工作區**的排程，但**只回 `{id, name, workspace 名稱, enabled, archived}`**——不含任務內文、執行紀錄、通知。這是排程「工作區隔離」鐵則下刻意的窄例外（下拉要能跨工作區選），有內容的讀取面仍一律隔離。選項格式「[工作區名] 排程名稱（停用）」，已歸檔的不列。
+
+**驗收**：本功能只能在「部署後」才真的發生——由 P0（`sched_1792689439889_b9xi`）部署成功後，客戶專案 P1（`sched_1792637373007_hh8l`）是否自動開跑來驗（§PCUE 指揮官驗收）。
+
 ## 5. 前端（`portal/views/schedule.js`）
 
 ### 5.1 清單新增「佈署」欄（D1）
@@ -207,3 +236,11 @@ server 啟動、scheduler 初始化階段（與既有 `flushRunDelivery` 開機�
 - **自我佈署會打斷自己那一棒的 run**：排程勾了佈署 → 跑完觸發 `Deploy_Harness.ps1` → server 被換掉，該 run 的 `finishRun()` 永遠來不及寫，`schedule.lastRunStatus` 停在 `null`，清單就一直顯示「尚未執行」（§Z 自己第一次跑完就是這樣）。修法在 `scheduler.js` 的開機 reconcile：把孤兒 run 標 `interrupted` 之外，**同步把排程層的 `lastRunAt`／`lastRunStatus` 也補成 `interrupted`**（只在該中斷比既有 `lastRunAt` 新時才覆寫，避免蓋掉更新的正常結果；不累加 `consecutiveFailures`）。
 - 因為這段修補只在 **server 啟動時**執行，狀態要等下一次重啟才會補上——不是 UI 沒更新。
 - **只遷移既有 prompt 治不了本（2026-08-05）**：§6 改了 4 筆，但「最後一步自己 Deploy」這個寫法會被新排程一再複製回來，於是同一個坑重複踩了至少三次（§Z／§WB1／§WB4）。**凡是「模型該不該做某件會傷到系統本身的事」，就不能靠 prompt 內文自律，要由系統在執行期無條件注入政策**（見 §4.6）。同理適用於未來任何「模型可能殺掉承載自己的行程」的動作（重啟服務、改 port、動 venv）。
+
+---
+
+## Changelog
+
+| Date | Version | Author | Description |
+|:-----|:--------|:-------|:------------|
+| 2026-10-23 | v1.1 | 指揮官 + Hana(Claude) | 新增 §4.8「部署成功後接續」（`postRun.nextAfterDeploy`）：開機對帳判定部署 success 後重讀排程並 `triggerNow` 接續目標（可跨工作區）；failed／unknown 不接；API 驗證保留並檢查此欄位（存在、非自己、需 deploy=true，PUT 未帶時沿用）；UI 加「部署成功後接續」下拉（專用 `GET /api/schedules/deploy-targets`，只回 id／名稱／工作區名）。**異動原因**：客戶專案結案報告 P0（平台，要部署）→ P1～P9（客戶專案）接力，D2 讓 P0 不能用 chainNext 接 P1，而 P1 必須等新引擎上線後才能跑；指揮官 2026-10-23 拍板通用能力歸平台。**自行取捨**：①停用的目標照接（與 chainNext 一致）、歸檔的不接；②接續失敗（如目標已在跑）只在通知裡講，不重試；③跨工作區下拉走窄端點，不放寬一般清單的工作區隔離。 |

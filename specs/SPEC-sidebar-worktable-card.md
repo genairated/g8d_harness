@@ -141,3 +141,16 @@ const wtPath = (statusData?.manifest?.worktable?.path) || '.worktable';
 5. 側邊欄收合 → 版面不破、無殘留空白卡片。
 6. 把 `harness.json` 的 `nav.worktable` 設 `false` → 卡片只剩標題與進度條，三顆按鈕與展開區消失；設 `true` 或不設 → 全部顯示。
 7. 在 `harness.json` 自訂 `worktable.path` 的工作區，進度數字與兩顆按鈕都指向該路徑（不再寫死 `.worktable`）。
+
+---
+
+## 9. SBC 增補（`specs/SPEC-sidebar-card-carousel.md`，2026-10-08）
+
+本卡自此是側欄「卡片輪播」（`portal/shell/card-carousel.js`）裡的**第一張**，穩定識別碼 `worktable`（見
+SPEC-sidebar-card-carousel.md §3.1）。這份 spec 原本描述的所有內容與行為——卡片本身的 DOM（`#wt-card`／
+`#sprint-badge`／`#progress-bar`／`#menu-dashboard`／`#menu-task`／`#menu-history`／`#wt-card-expand-btn`／
+`#worktable-tree` 等）、`nav.worktable` 開關語意、§8 驗收項——**完全不變**；唯一變化是它現在被包在輪播殼
+（`#sb-carousel` → `#sb-carousel-track` → `.sb-carousel-slide[data-card-id="worktable"]`）裡，與模型用量卡／
+外掛客製卡輪流顯示。`sidebarCards.hidden` 也可以把 `worktable` 列進去整張隱藏（opt-out，同 `nav.worktable`
+但分屬兩個不同機制：`nav.worktable` 關掉的是卡片內的三顆按鈕＋展開區，`sidebarCards.hidden=["worktable"]`
+關掉的是整張卡在輪播裡出現與否）。

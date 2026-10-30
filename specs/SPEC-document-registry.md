@@ -192,6 +192,16 @@
 5. **進度 + 完成清單**（成功/略過/失敗）。
 - 流程圖：批量先做機械轉換 + 圖片抽取；Visio/圖片流程圖→```bpmn 重建標「待補（人工/Hana）」，避免批量誤判（同 `J1`）。
 
+### 4a. 匯入對話框的瀏覽輔助（DIMP，v0.7，worktable DIMP1）
+檔案樹一多就得整頁滑找，故在「檔案樹對話框」（步驟 1）補三項純前端瀏覽輔助，**不動 `GET /api/documents/import-tree` 的資料格式、不動轉檔流程本身**：
+- **資料夾收折**：每個資料夾列可點展開／收合（箭頭 + `folder`/`folder-open` 圖示），對話框開啟時預設全展開；收折狀態只存在記憶體、關閉對話框後重置。資料夾列右側顯示「(N)」＝該層含子孫、**通過目前篩選**的檔案數。收折只是 CSS 隱藏子項，**不會清掉已勾選狀態**。
+- **資料夾層級全選**：資料夾列前的 checkbox 勾選＝勾選其下所有（通過目前篩選、渲染在畫面上）的檔案；只勾了部分時顯示 indeterminate。
+- **檔名關鍵字搜尋**：對話框頂部搜尋框，即時、不分大小寫子字串比對檔名；有命中的資料夾自動展開、無命中的資料夾整個隱藏；命中片段用 `<mark>` 高亮。
+- **副檔名篩選**：搜尋框旁 DOCX／PPTX／XLSX 三顆可複選篩選鈕（沿用文件清單既有 `doc-filter-chip` 視覺），預設全開，與關鍵字搜尋為 AND 關係；三者全關會被擋下（至少保留一種），避免清單整片消失。
+- **關鍵規則：篩選（搜尋字串／副檔名）不會清除已勾選狀態**。已勾選的檔案若被目前篩選條件篩掉，它會暫時不顯示在畫面上，但仍計入底部「已選 N 個」的總數；「全選」與「清除」按鈕（以及資料夾層級全選）都只作用於**目前畫面上看得到**的檔案，不會動到被篩掉但已勾選的項目。篩選條件清空後，該檔案的勾選狀態（含 checkbox 本身）會完整恢復顯示。
+- 篩選後若一個檔案都沒有，顯示「沒有符合條件的檔案」（與「工作區內沒有 .docx / .pptx / .xlsx 檔案」的原生空狀態分開顯示，不互相覆蓋）；篩選中額外在「已選 N 個」旁補一行「（目前篩選中顯示 M 個）」。
+- 實作：`portal/index.html` `_importBuildTreeNodes`（每次篩選/搜尋變動時整棵樹重繪一次）＋ `_importToggleDir`（純 DOM 操作、不重繪，保留捲動位置）；狀態存於 `_importTreeRaw`（原始樹，不被篩選污染）／`_importSelected`／`_importCollapsedDirs`／`_importExtFilter`／`_importSearchQuery` 四個模組級變數。
+
 ---
 
 ## 5. 文件檢視器 UI（像 AI 對話）
@@ -297,6 +307,7 @@
 ## 13. Changelog
 | Date | Version | Author | Description |
 |:-----|:--------|:-------|:------------|
+| 2026-09-15 | v0.7 | Charles + Hana | 加 §4a「匯入對話框的瀏覽輔助（DIMP）」：檔案樹對話框加資料夾收折（含子孫檔案數）、資料夾層級全選（indeterminate）、檔名關鍵字搜尋（自動展開命中／高亮）、副檔名篩選（DOCX/PPTX/XLSX 複選，沿用 `doc-filter-chip`）；核心規則「篩選不清除已選」。純前端（`portal/index.html`），不動後端 API／轉檔流程。對應 worktable DIMP1。 |
 | 2026-07-09 | v0.6.2 | 老闆 + Hana | §11b workbook 全螢幕頁籤固定底排——`_renderSheetInto` 加 `pinnedTabs` 旗標，全螢幕改欄狀 flex（表格區 `flex:1` 內捲、頁籤列 `flex-shrink:0` 永貼底），解決「切頁籤時因各頁筆數不同、底部頁籤列上下跳」；僅全螢幕，面板檢視零回歸。對應 worktable DV1c。 |
 | 2026-07-08 | v0.6 | 老闆 + Hana | §11 三型共用「全螢幕唯讀檢視器」（doc/pptx/workbook 動作列各一顆「全螢幕」，重用擬真引擎渲 source 真身進原生全螢幕 overlay、−/＋ 縮放＋Esc、workbook 底部頁籤翻頁）——**✅ 已上線 v212**；§12 動作列收斂＋匯出統一 PDF（照 Office 標準：doc 逐頁對齊 Word［已有］、pptx 每片一頁橫向、workbook 整本每 sheet 依序插分頁，皆沿用 doc 的 Playwright 列印、不引 LibreOffice；動作列三型一致收斂成 6 顆核心＋「更多 ▾」、移除獨立「與上一版差異」鈕）——**✅ 已上線 v213**（pptx 頁面尺寸改「量測實際渲染框動態注入 `@page size`」而非寫死 16:9，過程中發現並修掉一個 Chromium 怪癖：`page.pdf({width,height})` 與頁面同時存在的全域 `@page{size:A4}` 並存時會把傳入尺寸互換，故統一改走 CSS `@page` + `preferCSSPageSize:true`，見 render-service/doc-pdf.js 註解）。對應 worktable §DV。 |
 | 2026-07-08 | v0.5 | 老闆 + Hana | §8 文件型別正名 `sheet`→`workbook`（連程式型別值＋一次性資料遷移＋向後相容，worktable Z1）；§9 桌面編輯回讀「更新AI記憶」按鈕——doc/pptx/workbook 各一顆，讀工作複本重跑轉檔器重生 doc.md＋記一版 `edit`，不自動寫回真身、用程式非 AI（worktable Z2）。兩者分兩筆排程依序自主執行。 |
