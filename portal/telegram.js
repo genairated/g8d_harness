@@ -163,13 +163,13 @@ class TelegramBot {
   }
 
   // TGC8-06: 接錯本防呆 — one line telling the commander which chat session is now active.
-  _sessionStatusLine(chatId, workspaceRoot) {
+  async _sessionStatusLine(chatId, workspaceRoot) {
     const sessionId = this.getActiveSessionId(chatId, workspaceRoot);
     if (!sessionId) return '現在接：（尚無對話，直接打字即自動建立新對話）';
     let title = sessionId;
     if (this._listChatSessionsFn) {
       try {
-        const s = this._listChatSessionsFn(workspaceRoot).find(function (x) { return x.sessionId === sessionId; });
+        const s = (await this._listChatSessionsFn(workspaceRoot)).find(function (x) { return x.sessionId === sessionId; });
         if (s && s.title) title = s.title;
       } catch (e) {}
     }
@@ -785,7 +785,7 @@ class TelegramBot {
       const label    = proj ? (proj.name || path.basename(root)) : path.basename(root);
       this.setContext(chatId, root, label);
       // TGC8-06: 接錯本防呆 — 工作區切換後附上目前接的是哪本對話。
-      const statusLine = this._sessionStatusLine(chatId, root);
+      const statusLine = await this._sessionStatusLine(chatId, root);
       this._logConsole({ role: 'bot', chatId, text: '已切換至 ' + label });
       await this.sendMessage(chatId, '📍 目前脈絡切換至：' + label + '\n(' + root + ')\n' + statusLine);
 
@@ -920,7 +920,7 @@ class TelegramBot {
     }
 
     var meetings = [];
-    try { meetings = this._meetingsFn(workspaceRoot); } catch (e) {
+    try { meetings = await this._meetingsFn(workspaceRoot); } catch (e) {
       return this.sendMessage(chatId, '⚠️ 查詢會議失敗：' + e.message);
     }
 
@@ -1044,9 +1044,7 @@ class TelegramBot {
       updatedAt: now,
       completedAt: null,
     };
-    const list = notesStore.readNotes(this._harnessHome);
-    list.push(note);
-    notesStore.writeNotes(this._harnessHome, list);
+    await notesStore.updateNotes(this._harnessHome, list => { list.push(note); });
 
     const dueLabel = dueAt ? '（到期 ' + dueAt.slice(0, 16).replace('T', ' ') + '）' : '';
     const reply = '📌 已記下便條' + dueLabel + '：\n' + text;
@@ -1096,19 +1094,17 @@ class TelegramBot {
     const sm = this._schedulerManager;
     if (!sm) return this.sendMessage(chatId, '排程系統不可用。');
     const today = new Date().toISOString().slice(0, 10);
-    let runs = sm.queryRuns({ since: today + 'T00:00:00.000Z' });
-    // Scope to the chat's workspace context (map run.scheduleId → schedule.workspace).
+    // IDX-TG：依 chat 脈絡工作區，直接問執行記錄目錄（opts.workspace；null workspace＝harness home），不再整份排程檔對照。
     const ctx = this.getContext(chatId);
+    const qopts = { since: today + 'T00:00:00.000Z' };
     let scope;
     if (ctx && ctx.root) {
-      const active = this._normWs(ctx.root);
-      const wsMap = {};
-      sm.loadSchedules().forEach(s => { wsMap[s.id] = s.workspace; });
-      runs = runs.filter(r => this._normWs(wsMap[r.scheduleId]) === active);
+      qopts.workspace = ctx.root;
       scope = '（' + ctx.label + '）';
     } else {
       scope = '（全部工作區・未設定脈絡）';
     }
+    const runs = sm.queryRuns(qopts);
     let reply;
     if (!runs.length) {
       reply = '今天' + scope + '還沒有排程任務執行。';
@@ -1127,17 +1123,25 @@ class TelegramBot {
   // Normalise a workspace path for comparison (collapse doubled separators, lowercase).
   _normWs(p) { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } }
 
+  // IDX-TG：全部工作區的現役排程——先用目錄版，任一份不可用就退回讀主檔（排除已歸檔）。
+  async _activeSchedulesAll(sm) {
+    let all = null;
+    try { all = await sm.listActiveSchedulesAllWorkspaces(); } catch (e) {}
+    return all || sm.loadSchedules().filter(s => !s.archived);
+  }
+
   async _cmdSchedules(chatId) {
     const sm = this._schedulerManager;
     if (!sm) return this.sendMessage(chatId, '排程系統不可用。');
     const ctx = this.getContext(chatId);
-    let list = sm.loadSchedules();
+    // IDX-TG：讀排程清單目錄（現役，不含已歸檔）；沒有脈絡＝全部工作區的現役排程。
+    let list;
     let scope;
     if (ctx && ctx.root) {
-      const active = this._normWs(ctx.root);
-      list = list.filter(s => this._normWs(s.workspace) === active);
+      list = (await sm.listSchedulesForWorkspace(ctx.root, false)).items;
       scope = '（' + ctx.label + '）';
     } else {
+      list = await this._activeSchedulesAll(sm);
       scope = '（全部工作區・未設定脈絡，用 /use 切換）';
     }
     let reply;
@@ -1162,8 +1166,8 @@ class TelegramBot {
     const mem = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
     const sm = this._schedulerManager;
     const ctx  = this.getContext(chatId);
-    let sched = sm ? sm.loadSchedules() : [];
-    if (ctx && ctx.root) { const active = this._normWs(ctx.root); sched = sched.filter(s => this._normWs(s.workspace) === active); }
+    let sched = [];
+    if (sm) sched = (ctx && ctx.root) ? (await sm.listSchedulesForWorkspace(ctx.root, false)).items : await this._activeSchedulesAll(sm);
     const schedCount  = sm ? sched.length : '?';
     const activeCount = sm ? sched.filter(function (s) { return s.enabled; }).length : '?';
     const reply = [
@@ -1206,7 +1210,7 @@ class TelegramBot {
     const label = match.name || path.basename(match.root);
     this.setContext(chatId, match.root, label);
     // TGC8-06: 接錯本防呆 — 工作區切換後附上目前接的是哪本對話。
-    const reply = '📍 已切換至：' + label + '\n路徑：' + match.root + '\n' + this._sessionStatusLine(chatId, match.root);
+    const reply = '📍 已切換至：' + label + '\n路徑：' + match.root + '\n' + await this._sessionStatusLine(chatId, match.root);
     this._logConsole({ role: 'bot', chatId, text: reply });
     return this.sendMessage(chatId, reply);
   }
@@ -1291,7 +1295,7 @@ class TelegramBot {
     if (!this._listChatSessionsFn) return this.sendMessage(chatId, '⚠️ 對話列表功能未設定。');
 
     let sessions = [];
-    try { sessions = this._listChatSessionsFn(workspaceRoot); }
+    try { sessions = await this._listChatSessionsFn(workspaceRoot); }
     catch (e) { return this.sendMessage(chatId, '⚠️ 讀取對話清單失敗：' + e.message.slice(0, 200)); }
     const top = sessions.slice(0, 10);
 
@@ -1338,7 +1342,7 @@ class TelegramBot {
     if (!sessionId) return this.sendMessage(chatId, '📍 ' + (ctx ? ctx.label : path.basename(workspaceRoot)) + '　目前還沒有作用中的對話，打字就會自動建立一本。');
     let session = null;
     if (this._listChatSessionsFn) {
-      try { session = this._listChatSessionsFn(workspaceRoot).find(function (s) { return s.sessionId === sessionId; }); }
+      try { session = (await this._listChatSessionsFn(workspaceRoot)).find(function (s) { return s.sessionId === sessionId; }); }
       catch (e) {}
     }
     if (!session) return this.sendMessage(chatId, '📍 目前對話：' + sessionId + '（找不到內容，可能剛建立）');
@@ -1354,7 +1358,7 @@ class TelegramBot {
     if (!this._listChatSessionsFn) return this.sendMessage(chatId, '⚠️ 回顧功能未設定。');
 
     let session;
-    try { session = this._listChatSessionsFn(workspaceRoot).find(function (s) { return s.sessionId === sessionId; }); }
+    try { session = (await this._listChatSessionsFn(workspaceRoot)).find(function (s) { return s.sessionId === sessionId; }); }
     catch (e) { return this.sendMessage(chatId, '⚠️ 讀取對話失敗：' + e.message.slice(0, 200)); }
     const msgs = (session && Array.isArray(session.messages)) ? session.messages : [];
     if (!msgs.length) return this.sendMessage(chatId, '📍 這本對話還沒有內容。');

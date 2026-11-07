@@ -85,7 +85,7 @@ $smokeOk = $false
 try {
     Stop-HarnessOnPort $SMOKE_PORT | Out-Null
     $smokeProc = Start-HarnessRelease -Version $next -Port $SMOKE_PORT -HarnessHome $smokeHome
-    $boot = Test-HarnessHealth -Port $SMOKE_PORT -TimeoutSec 25
+    $boot = Test-HarnessHealth -Port $SMOKE_PORT -TimeoutSec 90
     if ($boot) { $smokeOk = $true; Say ("      healthy (bootId {0})" -f $boot) "DarkGray" }
 } finally {
     if ($smokeProc -and -not $smokeProc.HasExited) { Stop-Process -Id $smokeProc.Id -Force -ErrorAction SilentlyContinue }

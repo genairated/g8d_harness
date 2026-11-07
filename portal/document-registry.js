@@ -3,6 +3,7 @@
 const fs   = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const listIndex = require('./list-index');   // IDX-DOC: SPEC-list-index.md §9.9 — 登錄 kind 'documents'（重建／核對／狀態）
 
 const DOCS_DIR   = '.documents';
 const INDEX_FILE = 'index.json';
@@ -41,11 +42,26 @@ function ensureDocumentDir(workspaceRoot, id) {
 // Schema: { documents: [ { id, sourcePath, mdPath, type, exports[], convertedAt, updatedAt } ] }
 // 無 title 欄：顯示名稱由 sourcePath（原始檔名）推導。Word 自由格式無可靠標題、title 又易誤解。
 
+// IDX-DOC：目錄檔 index.json 格式不變（{ documents[], trash[] }，另加選配 orphans[]＝重建時掃到的孤兒資料夾快取）。
+// 讀：以「修改時間＋大小」做記憶體快取，沒變就不重讀、不重 parse；回傳的是複本（呼叫端慣例是就地改了再 writeRegistry）。
+// 寫：先寫 index.json.tmp-* 再 rename 蓋過去（中斷時磁碟上不是舊的完整版就是新的完整版）；rename 被鎖（EPERM／EBUSY）重試。
+// 排隊：此模組的讀改寫全是同步函式，Node 單執行緒下同一程序內不可能交錯＝天然串成一條，
+//       同時匯入兩份文件不會互相覆蓋（單元測試有驗）。共用模組的非同步排隊用不上（呼叫端全是同步鏈）。
+const _regCache = new Map();   // registry path → { mtimeMs, size, data }
+const _RENAME_RETRY = [50, 100, 200, 400, 800];
+function _sleepSync(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch (_) {} }
+
 function readRegistry(workspaceRoot) {
   const p = getRegistryPath(workspaceRoot);
-  if (!fs.existsSync(p)) return { documents: [] };
+  let st;
+  try { st = fs.statSync(p); } catch (_) { _regCache.delete(p); return { documents: [] }; }
+  const c = _regCache.get(p);
+  if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return structuredClone(c.data);
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!data || typeof data !== 'object' || !Array.isArray(data.documents)) throw new Error('registry has no documents[]');
+    _regCache.set(p, { mtimeMs: st.mtimeMs, size: st.size, data });
+    return structuredClone(data);
   } catch (e) {
     console.error('[DocRegistry] Failed to read registry:', e.message);
     return { documents: [] };
@@ -55,7 +71,25 @@ function readRegistry(workspaceRoot) {
 function writeRegistry(workspaceRoot, registry) {
   const dir = getDocumentsDir(workspaceRoot);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(getRegistryPath(workspaceRoot), JSON.stringify(registry, null, 2), 'utf8');
+  const p = getRegistryPath(workspaceRoot);
+  const text = JSON.stringify(registry, null, 2);
+  const tmp = p + '.tmp-' + process.pid + '-' + crypto.randomBytes(4).toString('hex');
+  fs.writeFileSync(tmp, text, 'utf8');
+  let lastErr = null;
+  for (let i = 0; i <= _RENAME_RETRY.length; i++) {
+    try { fs.renameSync(tmp, p); lastErr = null; break; }
+    catch (e) {
+      lastErr = e;
+      if (!(e && (e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'EACCES')) || i === _RENAME_RETRY.length) break;
+      _sleepSync(_RENAME_RETRY[i]);
+    }
+  }
+  if (lastErr) {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    throw lastErr;     // 這份目錄就是文件的登記簿，寫不進去不能假裝成功
+  }
+  try { const st = fs.statSync(p); _regCache.set(p, { mtimeMs: st.mtimeMs, size: st.size, data: structuredClone(registry) }); }
+  catch (_) { _regCache.delete(p); }
 }
 
 // Add or update a document entry; updatedAt is always refreshed.
@@ -102,6 +136,7 @@ function softDeleteDocument(workspaceRoot, id) {
   if (i < 0) return null;
   const doc = reg.documents.splice(i, 1)[0];
   doc.deletedAt = new Date().toISOString();
+  doc.sizeBytes = _dirSizeBytes(getDocumentDir(workspaceRoot, id));   // IDX-DOC：移入回收桶時算一次，清單不再遞迴算
   reg.trash.push(doc);
   writeRegistry(workspaceRoot, reg);
   return doc;
@@ -114,6 +149,7 @@ function restoreDocument(workspaceRoot, id) {
   if (i < 0) return null;                 // 孤兒（不在 trash）無法還原——沒有 registry 記錄
   const doc = reg.trash.splice(i, 1)[0];
   delete doc.deletedAt;
+  delete doc.sizeBytes;
   doc.updatedAt = new Date().toISOString();
   reg.documents.push(doc);
   writeRegistry(workspaceRoot, reg);
@@ -126,6 +162,7 @@ function purgeDocument(workspaceRoot, id) {
   const reg = readRegistry(workspaceRoot);
   if (Array.isArray(reg.trash)) reg.trash = reg.trash.filter(d => d.id !== id);
   reg.documents = reg.documents.filter(d => d.id !== id);
+  if (Array.isArray(reg.orphans)) reg.orphans = reg.orphans.filter(o => o.id !== id);
   writeRegistry(workspaceRoot, reg);
   const dir = getDocumentDir(workspaceRoot, id);
   try { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -133,32 +170,22 @@ function purgeDocument(workspaceRoot, id) {
   return true;
 }
 
-// 資源回收桶清單＝軟刪除的 trash[] ＋ 孤兒目錄（帶推導的檔名/時間/大小）。
+// 資源回收桶清單＝軟刪除的 trash[]（大小在移入時已存好）＋ 重建時掃到並存進目錄的孤兒 orphans[]。
+// IDX-DOC：這裡只讀目錄，不 readdir、不開 doc.md、不遞迴算大小；孤兒掃描與舊項目補大小都移到 rebuildDocuments()。
 function listRecycle(workspaceRoot) {
   const reg = readRegistry(workspaceRoot);
   const trash = Array.isArray(reg.trash) ? reg.trash : [];
   const known = new Set([...reg.documents.map(d => d.id), ...trash.map(d => d.id)]);
-  const docsRoot = getDocumentsDir(workspaceRoot);
 
   const items = trash.map(d => ({
     id: d.id, sourcePath: d.sourcePath || '', title: d.title || '',
     bornAt: d.bornAt || d.convertedAt || null, deletedAt: d.deletedAt || null,
-    sizeBytes: _dirSizeBytes(getDocumentDir(workspaceRoot, d.id)), kind: 'trash',
+    sizeBytes: typeof d.sizeBytes === 'number' ? d.sizeBytes : 0, kind: 'trash',
   }));
-
-  let dirs = [];
-  try { dirs = fs.readdirSync(docsRoot, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name); } catch (_) {}
-  for (const name of dirs) {
-    if (!_UUID_RE.test(name) || known.has(name)) continue;      // 只認 UUID 目錄、排除已知的
-    let sourcePath = '', bornAt = null;
-    try {
-      const parsed = parseFrontMatter(fs.readFileSync(path.join(docsRoot, name, 'doc.md'), 'utf8'));
-      sourcePath = parsed.meta.source || '';
-      bornAt = parsed.meta.convertedAt || null;
-    } catch (_) {}
-    if (!bornAt) { try { bornAt = fs.statSync(path.join(docsRoot, name)).birthtime.toISOString(); } catch (_) {} }
-    items.push({ id: name, sourcePath, title: '', bornAt, deletedAt: null,
-      sizeBytes: _dirSizeBytes(path.join(docsRoot, name)), kind: 'orphan' });
+  for (const o of (Array.isArray(reg.orphans) ? reg.orphans : [])) {
+    if (!o || known.has(o.id)) continue;
+    items.push({ id: o.id, sourcePath: o.sourcePath || '', title: '', bornAt: o.bornAt || null, deletedAt: null,
+      sizeBytes: typeof o.sizeBytes === 'number' ? o.sizeBytes : 0, kind: 'orphan' });
   }
   // 刪除時間新→舊；孤兒(無 deletedAt)排後面
   items.sort((a, b) => (b.deletedAt || '') < (a.deletedAt || '') ? -1 : 1);
@@ -345,32 +372,172 @@ function docIdFromPath(workspaceRoot, absPath) {
 // Backfill existing documents (pre-J5) onto the history mechanism: write a rev-0
 // born:imported event with doc.0.md = current doc.md, set origin/bornAt/revisions.
 // Idempotent — skips docs that already have a log. Returns { backfilled, skipped }.
+// IDX-DOC：不再由 GET /api/documents 每次呼叫；改在開機核對／重建目錄時背景跑（見 rebuildDocuments）。
+// 同步版保留給測試與手動呼叫。
+function _backfillOne(workspaceRoot, doc) {
+  // Skip only when a history log actually exists — origin alone isn't proof (a registry entry
+  // could carry origin without its log/born snapshot). existsSync is the cheap hot-path guard.
+  const logPath = path.join(getHistoryDir(workspaceRoot, doc.id), HISTORY_LOG);
+  if (doc.origin && fs.existsSync(logPath)) return false;
+  if (readDocHistory(workspaceRoot, doc.id).length > 0) return false;
+  const mdPath = path.join(getDocumentDir(workspaceRoot, doc.id), 'doc.md');
+  if (!fs.existsSync(mdPath)) return false;
+  const histDir = getHistoryDir(workspaceRoot, doc.id);
+  fs.mkdirSync(histDir, { recursive: true });
+  fs.copyFileSync(mdPath, path.join(histDir, 'doc.0.md'));
+  const ts = doc.convertedAt || doc.updatedAt || new Date().toISOString();
+  writeDocHistory(workspaceRoot, doc.id, [{
+    rev: 0, ts, kind: 'born', origin: 'imported', by: '老闆',
+    summary: `匯入自 ${doc.sourcePath || '未知來源'}`, snapshot: 'doc.0.md',
+  }]);
+  doc.origin    = 'imported';
+  doc.bornAt    = ts;
+  doc.revisions = 0;
+  return true;
+}
+
 function backfillDocHistory(workspaceRoot) {
   const reg = readRegistry(workspaceRoot);
   let backfilled = 0, skipped = 0;
-  for (const doc of reg.documents) {
-    // Skip only when a history log actually exists — origin alone isn't proof (a registry entry
-    // could carry origin without its log/born snapshot). existsSync is the cheap hot-path guard.
-    const logPath = path.join(getHistoryDir(workspaceRoot, doc.id), HISTORY_LOG);
-    if (doc.origin && fs.existsSync(logPath)) { skipped++; continue; }
-    if (readDocHistory(workspaceRoot, doc.id).length > 0) { skipped++; continue; }
-    const mdPath = path.join(getDocumentDir(workspaceRoot, doc.id), 'doc.md');
-    if (!fs.existsSync(mdPath)) { skipped++; continue; }
-    const histDir = getHistoryDir(workspaceRoot, doc.id);
-    fs.mkdirSync(histDir, { recursive: true });
-    fs.copyFileSync(mdPath, path.join(histDir, 'doc.0.md'));
-    const ts = doc.convertedAt || doc.updatedAt || new Date().toISOString();
-    writeDocHistory(workspaceRoot, doc.id, [{
-      rev: 0, ts, kind: 'born', origin: 'imported', by: '老闆',
-      summary: `匯入自 ${doc.sourcePath || '未知來源'}`, snapshot: 'doc.0.md',
-    }]);
-    doc.origin    = 'imported';
-    doc.bornAt    = ts;
-    doc.revisions = 0;
-    backfilled++;
-  }
+  for (const doc of reg.documents) { if (_backfillOne(workspaceRoot, doc)) backfilled++; else skipped++; }
   if (backfilled > 0) writeRegistry(workspaceRoot, reg);
   return { backfilled, skipped };
+}
+
+// ── IDX-DOC：重建／核對（SPEC-list-index.md §5、§9.9）──────────────────────────
+// 重建＝① 孤兒資料夾掃描（只認 UUID 目錄、排除 documents/trash 已知的），結果與大小存進 orphans[]；
+//       ② trash 項目缺 sizeBytes 的補算一次（舊資料）；③ pre-J5 文件歷史回填；
+//       ④ registry 核對：登記了但資料夾不見的文件只回報數量（missing）、不刪資料。非同步、每 50 筆讓出。
+// 讀到寫之間會 await，所以最後寫入前重讀最新版、只套用算出的欄位，避免蓋掉期間發生的 API 寫入。
+const _yield = () => new Promise(r => setImmediate(r));
+const _fsp = fs.promises;
+async function _dirSizeAsync(dir) {
+  let total = 0, entries = [];
+  try { entries = await _fsp.readdir(dir, { withFileTypes: true }); } catch (_) { return 0; }
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) total += await _dirSizeAsync(p);
+    else { try { total += (await _fsp.stat(p)).size; } catch (_) {} }
+  }
+  return total;
+}
+
+async function rebuildDocuments(workspaceRoot) {
+  const t0 = Date.now();
+  const snap = readRegistry(workspaceRoot);
+  const docsRoot = getDocumentsDir(workspaceRoot);
+  if (!fs.existsSync(docsRoot)) return { ok: true, documents: 0, trash: 0, orphans: 0, missing: 0, backfilled: 0, sizesFilled: 0, ms: 0 };
+  const trash0 = Array.isArray(snap.trash) ? snap.trash : [];
+
+  const sizes = {};
+  let n = 0;
+  for (const d of trash0) {
+    if (typeof d.sizeBytes === 'number') continue;
+    if (++n % 50 === 0) await _yield();
+    sizes[d.id] = await _dirSizeAsync(getDocumentDir(workspaceRoot, d.id));
+  }
+
+  const known = new Set([...snap.documents.map(d => d.id), ...trash0.map(d => d.id)]);
+  const orphans = [];
+  let dirs = [];
+  try { dirs = (await _fsp.readdir(docsRoot, { withFileTypes: true })).filter(e => e.isDirectory()).map(e => e.name); } catch (_) {}
+  let i = 0;
+  for (const name of dirs) {
+    if (++i % 50 === 0) await _yield();
+    if (!_UUID_RE.test(name) || known.has(name)) continue;
+    const base = path.join(docsRoot, name);
+    let sourcePath = '', bornAt = null;
+    try {
+      const parsed = parseFrontMatter(await _fsp.readFile(path.join(base, 'doc.md'), 'utf8'));
+      sourcePath = parsed.meta.source || '';
+      bornAt = parsed.meta.convertedAt || null;
+    } catch (_) {}
+    if (!bornAt) { try { bornAt = (await _fsp.stat(base)).birthtime.toISOString(); } catch (_) {} }
+    orphans.push({ id: name, sourcePath, bornAt, sizeBytes: await _dirSizeAsync(base) });
+  }
+
+  let missing = 0, k = 0;
+  for (const d of snap.documents) {
+    if (++k % 50 === 0) await _yield();
+    try { await _fsp.access(getDocumentDir(workspaceRoot, d.id)); } catch (_) { missing++; }
+  }
+
+  const bf = {};   // id → { origin, bornAt, revisions }
+  let backfilled = 0, j = 0;
+  for (const d of snap.documents) {
+    if (++j % 50 === 0) await _yield();
+    const copy = { ...d };
+    try { if (_backfillOne(workspaceRoot, copy)) { backfilled++; bf[d.id] = { origin: copy.origin, bornAt: copy.bornAt, revisions: copy.revisions }; } }
+    catch (e) { console.error('[DocHistory] backfill failed:', d.id, e.message); }
+  }
+
+  // 寫回（同步區段，不會再被交錯）
+  const cur = readRegistry(workspaceRoot);
+  let changed = false;
+  for (const d of (cur.trash || [])) if (typeof d.sizeBytes !== 'number' && sizes[d.id] != null) { d.sizeBytes = sizes[d.id]; changed = true; }
+  for (const d of cur.documents) if (bf[d.id] && !d.origin) { Object.assign(d, bf[d.id]); changed = true; }
+  const curKnown = new Set([...cur.documents.map(d => d.id), ...(cur.trash || []).map(d => d.id)]);
+  const nextOrphans = orphans.filter(o => !curKnown.has(o.id));
+  if (JSON.stringify(nextOrphans) !== JSON.stringify(cur.orphans || [])) {
+    if (nextOrphans.length) cur.orphans = nextOrphans; else delete cur.orphans;
+    changed = true;
+  }
+  if (changed) writeRegistry(workspaceRoot, cur);
+  return { ok: true, documents: snap.documents.length, trash: trash0.length, orphans: nextOrphans.length, missing,
+    backfilled, sizesFilled: Object.keys(sizes).length, ms: Date.now() - t0 };
+}
+
+// 便宜的核對：只列 .documents/ 底下的 UUID 資料夾名稱（不開檔）與 registry 的 id 集合比對。
+async function _checkState(workspaceRoot) {
+  let names = [];
+  try { names = (await _fsp.readdir(getDocumentsDir(workspaceRoot), { withFileTypes: true })).filter(e => e.isDirectory() && _UUID_RE.test(e.name)).map(e => e.name); } catch (_) {}
+  const reg = readRegistry(workspaceRoot);
+  const regIds = new Set([...reg.documents.map(d => d.id), ...(reg.trash || []).map(d => d.id), ...(reg.orphans || []).map(d => d.id)]);
+  const diskIds = new Set(names);
+  return {
+    sameSet: regIds.size === diskIds.size && [...regIds].every(x => diskIds.has(x)),
+    trashNoSize: (reg.trash || []).some(d => typeof d.sizeBytes !== 'number'),
+    needBackfill: reg.documents.some(d => !d.origin),
+  };
+}
+
+// 登錄成清單目錄的一種 kind（'documents'）：讓 POST /api/index/rebuild、GET /api/index/status、開機核對都管得到文件管理。
+// 目錄檔仍是 <ws>/.documents/index.json（既有位置與格式），所以這裡的 handle 是自訂的，不走 list-index 的 items 格式。
+function registerIndexKind() {
+  listIndex.registerIndexKind('documents', (wsRoot) => {
+    if (!fs.existsSync(getDocumentsDir(wsRoot))) return null;    // 這個工作區沒有文件管理
+    let rebuilding = null, lastError = null, lastErrorAt = null, lastResult = null, rebuiltAt = null;
+    const run = (reason) => {
+      if (rebuilding) return rebuilding;
+      rebuilding = rebuildDocuments(wsRoot)
+        .then(r => { lastResult = Object.assign({ reason }, r); rebuiltAt = new Date().toISOString(); return r; })
+        .catch(e => { lastError = e.message; lastErrorAt = new Date().toISOString(); return { ok: false, error: e.message }; })
+        .finally(() => { rebuilding = null; });
+      return rebuilding;
+    };
+    return {
+      kind: 'documents', indexPath: getRegistryPath(wsRoot), archivePath: null,
+      rebuild: ({ reason } = {}) => run(reason || 'api'),
+      async verify() {
+        try {
+          const st = await _checkState(wsRoot);
+          if (!st.sameSet || st.trashNoSize || st.needBackfill) {
+            await run('verify');
+            return { ok: true, rebuilt: true, reason: !st.sameSet ? 'fingerprint' : (st.trashNoSize ? 'trash-size' : 'backfill') };
+          }
+          return { ok: true, rebuilt: false };
+        } catch (e) { lastError = e.message; lastErrorAt = new Date().toISOString(); return { ok: false, error: e.message }; }
+      },
+      async status() {
+        const reg = readRegistry(wsRoot);
+        let st = null; try { st = fs.statSync(getRegistryPath(wsRoot)); } catch (_) {}
+        return { kind: 'documents', workspace: wsRoot, indexPath: getRegistryPath(wsRoot), archivePath: null,
+          valid: !!st, count: reg.documents.length, archivedCount: (reg.trash || []).length, orphans: (reg.orphans || []).length,
+          updatedAt: st ? st.mtime.toISOString() : null, rebuiltAt,
+          rebuilding: !!rebuilding, pendingWrites: 0, lastError, lastErrorAt, lastResult };
+      },
+    };
+  });
 }
 
 // ── Front-matter parse/write (JS) ─────────────────────────────────────────────
@@ -436,6 +603,8 @@ module.exports = {
   resolveAssetSnapshot,
   docIdFromPath,
   backfillDocHistory,
+  rebuildDocuments,
+  registerIndexKind,
   parseFrontMatter,
   stringifyFrontMatter,
   writeFrontMatter,

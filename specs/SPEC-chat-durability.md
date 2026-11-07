@@ -42,6 +42,12 @@
 - `Deploy_Harness.ps1` 在**停掉 3400 之前**，先打 `POST http://localhost:3400/api/chat/flush`（新端點，見 §4.2），逾時 3 秒即放行、失敗不阻擋部署（部署不能因為 flush 失敗就卡死）。
 - server 端另註冊 `SIGINT`/`SIGTERM` handler 做同一件事（涵蓋 `Ctrl+C` 手動停）。**誠實說明**：Windows 上 `Stop-Process` 為強制終止、收不到訊號，所以 §3.1/§3.2 才是主要保險，§3.3 是加分項。
 
+### 3.3.1 沒有看守程式時也要「等對話結束才切換」（2026-11-05 補）
+
+- **事故**：2026-10-30 起看守程式（`Start_Harness.ps1`）不在了，伺服器處於「無人接管」狀態。此時 `Switch-LiveVersion` 走「自己砍掉重開」的路，**不管有沒有對話在跑都立刻砍**；Hana 在對話中修完程式並部署，就把承載這輪對話的伺服器殺掉，回覆永遠回不來。原本的「等工作結束再重啟」只存在於有看守程式的路線，所以這個問題反覆出現。
+- **修法**：`/api/chat/flush` 回傳的 `flushed` 就是「正在跑的工作數」（對話＋排程）。無看守程式且 `flushed > 0` 時，不砍，改起一支背景等候程式 `_harness-deferred-golive.ps1` 並回 `DEFERRED`；它每 3 秒查一次，連續兩次閒置才切換（上限 10 分鐘，與伺服器端一致），切換時重讀 `current.json`、30 秒健康後記 last-known-good，失敗退回原版本。一次只跑一支（鎖檔），紀錄在 `.harness/runtime/deferred-golive.log`。
+- 不需改 `server.js`；`Rollback_Harness.ps1` 也走同一條路。
+
 ### 3.4 中斷的可見化
 
 - `GET /api/chat/history/:id` 回傳的資料本就整包吐出，前端載入 session 時若見 `pending`，在該輪 assistant 位置顯示一條淡色橫幅：「這一輪在 <時間> 被中斷，未取得回覆」。

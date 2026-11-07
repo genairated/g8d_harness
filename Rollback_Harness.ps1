@@ -45,7 +45,11 @@ Say ("[*] Rolling production back to {0} on :{1} ..." -f $target, $PROD_PORT) "C
 Set-CurrentVersion $target
 $boot = Switch-LiveVersion -Version $target -Port $PROD_PORT -HarnessHome $HOME_DIR -Reason ("rollback-" + $target)
 
-if ($boot) {
+if ($boot -eq "DEFERRED") {
+    Say ("[OK] {0} queued: it goes live as soon as the running conversation/job finishes (not interrupting it)." -f $target) "Green"
+    exit 0
+}
+if ($boot -and $boot -ne "BLOCKED") {
     Say ("[OK] {0} is live on :{1} (bootId {2}). The browser will auto-reload." -f $target, $PROD_PORT, $boot) "Green"
     exit 0
 } else {

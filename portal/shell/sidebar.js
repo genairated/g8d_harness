@@ -7,7 +7,7 @@
           if (item.type === 'file' && (item.name === 'DASHBOARD.md' || item.name === 'TASK.md' || item.name === 'README.md')) return false;
           return true;
         });
-        renderTree(filteredWorktable, worktableTreeContainer, 0);
+        renderTree(filteredWorktable, worktableTreeContainer, 0, 'worktable');
       }
 
       const dyn = document.getElementById('dynamic-sections');
@@ -27,7 +27,7 @@
             </button>
             <div id="${secId}" class="mt-1 hidden sb-collapse-hide"><div class="dyn-tree nested-menu-container"></div></div>`;
           dyn.appendChild(block);
-          renderTree(sec.tree || [], block.querySelector('.dyn-tree'), 0);
+          renderTree(sec.tree || [], block.querySelector('.dyn-tree'), 0, sec.path);
         });
 
         // P2 (SPEC-plugin-contract.md §3): workspace-contributed nav items, appended into the same
@@ -108,8 +108,12 @@
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
     })();
 
-    // Recursive directory tree renderer
-    function renderTree(items, containerElement, level = 0) {
+    // Directory tree renderer. IDX-TREE: folders arrive without children (hasChildren:true) and are
+    // fetched from /api/folder-tree the first time they are opened. sbExpanded remembers which
+    // folders were open (key = section|path) so a sidebar refresh re-opens them (reloading each
+    // level from the server, which is how newly added files show up).
+    const sbExpanded = new Set();
+    function renderTree(items, containerElement, level = 0, sectionKey = '') {
       items.forEach(item => {
         if (item.type === 'directory') {
           const folderId = `folder-${item.path.replace(/\//g, '-')}`;
@@ -134,12 +138,39 @@
           childrenContainer.id = folderId;
           childrenContainer.className = 'space-y-0.5 hidden mt-0.5 nested-menu-container';
 
-          folderBtn.onclick = () => {
-            const isHidden = childrenContainer.classList.toggle('hidden');
-            document.getElementById(`arrow-${folderId}`).style.transform = isHidden ? 'rotate(-90deg)' : 'rotate(0deg)';
+          const lazy = !item.children;
+          const expKey = sectionKey + '|' + item.path;
+          const setOpen = (open) => {
+            childrenContainer.classList.toggle('hidden', !open);
+            const arrowEl = document.getElementById(`arrow-${folderId}`);
+            if (arrowEl) arrowEl.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+          };
+          const ensureLoaded = async () => {
+            if (!lazy || childrenContainer.dataset.loaded === '1') return;
+            childrenContainer.dataset.loaded = '1';
+            try {
+              const r = await fetch('/api/folder-tree?section=' + encodeURIComponent(sectionKey) + '&path=' + encodeURIComponent(item.path));
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              renderTree((await r.json()).items || [], childrenContainer, level + 1, sectionKey);
+              if (typeof lucide !== 'undefined') lucide.createIcons();
+            } catch (e) {
+              childrenContainer.dataset.loaded = '';
+              console.error('[sidebar folder-tree]', e);
+              if (typeof showToast === 'function') showToast('資料夾載入失敗', 'error');
+            }
           };
 
-          renderTree(item.children, childrenContainer, level + 1);
+          folderBtn.onclick = async () => {
+            const willOpen = childrenContainer.classList.contains('hidden');
+            if (willOpen) { sbExpanded.add(expKey); await ensureLoaded(); } else sbExpanded.delete(expKey);
+            setOpen(willOpen);
+          };
+
+          if (lazy) {
+            if (sbExpanded.has(expKey)) ensureLoaded().then(() => setOpen(true));
+          } else {
+            renderTree(item.children, childrenContainer, level + 1, sectionKey);
+          }
 
           groupEl.appendChild(folderBtn);
           groupEl.appendChild(childrenContainer);
@@ -213,6 +244,7 @@
     }
 
     // Search Filtering
+    let sbSearchTimer = null, sbSearchToken = 0;
     function handleSearch(query) {
       const cleanQuery = query.trim().toLowerCase();
       const accordion = document.getElementById('accordion-sections');
@@ -221,6 +253,7 @@
       const clearBtn = document.getElementById('btn-search-clear');
 
       if (!cleanQuery) {
+        sbSearchToken++; clearTimeout(sbSearchTimer);
         accordion.classList.remove('hidden');
         searchSec.classList.add('hidden');
         clearBtn.classList.add('hidden');
@@ -233,12 +266,23 @@
       clearBtn.classList.remove('hidden');
       searchRes.innerHTML = '';
 
-      // Filter files across the worktable + all manifest sections
-      const allFound = [
-        ...filterFiles(statusData.worktable || [], cleanQuery),
-        ...(statusData.sections || []).flatMap(s => filterFiles(s.tree || [], cleanQuery))
-      ];
+      // IDX-TREE: /api/status now carries only the first level of each section, so the search asks
+      // the server (debounced) to walk the sections instead of filtering a full tree in memory.
+      searchRes.innerHTML = '<div class="px-3 py-4 text-[13px] text-slate-400 dark:text-slate-500 text-center font-medium">搜尋中…</div>';
+      clearTimeout(sbSearchTimer);
+      const myToken = ++sbSearchToken;
+      sbSearchTimer = setTimeout(async () => {
+        let found = [];
+        try {
+          const r = await fetch('/api/folder-tree?q=' + encodeURIComponent(cleanQuery));
+          if (r.ok) found = (await r.json()).items || [];
+        } catch (e) { console.error('[sidebar search]', e); }
+        if (myToken !== sbSearchToken) return; // a newer keystroke superseded this one
+        showResults(found);
+      }, 250);
 
+      const showResults = (allFound) => {
+      searchRes.innerHTML = '';
       if (allFound.length === 0) {
         searchRes.innerHTML = '<div class="px-3 py-4 text-[13px] text-slate-400 dark:text-slate-500 text-center font-medium">沒有找到匹配的 Markdown 檔案</div>';
         return;
@@ -262,6 +306,7 @@
         searchRes.appendChild(btn);
       });
       lucide.createIcons();
+      };
     }
 
     function filterFiles(tree, query) {

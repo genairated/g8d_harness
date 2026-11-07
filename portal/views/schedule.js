@@ -344,9 +344,22 @@ async function schedLoadList() {
   const listEl = container.querySelector('#sched-list-content');
   if (!listEl) return;
   try {
-    const all = await (await fetch('/api/schedules')).json();
+    // IDX-SCH：GET /api/schedules 預設只回現役（讀目錄、不含指示全文）；歷史（已歸檔）展開時才帶 ?archived=1 去載。
+    // 歸檔筆數由回應標頭 X-Archived-Count 提供，收合時「歷史（已歸檔 N）」仍看得到數字。
+    const prevHist = listEl.querySelector('details');
+    const histWanted = !!(prevHist && prevHist.open) || PAGE.hist > 1;
+    const resp = await fetch('/api/schedules');
+    const activeRaw = await resp.json();
+    const archivedCount = parseInt(resp.headers.get('X-Archived-Count') || '0', 10) || 0;
+    let archivedRaw = [];
+    let histLoaded = false;
+    if (archivedCount > 0 && histWanted) {
+      archivedRaw = await (await fetch('/api/schedules?archived=1')).json();
+      histLoaded = true;
+    }
+    const all = activeRaw.concat(archivedRaw);
     refreshSchedBadge();   // 清單載入＝排程資料可能剛變動（啟停/觸發/刪除/歸檔都會回頭叫這裡）
-    if (!all.length) {
+    if (!all.length && !archivedCount) {
       listEl.innerHTML = '<div class="text-center py-16 text-slate-400 dark:text-slate-500 text-sm">尚無排程。點「+ 新增排程」建立第一個。</div>';
       schedSelectedExplicit = { list: new Set(), hist: new Set() };
       schedSelected = { list: new Set(), hist: new Set() };
@@ -449,21 +462,26 @@ async function schedLoadList() {
         + tableWrap(act.items.map(s => row(s, false)).join(''), '下次執行', 'list')
         + `<div data-pager="list">${pagerHtml(active.length, PAGE.list, listPageSize, { sizes: [10, 20, 50, 100] })}</div>`
       : '<div class="text-center py-10 text-slate-400 dark:text-slate-500 text-sm">目前沒有現役排程。</div>';
-    if (history.length) {
+    if (archivedCount > 0) {
       // 不強制收合：若指揮官手動展開過（不是靠分頁跳到第 2 頁），SSE/輪詢觸發的重繪不該把它收回去。
-      const prevHistDetails = listEl.querySelector('details');
-      const histWasOpen = !!(prevHistDetails && prevHistDetails.open);
+      // 收合時不載歷史內容（IDX-SCH）；使用者展開才重新載入一次（見下方 toggle 監聽）。
       html += `
-        <details class="mt-4 group" ${(PAGE.hist > 1 || histWasOpen) ? 'open' : ''}>
+        <details class="mt-4 group" data-hist-details ${histLoaded ? 'open' : ''}>
           <summary class="cursor-pointer select-none px-1 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform group-open:rotate-90"></i>📜 歷史（已歸檔 ${history.length}）
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform group-open:rotate-90"></i>📜 歷史（已歸檔 ${archivedCount}）
           </summary>
-          <div class="mt-2 opacity-80">${schedToolbarHtml('hist', true)}${tableWrap(his.items.map(s => row(s, true)).join(''), '上次執行', 'hist')}
+          ${histLoaded
+            ? `<div class="mt-2 opacity-80">${schedToolbarHtml('hist', true)}${tableWrap(his.items.map(s => row(s, true)).join(''), '上次執行', 'hist')}
             <div data-pager="hist">${pagerHtml(history.length, PAGE.hist, listPageSize, null)}</div>
-          </div>
+          </div>`
+            : '<div class="mt-2 px-1 text-xs text-slate-400 dark:text-slate-500">展開時載入…</div>'}
         </details>`;
     }
     listEl.innerHTML = html;
+    const histDetailsEl = listEl.querySelector('[data-hist-details]');
+    if (histDetailsEl && !histLoaded) {
+      histDetailsEl.addEventListener('toggle', () => { if (histDetailsEl.open) schedLoadList(); });
+    }
     bindListActions(listEl);
     // indeterminate 只能用 JS 屬性設，HTML 字串做不到——部分選取時給表頭 checkbox 一個「半勾」視覺。
     ['list', 'hist'].forEach(tk => {
@@ -1281,6 +1299,10 @@ async function schedPopulateChainOptions(excludeId, selectedId) {
   if (!sel) return;
   let list = [];
   try { list = await (await fetch('/api/schedules')).json(); } catch (e) { list = []; }
+  // IDX-SCH：清單預設只含現役；目前選的接續目標若已歸檔，補查歸檔清單把它帶進來，下拉才選得到原值。
+  if (selectedId && !list.some(s => s.id === selectedId)) {
+    try { list = list.concat((await (await fetch('/api/schedules?archived=1')).json()).filter(s => s.id === selectedId)); } catch (e) {}
+  }
   const opts = ['<option value="">（不接續）</option>'];
   list.filter(s => s.id !== excludeId).forEach(s => {
     const tag = s.archived ? '（已歸檔）' : (s.enabled ? '' : '（停用）');

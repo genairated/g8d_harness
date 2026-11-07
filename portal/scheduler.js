@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const listIndex = require('./list-index');
 
 // Validate and normalise delivery sinks. Unknown sinks are stripped; empty/missing → default.
 const _DELIVERY_VALID = ['web', 'telegram'];
@@ -135,7 +136,21 @@ class SchedulerManager {
     this._fireJob           = null;
     this._timer             = null;
     this._onChange          = null;   // SLV-1: optional change-notification listener, default no-op
+    // IDX-RUN (SPEC-list-index.md §9.1): 執行記錄目錄。_runMem＝現役（未歸檔）排程的執行記錄摘要，
+    // _running＝其中 status 'running' 的那幾筆；兩者在 start() 對帳＋warmRunIndex() 後才算可信（_runMemWarm）。
+    this._runMem            = new Map();   // runId → { wsKey, e: 摘要 }
+    this._running           = new Map();   // runId → 摘要
+    this._runMemWarm        = false;
+    this._schedWsSig        = null;
+    this._schedWsMap        = new Map();   // scheduleId → { wsKey, wsRaw, archived, fromChat, chatOrigin }
+    // IDX-SCH (SPEC-list-index.md §9.2): 排程清單目錄。_schedSnap＝上次同步時每筆排程的指紋（id → {wsKey,wsRaw,archived,sig}），
+    // saveSchedules() 以它做差異比對、只同步有變的那幾筆；_schedWsRoots＝目前出現過的工作區（供 deploy-targets 跨區列舉）。
+    this._schedSnap         = null;
+    this._schedWsRoots      = new Map();   // wsKey → wsRaw
+    this._schedWarm         = false;
     this._ensure();
+    this._registerRunsIndex();
+    this._registerSchedulesIndex();
   }
 
   // SLV-1: register a listener invoked on run-start / run-update (incl. run-end, since the final
@@ -171,8 +186,24 @@ class SchedulerManager {
     catch (e) { return []; }
   }
 
+  // IDX-SCH：非同步讀取（清單 API 的保底路徑用，不卡伺服器）。
+  async loadSchedulesAsync() {
+    try { return JSON.parse(await fs.promises.readFile(this.schedulesPath, 'utf8')); }
+    catch (e) { return []; }
+  }
+
+  // 所有寫入 schedules.json 的路徑（createSchedule／updateSchedule／deleteSchedule／歸檔還原／排程器跑完回寫／
+  // 續跑／對帳／server.js 的 postRun 回寫）最後都走這裡，所以目錄同步只掛這一個出口（規格 §2 第 3 條）。
+  // 順序：業務檔先寫成功，再同步目錄；目錄同步失敗只記 log，永不影響業務寫入。
   saveSchedules(list) {
+    let prev = this._schedSnap;
+    if (!prev) {   // 本行程第一次寫入：趁覆寫前讀一次舊檔當比對基準（只此一次）
+      try { prev = this._buildSchedSnap(JSON.parse(fs.readFileSync(this.schedulesPath, 'utf8'))).snap; }
+      catch (e) { prev = new Map(); }
+    }
     fs.writeFileSync(this.schedulesPath, JSON.stringify(list, null, 2));
+    try { this._syncSchedIndex(list, prev); }
+    catch (e) { console.error('[Scheduler] schedules index sync error:', e.message); }
   }
 
   getSchedule(id) {
@@ -251,6 +282,375 @@ class SchedulerManager {
     return true;
   }
 
+  // ── IDX-SCH：排程清單目錄（SPEC-list-index.md §9.2）──────────────────────────
+  // 實際檔案（schedules.json）仍是真相；目錄＝每個工作區兩份：
+  //   global-knowledge/schedules/index/<ws 雜湊>/schedules.json（現役）＋schedules.archive.json（archived:true）。
+  // 清單欄位＝排程本體去掉 task.prompt（改放 taskKind 與前 120 字 taskPreview）、pendingResume.partial（最多 8000 字）。
+
+  _schedListEntry(s) {
+    const e = Object.assign({}, s);
+    const t = (s.task && typeof s.task === 'object') ? s.task : {};
+    const prompt = typeof t.prompt === 'string' ? t.prompt : '';
+    e.task = Object.assign({}, t); delete e.task.prompt;
+    e.taskKind = t.kind || 'prompt';
+    e.taskPreview = (prompt || [t.skill, t.args].filter(Boolean).join(' ')).slice(0, 120);
+    if (e.pendingResume && typeof e.pendingResume === 'object') {
+      e.pendingResume = Object.assign({}, e.pendingResume); delete e.pendingResume.partial;
+    }
+    return e;
+  }
+
+  // list → { snap: Map(id → {wsKey,wsRaw,archived,sig}), entries: Map(id → entry) }
+  _buildSchedSnap(list) {
+    const snap = new Map(), entries = new Map();
+    for (const s of (Array.isArray(list) ? list : [])) {
+      if (!s || !s.id) continue;
+      const wsRaw = s.workspace || this.harnessHome;   // null workspace ＝ harness home
+      const entry = this._schedListEntry(s);
+      snap.set(s.id, { wsKey: this._normWsKey(wsRaw), wsRaw, archived: !!s.archived, sig: JSON.stringify(entry) });
+      entries.set(s.id, entry);
+    }
+    return { snap, entries };
+  }
+
+  _syncSchedIndex(list, prev) {
+    const { snap, entries } = this._buildSchedSnap(list);
+    const handle = (wsRaw) => listIndex.getIndex('schedules', wsRaw);
+    for (const [id, n] of snap) {
+      this._schedWsRoots.set(n.wsKey, n.wsRaw);
+      const p = prev.get(id);
+      if (p && p.sig === n.sig) continue;
+      if (p && p.wsKey !== n.wsKey) { const ho = handle(p.wsRaw); if (ho) ho.remove(id).catch(() => {}); }   // 搬了工作區
+      const h = handle(n.wsRaw);
+      if (h) h.upsert(entries.get(id)).catch(() => {});
+      if (p && p.archived !== n.archived) this.syncRunsArchiveFlag(id).catch(() => {});   // IDX-RUN D5：歸檔／還原連動執行記錄目錄
+    }
+    for (const [id, p] of prev) {
+      if (snap.has(id)) continue;
+      const h = handle(p.wsRaw); if (h) h.remove(id).catch(() => {});   // 刪除
+    }
+    this._schedSnap = snap;
+  }
+
+  async _scanSchedulesForWorkspace(wsRoot) {
+    const key = this._normWsKey(wsRoot);
+    const mine = (await this.loadSchedulesAsync()).filter(s => s && s.id && this._normWsKey(s.workspace || this.harnessHome) === key);
+    return listIndex.eachYield(mine, async (s) => this._schedListEntry(s));
+  }
+
+  // 指紋＝schedules.json 大小＋修改時間（§5.2）。單一大檔被所有工作區共用，所以別區寫入也會讓本區下次開機多重建一次（便宜、正確）。
+  async _schedFingerprint() {
+    try { const st = await fs.promises.stat(this.schedulesPath); return st.size + ':' + Math.round(st.mtimeMs); }
+    catch (e) { return 'missing'; }
+  }
+
+  _registerSchedulesIndex() {
+    try {
+      listIndex.registerIndexKind('schedules', (wsRoot) => {
+        const dir = listIndex.sharedIndexDirFor(this.schedulesDir, wsRoot);
+        return listIndex.open({
+          kind: 'schedules',
+          indexPath: path.join(dir, 'schedules.json'),
+          archivePath: path.join(dir, 'schedules.archive.json'),
+          workspace: wsRoot,
+          scanSource: () => this._scanSchedulesForWorkspace(wsRoot),
+          fingerprintSource: () => this._schedFingerprint(),
+          isArchived: (e) => !!e.archived,
+          // 與檔案順序（＝建立順序）一致；id 內含時間戳，createdAt 相同時再以 id 定序。
+          sort: (a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)),
+        });
+      });
+    } catch (e) { console.error('[Scheduler] register schedules index error:', e.message); }
+  }
+
+  // 啟動後背景暖機：建比對基準、核對每個出現過的工作區的目錄（對不上就重建）。完成前清單走保底（非同步讀主檔）。
+  async warmSchedIndex() {
+    const t0 = Date.now();
+    try {
+      const list = await this.loadSchedulesAsync();
+      if (!this._schedSnap) this._schedSnap = this._buildSchedSnap(list).snap;
+      const roots = new Map([[this._normWsKey(this.harnessHome), this.harnessHome]]);
+      for (const n of this._schedSnap.values()) if (!roots.has(n.wsKey)) roots.set(n.wsKey, n.wsRaw);
+      for (const [k, v] of roots) this._schedWsRoots.set(k, v);
+      let total = 0, rebuilt = 0;
+      for (const wsRaw of roots.values()) {
+        const h = listIndex.getIndex('schedules', wsRaw);
+        if (!h) throw new Error('schedules index not registered');
+        const v = await h.verify();
+        if (v && v.rebuilt) rebuilt++;
+        let r = await h.list();
+        if (r.fallback) { await h.rebuild({ reason: 'warm' }); r = await h.list(); }
+        if (r.fallback) throw new Error('schedules index unreadable for ' + wsRaw);
+        total += r.items.length;
+      }
+      this._schedWarm = true;
+      console.log('[Scheduler] schedules index warm: ' + roots.size + ' workspace(s), ' + total + ' active, rebuilt ' + rebuilt + ', ' + (Date.now() - t0) + 'ms');
+    } catch (e) {
+      console.error('[Scheduler] schedules index warm failed (清單維持讀主檔保底):', e.message);
+    }
+  }
+
+  // 清單 API 用：→ { items, archivedCount, fallback }。目錄壞了／不存在 → 保底（非同步讀主檔，同樣的欄位形狀）。
+  async listSchedulesForWorkspace(wsRoot, archived) {
+    const h = listIndex.getIndex('schedules', wsRoot);
+    if (h) {
+      try {
+        const r = archived ? await h.listArchived() : await h.list();
+        if (!r.fallback) {
+          const st = await h.status();
+          return { items: r.items, archivedCount: st.archivedCount || 0, fallback: false };
+        }
+      } catch (e) { /* 走保底 */ }
+    }
+    const key = this._normWsKey(wsRoot);
+    const mine = (await this.loadSchedulesAsync()).filter(s => s && this._normWsKey(s.workspace || this.harnessHome) === key);
+    return {
+      items: mine.filter(s => !!s.archived === !!archived).map(s => this._schedListEntry(s)),
+      archivedCount: mine.filter(s => s.archived).length,
+      fallback: true,
+    };
+  }
+
+  // deploy-targets 用：所有工作區的現役排程（目錄版）。任一份目錄不可讀 → 回 null，呼叫端走保底。
+  async listActiveSchedulesAllWorkspaces() {
+    if (!this._schedWarm) return null;
+    const out = [];
+    for (const wsRaw of this._schedWsRoots.values()) {
+      const h = listIndex.getIndex('schedules', wsRaw);
+      if (!h) return null;
+      const r = await h.list();
+      if (r.fallback) return null;
+      for (const e of r.items) out.push(e);
+    }
+    return out;
+  }
+
+  // ── IDX-RUN：執行記錄目錄（SPEC-list-index.md §9.1）──────────────────────────
+  // 實際檔案（runs/<排程id>/<執行id>.json）仍是真相；目錄只是加在旁邊的快取：
+  //   global-knowledge/schedules/index/<ws 雜湊>/runs.json（現役排程的執行記錄）＋runs.archive.json（已歸檔排程，D5）。
+  // 記憶體：_runMem（現役摘要）＋_running（執行中）。warmRunIndex() 完成後清單查詢全走記憶體，不再逐檔讀。
+
+  _normWsKey(p) {
+    try { return listIndex.normalizeWorkspace(p, this.harnessHome); } catch (e) { return String(p || '').toLowerCase(); }
+  }
+
+  _mkSchedInfo(s) {
+    const wsRaw = s.workspace || this.harnessHome;   // null workspace ＝ harness home
+    const hasChatOrigin = !!(s.origin && s.origin.kind === 'chat' && s.origin.sessionId);
+    return {
+      wsRaw, wsKey: this._normWsKey(wsRaw), archived: !!s.archived, name: s.name,
+      chatTask: s.chatTask === true,
+      chatOrigin: hasChatOrigin ? this._pickOrigin(s.origin) : null,
+    };
+  }
+
+  _pickOrigin(o) {
+    if (!o || typeof o !== 'object') return null;
+    const out = {};
+    for (const k of ['kind', 'sessionId', 'channel', 'chatId']) if (o[k] !== undefined && o[k] !== null) out[k] = o[k];
+    return out;
+  }
+
+  // scheduleId → 工作區等資訊；以 schedules.json「大小＋修改時間」當指紋，沒變就用快取（只 stat 一次）。
+  _schedInfo(scheduleId) {
+    let sig = null;
+    try { const st = fs.statSync(this.schedulesPath); sig = st.size + ':' + st.mtimeMs; } catch (e) {}
+    if (sig === null || sig !== this._schedWsSig) {
+      const map = new Map();
+      for (const s of this.loadSchedules()) map.set(s.id, this._mkSchedInfo(s));
+      this._schedWsMap = map; this._schedWsSig = sig;
+    }
+    return this._schedWsMap.get(scheduleId) || null;
+  }
+
+  // 清單欄位（§9.1）：不放 resolvedPrompt／輸出／delivery 等大欄位。
+  _runEntry(run, info) {
+    const o = run.origin || null;
+    let origin = this._pickOrigin(o);
+    let fromChat = false;
+    if (info) {
+      // 與舊 GET /api/runs 的標註規則相同：chatTask 排程 → fromChat；排程帶對話 origin → fromChat，
+      // 且 run 自己沒帶 sessionId 時用排程的 origin 回填。
+      if (info.chatTask) fromChat = true;
+      else if (info.chatOrigin) { fromChat = true; if (!(o && o.sessionId)) origin = info.chatOrigin; }
+    }
+    return {
+      id: run.id, scheduleId: run.scheduleId, status: run.status,
+      startedAt: run.startedAt || null, finishedAt: run.finishedAt || null,
+      trigger: run.trigger || 'auto', model: run.model || '', resumeCount: run.resumeCount || 0,
+      origin, fromChat,
+      hasCandidate: !!run.hasCandidate, candidateReviewed: false, candidateNoteworthy: false,
+      usage: { calls: (run.usage && run.usage.calls) || 0, runtimeMs: (run.usage && run.usage.runtimeMs) || 0 },
+      archived: !!(info && info.archived),
+    };
+  }
+
+  _registerRunsIndex() {
+    try {
+      listIndex.registerIndexKind('runs', (wsRoot) => {
+        const dir = listIndex.sharedIndexDirFor(this.schedulesDir, wsRoot);
+        return listIndex.open({
+          kind: 'runs',
+          indexPath: path.join(dir, 'runs.json'),
+          archivePath: path.join(dir, 'runs.archive.json'),
+          workspace: wsRoot,
+          scanSource: () => this._scanRunsForWorkspace(wsRoot),
+          fingerprintSource: () => this._runsFingerprint(wsRoot),
+          isArchived: (e) => !!e.archived,
+          sort: (a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''),
+        });
+      });
+    } catch (e) { console.error('[Scheduler] register runs index error:', e.message); }
+  }
+
+  // 列出 runs/ 底下每個排程資料夾的檔名（只 readdir，不開檔）。→ [{ sid, files:['run_x.json'] }]
+  async _listRunFiles() {
+    const fp = fs.promises;
+    let sids = [];
+    try { sids = (await fp.readdir(this.runsDir, { withFileTypes: true })).filter(d => d.isDirectory()).map(d => d.name); }
+    catch (e) { return []; }
+    return listIndex.eachYield(sids, async (sid) => {
+      try {
+        const files = (await fp.readdir(path.join(this.runsDir, sid))).filter(f => f.endsWith('.json'));
+        return { sid, files };
+      } catch (e) { return undefined; }
+    });
+  }
+
+  // 重建用：掃實際檔案，只收「屬於該工作區」的執行記錄。找不到排程的執行記錄歸 harness home 並記進報告。
+  async _scanRunsForWorkspace(wsRoot) {
+    const key = this._normWsKey(wsRoot);
+    const homeKey = this._normWsKey(this.harnessHome);
+    const infos = new Map();
+    for (const s of this.loadSchedules()) infos.set(s.id, this._mkSchedInfo(s));
+    const groups = await this._listRunFiles();
+    const orphanSchedules = [];
+    const todo = [];
+    for (const g of groups) {
+      const info = infos.get(g.sid) || null;
+      if (!info && !orphanSchedules.includes(g.sid)) orphanSchedules.push(g.sid);
+      if ((info ? info.wsKey : homeKey) !== key) continue;
+      for (const f of g.files) todo.push({ sid: g.sid, f, info });
+    }
+    const fp = fs.promises;
+    const entries = await listIndex.eachYield(todo, async (t) => {
+      let run;
+      try { run = JSON.parse(await fp.readFile(path.join(this.runsDir, t.sid, t.f), 'utf8')); } catch (e) { return undefined; }
+      if (!run || !run.id) return undefined;
+      const e = this._runEntry(run, t.info);
+      if (e.hasCandidate) {
+        try {
+          const c = JSON.parse(await fp.readFile(path.join(this.runsDir, t.sid, run.id, 'candidate.json'), 'utf8'));
+          e.candidateReviewed = !!(c && c.reviewed);
+          e.candidateNoteworthy = !!(c && c.noteworthy);   // IDX-CAND：重建時從 candidate.json 回填
+        } catch (er) {}
+      }
+      return e;
+    });
+    this._lastRunsRebuildReport = { workspace: wsRoot, at: new Date().toISOString(), count: entries.length, orphanSchedules: key === homeKey ? orphanSchedules : [] };
+    if (key === homeKey && orphanSchedules.length)
+      console.log('[Scheduler] runs index: ' + orphanSchedules.length + ' 個執行記錄資料夾找不到對應排程，歸入 harness home：' + orphanSchedules.slice(0, 10).join(', ') + (orphanSchedules.length > 10 ? ' …' : ''));
+    return entries;
+  }
+
+  // 核對用指紋（§5.2）：只看檔名。第一次實際 readdir 全部資料夾，之後靠 createRun 增量維護（執行記錄只增不刪）。
+  async _runsFingerprint(wsRoot) {
+    const key = this._normWsKey(wsRoot);
+    if (!this._runIdSets) {
+      if (!this._runIdScan) {
+        this._runIdScan = (async () => {
+          const infos = new Map();
+          for (const s of this.loadSchedules()) infos.set(s.id, this._mkSchedInfo(s));
+          const homeKey = this._normWsKey(this.harnessHome);
+          const sets = new Map();
+          for (const g of await this._listRunFiles()) {
+            const info = infos.get(g.sid);
+            const k = info ? info.wsKey : homeKey;
+            if (!sets.has(k)) sets.set(k, new Set());
+            const set = sets.get(k);
+            for (const f of g.files) set.add(f.slice(0, -5));
+          }
+          for (const [k, id] of (this._runIdPending || [])) { if (!sets.has(k)) sets.set(k, new Set()); sets.get(k).add(id); }
+          this._runIdPending = null;
+          this._runIdSets = sets;
+        })().catch((e) => { this._runIdScan = null; throw e; });
+      }
+      await this._runIdScan;
+    }
+    return listIndex.idSetFingerprint(Array.from(this._runIdSets.get(key) || []));
+  }
+
+  _runIdAdd(wsKey, id) {
+    if (this._runIdSets) { if (!this._runIdSets.has(wsKey)) this._runIdSets.set(wsKey, new Set()); this._runIdSets.get(wsKey).add(id); }
+    else (this._runIdPending = this._runIdPending || []).push([wsKey, id]);
+  }
+
+  // 每條寫入路徑（createRun／updateRun／saveMemoryCandidate）呼叫：同步更新記憶體，再排入目錄 upsert。
+  _trackRun(run, extra) {
+    try {
+      if (!run || !run.id || !run.scheduleId) return;
+      const info = this._schedInfo(run.scheduleId);
+      const wsRaw = info ? info.wsRaw : this.harnessHome;
+      const wsKey = info ? info.wsKey : this._normWsKey(this.harnessHome);
+      const prev = this._runMem.get(run.id);
+      const e = this._runEntry(run, info);
+      e.candidateReviewed = (extra && 'candidateReviewed' in extra) ? !!extra.candidateReviewed : !!(prev && prev.e.candidateReviewed);
+      // IDX-CAND：沿用舊值；舊目錄檔沒有此欄位（undefined）時維持 undefined＝「未知，要讀檔確認」
+      e.candidateNoteworthy = (extra && 'candidateNoteworthy' in extra) ? !!extra.candidateNoteworthy : (prev ? prev.e.candidateNoteworthy : undefined);
+      const wrap = { wsKey, e };
+      if (e.archived) this._runMem.delete(run.id); else this._runMem.set(run.id, wrap);
+      if (e.status === 'running') this._running.set(run.id, wrap); else this._running.delete(run.id);
+      const h = listIndex.getIndex('runs', wsRaw);
+      if (h) h.upsert(e).catch(() => {});
+    } catch (er) { console.error('[Scheduler] runs index track error:', er.message); }
+  }
+
+  // 排程被歸檔／還原時，IDX-SCH 呼叫：把該排程所有執行記錄搬進／搬出歸檔目錄（D5）。
+  async syncRunsArchiveFlag(scheduleId) {
+    try {
+      const info = this._schedInfo(scheduleId);
+      const fp = fs.promises;
+      let files = [];
+      try { files = (await fp.readdir(path.join(this.runsDir, scheduleId))).filter(f => f.endsWith('.json')); } catch (e) { return 0; }
+      for (const f of files) {
+        try { this._trackRun(JSON.parse(await fp.readFile(path.join(this.runsDir, scheduleId, f), 'utf8'))); } catch (e) {}
+      }
+      return files.length;
+    } catch (e) { return 0; }
+  }
+
+  // 啟動後背景暖機：核對（對不上就重建）→ 把現役排程的執行記錄載入記憶體。完成前清單查詢走舊的逐檔讀取。
+  async warmRunIndex() {
+    const t0 = Date.now();
+    try {
+      const wsRoots = new Map();
+      wsRoots.set(this._normWsKey(this.harnessHome), this.harnessHome);
+      for (const s of this.loadSchedules()) {
+        const i = this._mkSchedInfo(s);
+        if (!i.archived && !wsRoots.has(i.wsKey)) wsRoots.set(i.wsKey, i.wsRaw);
+      }
+      let total = 0;
+      for (const wsRaw of wsRoots.values()) {
+        const h = listIndex.getIndex('runs', wsRaw);
+        if (!h) throw new Error('runs index not registered');
+        await h.verify();
+        let r = await h.list();
+        if (r.fallback) { await h.rebuild({ reason: 'warm' }); r = await h.list(); }
+        if (r.fallback) throw new Error('runs index unreadable for ' + wsRaw);
+        const wsKey = this._normWsKey(wsRaw);
+        for (const e of r.items) {
+          if (this._runMem.has(e.id)) continue;      // 開機後已被更新過的以記憶體為準
+          this._runMem.set(e.id, { wsKey, e });      // 目錄裡的 running 不採信：執行中以本行程的 _running 為準
+          total++;
+        }
+      }
+      this._runMemWarm = true;
+      console.log('[Scheduler] runs index warm: ' + total + ' run(s) in ' + (Date.now() - t0) + 'ms');
+    } catch (e) {
+      console.error('[Scheduler] runs index warm failed (清單維持逐檔讀取):', e.message);
+    }
+  }
+
   // ── Run CRUD ───────────────────────────────────────────────────────────
 
   createRun(scheduleId, opts = {}) {
@@ -280,6 +680,9 @@ class SchedulerManager {
       path.join(this.runsDir, scheduleId, runId + '.json'),
       JSON.stringify(run, null, 2)
     );
+    // IDX-RUN：業務檔先寫成功，再更新目錄與記憶體。
+    this._trackRun(run);
+    try { const inf = this._schedInfo(scheduleId); this._runIdAdd(inf ? inf.wsKey : this._normWsKey(this.harnessHome), runId); } catch (e) {}
     this._emitChange('run-start', scheduleId, runId);
     return { run, runDir };
   }
@@ -290,6 +693,7 @@ class SchedulerManager {
       const run = JSON.parse(fs.readFileSync(runPath, 'utf8'));
       Object.assign(run, patch);
       fs.writeFileSync(runPath, JSON.stringify(run, null, 2));
+      this._trackRun(run);   // IDX-RUN
       // SLV-1: covers both mid-run state/progress updates AND run-end (the final status write
       // — status/finishedAt — also goes through this same function).
       this._emitChange('run-update', scheduleId, runId);
@@ -351,6 +755,8 @@ class SchedulerManager {
 
   start() {
     this.reconcileOrphanRuns();  // clear phantom 'running' from a prior process before anything fires
+    this.warmRunIndex();         // IDX-RUN：背景載入執行記錄目錄（不 await；完成前查詢走舊路徑）
+    this.warmSchedIndex();       // IDX-SCH：背景核對排程清單目錄（不 await；完成前清單走保底）
     this._tickWithMissedRun(); // immediate check on startup (missed-run + due runs)
     this._timer = setInterval(() => this._tick(), 60000);
     if (this._timer.unref) this._timer.unref(); // don't prevent process exit
@@ -686,7 +1092,40 @@ class SchedulerManager {
   // ── Cross-schedule run query (SCHED-09 自我感知) ──────────────────────────
   // 跨所有排程搜尋執行紀錄，供 API 查詢 + 注入 Hana 上下文。
 
+  // IDX-RUN：目錄暖機完成後走記憶體（回傳清單摘要欄位，非整份 run）；opts.workspace 只回該工作區（D2）。
+  // 注意：已歸檔排程的執行記錄在歸檔目錄（D5），不在這個全域查詢裡；指定 scheduleId 且記憶體沒有時才逐檔讀。
   queryRuns(opts) {
+    opts = opts || {};
+    if (this._runMemWarm) {
+      const sid = opts.scheduleId || null;
+      let hasSid = !sid;
+      if (sid) { for (const w of this._runMem.values()) if (w.e.scheduleId === sid) { hasSid = true; break; } }
+      if (hasSid) return this._queryRunsMem(opts);
+    }
+    return this._queryRunsScan(opts);
+  }
+
+  _queryRunsMem(opts) {
+    const since = opts.since || null, until = opts.until || null;
+    const filterSid = opts.scheduleId || null, filterSt = opts.status || null;
+    const limit = opts.limit || 50;
+    const wsKey = opts.workspace ? this._normWsKey(opts.workspace) : null;
+    // status=running 且不指定排程：直接看「執行中」清單（含已歸檔排程的執行中 run）。
+    const src = (filterSt === 'running' && !filterSid) ? this._running.values() : this._runMem.values();
+    const out = [];
+    for (const w of src) {
+      const run = w.e;
+      if (wsKey && w.wsKey !== wsKey) continue;
+      if (filterSid && run.scheduleId !== filterSid) continue;
+      if (since && run.startedAt && run.startedAt < since) continue;
+      if (until && run.startedAt && run.startedAt > until) continue;
+      if (filterSt && run.status !== filterSt) continue;
+      out.push(Object.assign({}, run, { origin: run.origin ? Object.assign({}, run.origin) : null, usage: Object.assign({}, run.usage) }));
+    }
+    return out.sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); }).slice(0, limit);
+  }
+
+  _queryRunsScan(opts) {
     opts = opts || {};
     var since     = opts.since      || null;
     var until     = opts.until      || null;
@@ -723,6 +1162,11 @@ class SchedulerManager {
         }
       } catch (e) {}
     }
+    // IDX-RUN：暖機前的保底路徑也要守 D2（opts.workspace 只回該工作區；找不到排程歸 harness home）。
+    if (opts.workspace) {
+      var wk = self._normWsKey(opts.workspace), homeKey = self._normWsKey(self.harnessHome);
+      results = results.filter(function(r) { var inf = self._schedInfo(r.scheduleId); return (inf ? inf.wsKey : homeKey) === wk; });
+    }
     return results
       .sort(function(a, b) { return (b.startedAt || '').localeCompare(a.startedAt || ''); })
       .slice(0, limit);
@@ -743,14 +1187,23 @@ class SchedulerManager {
 
   // SCHED-14/15: 該排程目前仍在執行的 run（status 'running'），無則 null。
   // 供「立即執行」防重入守衛與清單「執行中」徽章使用。
+  // IDX-RUN：開機對帳後改看記憶體裡的「執行中」清單（不再讀整個資料夾）；對帳前保守走舊的讀檔。
   getRunningRun(scheduleId) {
-    return this.getRuns(scheduleId, 50).find(r => r && r.status === 'running') || null;
+    if (!this._reconciled)
+      return this.getRuns(scheduleId, 50).find(r => r && r.status === 'running') || null;
+    let best = null;
+    for (const w of this._running.values()) {
+      if (w.e.scheduleId !== scheduleId) continue;
+      if (!best || String(w.e.startedAt || '') > String(best.startedAt || '')) best = w.e;
+    }
+    return best ? Object.assign({}, best) : null;
   }
 
   // SCHED-DEPLOY Z5-2: true if ANY schedule (any workspace) currently has a run 'running'. A
   // postRun deploy restarts :3400, so it should wait out other in-flight runs rather than yank
   // the server out from under them.
   hasAnyRunningRun() {
+    if (this._reconciled) return this._running.size > 0;   // IDX-RUN
     let scheduleIds = [];
     try { scheduleIds = fs.readdirSync(this.runsDir).filter(f => { try { return fs.statSync(path.join(this.runsDir, f)).isDirectory(); } catch (e) { return false; } }); }
     catch (e) { return false; }
@@ -775,7 +1228,7 @@ class SchedulerManager {
   reconcileOrphanRuns() {
     let scheduleIds = [];
     try { scheduleIds = fs.readdirSync(this.runsDir).filter(f => { try { return fs.statSync(path.join(this.runsDir, f)).isDirectory(); } catch (e) { return false; } }); }
-    catch (e) { return; }
+    catch (e) { this._reconciled = true; return; }
     let fixed = 0;
     const orphanBySchedule = {};   // sid → 該排程最後一筆被判定中斷的 run
     // Z8: 若這次重啟是「佈署」造成的，說出來。.releases/current.json 的 updatedAt 由
@@ -820,6 +1273,7 @@ class SchedulerManager {
       if (touched) this.saveSchedules(list);
     }
     if (fixed) console.log('[Scheduler] reconciled ' + fixed + ' orphaned running run(s) → interrupted');
+    this._reconciled = true;   // IDX-RUN：此後「執行中」以記憶體清單為準（run 檔上的 running 都已改成 interrupted）
   }
 
   // ── Memory candidate sidecar (H4/H5/H6) ───────────────────────────────────
@@ -830,7 +1284,9 @@ class SchedulerManager {
     try {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'candidate.json'), JSON.stringify(data, null, 2));
-    } catch (e) { console.error('[Scheduler] saveMemoryCandidate error:', e.message); }
+    } catch (e) { console.error('[Scheduler] saveMemoryCandidate error:', e.message); return; }
+    // IDX-RUN：候選審核狀態進目錄（candidateReviewed）。
+    try { const run = this.getRun(scheduleId, runId); if (run) this._trackRun(run, { candidateReviewed: !!(data && data.reviewed), candidateNoteworthy: !!(data && data.noteworthy) }); } catch (e) {}
   }
 
   getMemoryCandidate(scheduleId, runId) {
@@ -842,7 +1298,33 @@ class SchedulerManager {
   }
 
   // Collect all unreviewed memory candidates for a workspace (null = all workspaces).
+  // IDX-CAND：目錄暖機後只看執行記錄目錄（hasCandidate／candidateReviewed／candidateNoteworthy）先篩，
+  // 只讀「待審」的 candidate.json；暖機前或目錄不可用時走舊的逐檔讀取（保底）。回傳格式不變。
   collectCandidates(workspaceRoot) {
+    if (this._runMemWarm) {
+      try { return this._collectCandidatesMem(workspaceRoot); }
+      catch (e) { console.error('[Scheduler] collectCandidates (index) failed, fallback to scan:', e.message); }
+    }
+    return this._collectCandidatesScan(workspaceRoot);
+  }
+
+  _collectCandidatesMem(workspaceRoot) {
+    const wsKey = workspaceRoot ? this._normWsKey(workspaceRoot) : null;
+    const results = [];
+    for (const w of this._runMem.values()) {
+      const e = w.e;
+      if (wsKey && w.wsKey !== wsKey) continue;
+      if (!e.hasCandidate || e.candidateReviewed) continue;
+      if (e.candidateNoteworthy === false) continue;   // undefined＝舊目錄檔無此欄位，仍要讀檔確認
+      const candidate = this.getMemoryCandidate(e.scheduleId, e.id);
+      if (!candidate || !candidate.noteworthy || candidate.reviewed) continue;
+      const info = this._schedInfo(e.scheduleId);
+      results.push({ scheduleId: e.scheduleId, scheduleName: info ? info.name : undefined, runId: e.id, startedAt: e.startedAt, candidate });
+    }
+    return results.sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+  }
+
+  _collectCandidatesScan(workspaceRoot) {
     const norm = p => p ? path.resolve(p).toLowerCase() : null;
     const wsNorm = workspaceRoot ? norm(workspaceRoot) : null;
     const results = [];

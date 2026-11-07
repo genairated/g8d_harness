@@ -23,6 +23,14 @@ const uidesignStore = require('./uidesign');
 const modelQuota = require('./model-quota');
 const issuesStore = require('./issues'); // §IR — SPEC-issue-report.md 回報給 Hana
 const usageTracker = require('./usage-tracker'); // §UA — SPEC-usage-analytics.md，記錄層，不動 modelQuota 任何一行
+const listIndex = require('./list-index'); // §IDX-0 — SPEC-list-index.md §4，全平台清單目錄檔共用模組
+const chatIndex = require('./chat-index'); // §IDX-CHAT — SPEC-list-index.md §9.3，對話清單目錄
+chatIndex.register();
+const meetingsIndex = require('./meetings-index'); // IDX-MTG: SPEC-list-index.md 9.8
+meetingsIndex.register();
+whiteboardsStore.registerIndexKind(); // IDX-WB: SPEC-list-index.md 9.12 — 白板目錄的重建／核對／狀態
+uidesignStore.registerIndexKind(); // IDX-UID: SPEC-list-index.md 9.13 — 元件／畫面／範本／演示四份目錄的重建／核對／狀態
+docRegistry.registerIndexKind(); // IDX-DOC: SPEC-list-index.md 9.9 — 文件管理目錄的重建／核對／狀態
 
 // Keep the portal alive even if a spawned CLI / node-pty throws asynchronously.
 // Without this, one bad child process could take down the whole server and make
@@ -213,12 +221,24 @@ function deckNotFound(res, label, tried) {
 // Notes (Stickies) persistence lives in ./notes.js (shared with telegram.js + scheduler.js);
 // server.js just delegates to it with HARNESS_HOME. See notesStore require at top of file.
 function readNotes() { return notesStore.readNotes(HARNESS_HOME); }
-function writeNotes(list) { notesStore.writeNotes(HARNESS_HOME, list); }
+function updateNotes(fn) { return notesStore.updateNotes(HARNESS_HOME, fn); }
 
 // PM (Project Management) persistence lives in ./pm.js (SPEC-project-management.md), same
 // single-file + workspace-tag pattern as notes.js.
 function readPm() { return pmStore.readPm(HARNESS_HOME); }
-function writePm(data) { pmStore.writePm(HARNESS_HOME, data); }
+// 寫入一律經 updatePm：排隊＋「讀最新→套用→暫存檔換名」（SPEC-list-index.md §9.11）。
+// 驗證失敗在 mutator 裡 throw PmHttpError，由 pmSend 轉成對應的 HTTP 狀態。
+function updatePm(fn) { return pmStore.updatePm(HARNESS_HOME, fn); }
+class PmHttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+function pmSend(res, promise, okStatus, errStatus) {
+  promise.then(r => {
+    res.writeHead(typeof okStatus === 'function' ? okStatus(r) : okStatus, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(r));
+  }).catch(e => {
+    res.writeHead(e instanceof PmHttpError ? e.status : (errStatus || 400), { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: e.message }));
+  });
+}
 function genNoteId() { return notesStore.genNoteId(); }
 const NOTE_COLORS = notesStore.NOTE_COLORS;
 
@@ -257,6 +277,91 @@ function filterCgByScope(items, filePathKey, root) {
 // Compile a simple glob (e.g. "*.html") to an anchored, case-insensitive RegExp.
 function globToRegex(glob) {
   return new RegExp('^' + glob.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i');
+}
+
+// IDX-TREE (SPEC-list-index.md §9.5): lazy, async one-level folder listing. Same visible rules as
+// getFolderTree (hidden / skipDirs / .md .html .bpmn / section filter) but only ONE level; a
+// sub-directory is marked hasChildren after a single readdir look-ahead (so folders that would
+// have been pruned — e.g. image-only ep_N dirs in an *.html section — still don't show up).
+const TREE_SKIP_DIRS = new Set(['node_modules', '.next', 'publish', 'app_data', 'dist', 'build', '.git', '.turbo', '.antigravitycli', '.claude', '.codegraph', 'out']);
+function treeFileVisible(name, matchRe) {
+  if (name.startsWith('.')) return false;
+  if (!(name.endsWith('.md') || name.endsWith('.html') || name.endsWith('.bpmn'))) return false;
+  return !(matchRe && !matchRe.test(name));
+}
+async function treeDirHasChildren(absDir, matchRe) {
+  let ents;
+  try { ents = await fs.promises.readdir(absDir, { withFileTypes: true }); } catch (e) { return false; }
+  for (const d of ents) {
+    if (d.name.startsWith('.')) continue;
+    if (d.isDirectory() || d.isSymbolicLink()) { if (!TREE_SKIP_DIRS.has(d.name)) return true; continue; }
+    if (treeFileVisible(d.name, matchRe)) return true;
+  }
+  return false;
+}
+async function getFolderLevel(dirPath, relativeTo, filter = null) {
+  const matchRe = filter ? globToRegex(filter) : null;
+  let ents;
+  try { ents = await fs.promises.readdir(dirPath, { withFileTypes: true }); } catch (e) { return []; }
+  const items = await Promise.all(ents.map(async d => {
+    const file = d.name;
+    if (file.startsWith('.')) return null;
+    const fullPath = path.join(dirPath, file);
+    let isDir = d.isDirectory(), st = null;
+    if (!isDir && d.isSymbolicLink()) {
+      try { st = await fs.promises.stat(fullPath); isDir = st.isDirectory(); } catch (e) { return null; }
+    }
+    const relPath = path.relative(relativeTo, fullPath).replace(/\\/g, '/');
+    if (isDir) {
+      if (TREE_SKIP_DIRS.has(file)) return null;
+      if (!(await treeDirHasChildren(fullPath, matchRe))) return null;
+      return { type: 'directory', name: file, path: relPath, hasChildren: true };
+    }
+    if (!treeFileVisible(file, matchRe)) return null;
+    try { if (!st) st = await fs.promises.stat(fullPath); } catch (e) { return null; }
+    return { type: 'file', name: file, path: relPath, mtime: st.mtime };
+  }));
+  return items.filter(Boolean).sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
+}
+// Resolve (section, relPath) to an absolute dir guaranteed to sit inside that section's base dir
+// (string check + realpath check, so ../ and symlink escapes are both refused).
+async function resolveTreeDir(wctx, manifest, sectionKey, relPath) {
+  let base, filter = null;
+  if (sectionKey === 'worktable') base = wctx.worktableDir;
+  else {
+    const sec = ((manifest.sidebar && manifest.sidebar.sections) || []).find(s => s.label === sectionKey || s.path === sectionKey);
+    if (!sec) return { error: 'unknown section', code: 404 };
+    base = path.join(wctx.root, sec.path);
+    filter = sec.filter || null;
+  }
+  const target = path.resolve(wctx.root, relPath || path.relative(wctx.root, base) || '.');
+  const rel = path.relative(path.resolve(base), target);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return { error: 'path outside section', code: 403 };
+  if (rel.split(path.sep).some(seg => seg && (seg.startsWith('.') || TREE_SKIP_DIRS.has(seg)))) return { error: 'path not browsable', code: 403 };
+  try {
+    const [rb, rt] = await Promise.all([fs.promises.realpath(base), fs.promises.realpath(target)]);
+    const rr = path.relative(rb, rt);
+    if (rr.startsWith('..') || path.isAbsolute(rr)) return { error: 'path outside section', code: 403 };
+  } catch (e) { return { error: 'not found', code: 404 }; }
+  return { dir: target, filter };
+}
+// Sidebar search needs names across a whole section; walk async on demand (never on /api/status).
+// Capped so a huge tree can't produce an unbounded response.
+async function searchFolderTree(dirPath, relativeTo, filter, query, out, cap) {
+  if (out.length >= cap) return;
+  const level = await getFolderLevel(dirPath, relativeTo, filter);
+  const dirs = [];
+  for (const it of level) {
+    if (it.type === 'directory') dirs.push(it);
+    else if ((it.name.toLowerCase().includes(query) || it.path.toLowerCase().includes(query)) && out.length < cap) out.push(it);
+  }
+  for (const d of dirs) {
+    if (out.length >= cap) return;
+    await searchFolderTree(path.join(relativeTo, d.path), relativeTo, filter, query, out, cap);
+  }
 }
 
 // Function to recursively crawl a directory and return a nested folder/file tree.
@@ -1074,18 +1179,21 @@ apiRouter.post('/api/issues', (req, res) => {
   });
 });
 // GET /api/issues?status=&type= — 清單（不含大欄位）
-apiRouter.get('/api/issues', (req, res, ctx) => {
+apiRouter.get('/api/issues', async (req, res, ctx) => {
   const qp = ctx.parsedUrl.query || {};
-  const list = issuesStore.listIssues(HARNESS_HOME, { status: qp.status, type: qp.type })
-    .map(i => ({ id: i.id, type: i.type, title: i.title, status: i.status, workspace: i.workspace, route: i.route, view: i.view, version: i.version, createdAt: i.createdAt }));
-  res.writeHead(200, { 'Content-Type': 'application/json', 'X-Open-Count': String(issuesStore.countOpen(HARNESS_HOME)) });
-  res.end(JSON.stringify(list));
+  const r = await issuesStore.listIndexed(HARNESS_HOME, { status: qp.status, type: qp.type });   // IDX-ISS：一次只讀一次目錄
+  const headers = { 'Content-Type': 'application/json', 'X-Open-Count': String(r.open) };
+  if (r.fallback) headers['X-Index-Fallback'] = '1';
+  res.writeHead(200, headers);
+  res.end(JSON.stringify(r.items));
 });
 // GET /api/issues/summary — 側欄徽章用：未結案數（待處理＋處理中＋已修正待驗證）。必須排在 :id 之前。
-apiRouter.get('/api/issues/summary', (req, res) => {
-  const all = issuesStore.listIssues(HARNESS_HOME);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ open: all.filter(i => issuesStore.OPEN_STATUSES.includes(i.status)).length, total: all.length }));
+apiRouter.get('/api/issues/summary', async (req, res) => {
+  const r = await issuesStore.listIndexed(HARNESS_HOME);
+  const headers = { 'Content-Type': 'application/json' };
+  if (r.fallback) headers['X-Index-Fallback'] = '1';
+  res.writeHead(200, headers);
+  res.end(JSON.stringify({ open: r.open, total: r.total }));
 });
 // GET /api/issues/:id — 單筆（issue.json + timeline.md）
 apiRouter.get('/api/issues/:id', (req, res, ctx) => {
@@ -1149,7 +1257,7 @@ apiRouter.get('/api/notes', (req, res, ctx) => {
 apiRouter.post('/api/notes', (req, res) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const text = String(data.text || '').trim();
@@ -1172,9 +1280,7 @@ apiRouter.post('/api/notes', (req, res) => {
         updatedAt: now,
         completedAt: null,
       };
-      const list = readNotes();
-      list.push(note);
-      writeNotes(list);
+      await updateNotes(list => { list.push(note); });
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(note));
     } catch (e) {
@@ -1189,23 +1295,24 @@ apiRouter.put('/api/notes/:id', (req, res, ctx) => {
   const nid = ctx.params.id;
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const patch = JSON.parse(body || '{}');
-      const list = readNotes();
-      const idx = list.findIndex(n => n.id === nid);
-      if (idx === -1) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-      const note = list[idx];
-      const FIELDS = ['text', 'color', 'x', 'y', 'z', 'w', 'dueAt', 'status'];
-      for (const f of FIELDS) { if (f in patch) note[f] = patch[f]; }
-      if ('color' in patch && !NOTE_COLORS.includes(note.color)) note.color = 'yellow';
-      if ('status' in patch) {
-        if (patch.status === 'done') { note.completedAt = new Date().toISOString(); note.remindedAt = null; }
-        else if (patch.status === 'active') { note.completedAt = null; }
-      }
-      note.updatedAt = new Date().toISOString();
-      list[idx] = note;
-      writeNotes(list);
+      const note = await updateNotes(list => {
+        const idx = list.findIndex(n => n.id === nid);
+        if (idx === -1) return null;
+        const note = list[idx];
+        const FIELDS = ['text', 'color', 'x', 'y', 'z', 'w', 'dueAt', 'status'];
+        for (const f of FIELDS) { if (f in patch) note[f] = patch[f]; }
+        if ('color' in patch && !NOTE_COLORS.includes(note.color)) note.color = 'yellow';
+        if ('status' in patch) {
+          if (patch.status === 'done') { note.completedAt = new Date().toISOString(); note.remindedAt = null; }
+          else if (patch.status === 'active') { note.completedAt = null; }
+        }
+        note.updatedAt = new Date().toISOString();
+        return note;
+      });
+      if (!note) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(note));
     } catch (e) {
@@ -1216,12 +1323,16 @@ apiRouter.put('/api/notes/:id', (req, res, ctx) => {
 });
 
 // DELETE /api/notes/:id — permanent delete
-apiRouter.delete('/api/notes/:id', (req, res, ctx) => {
+apiRouter.delete('/api/notes/:id', async (req, res, ctx) => {
   const nid = ctx.params.id;
-  const list = readNotes();
-  const next = list.filter(n => n.id !== nid);
-  const ok = next.length !== list.length;
-  if (ok) writeNotes(next);
+  let ok = false;
+  try {
+    await updateNotes(list => {
+      const next = list.filter(n => n.id !== nid);
+      ok = next.length !== list.length;
+      return next;
+    });
+  } catch (e) { ok = false; }
   res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok }));
 });
@@ -1297,18 +1408,20 @@ function fillElementDefaults(el) {
 }
 
 // GET /api/whiteboards — list current workspace's boards
-apiRouter.get('/api/whiteboards', (req, res) => {
+apiRouter.get('/api/whiteboards', async (req, res) => {
   const wctx = resolveWorkspace(req);
-  const list = whiteboardsStore.readIndex(wctx.root);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(list));
+  const r = await whiteboardsStore.listBoards(wctx.root); // IDX-WB: 讀目錄；壞檔走保底掃描
+  const h = { 'Content-Type': 'application/json' };
+  if (r.fallback) h['X-Index-Fallback'] = '1';
+  res.writeHead(200, h);
+  res.end(JSON.stringify(r.items));
 });
 
 // POST /api/whiteboards — create. body {title?}
 apiRouter.post('/api/whiteboards', (req, res) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1318,9 +1431,7 @@ apiRouter.post('/api/whiteboards', (req, res) => {
       const meta = { id, title, createdAt: now, updatedAt: now };
       const board = { id, title, elements: [], appState: {}, files: {}, updatedAt: now };
       whiteboardsStore.writeBoard(wctx.root, id, board);
-      const list = whiteboardsStore.readIndex(wctx.root);
-      list.push(meta);
-      whiteboardsStore.writeIndex(wctx.root, list);
+      await whiteboardsStore.upsertMeta(wctx.root, meta);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(meta));
     } catch (e) {
@@ -1344,7 +1455,7 @@ apiRouter.put('/api/whiteboards/:id', (req, res, ctx) => {
   const id = ctx.params.id;
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const patch = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1354,13 +1465,7 @@ apiRouter.put('/api/whiteboards/:id', (req, res, ctx) => {
       for (const f of FIELDS) { if (f in patch) board[f] = patch[f]; }
       board.updatedAt = new Date().toISOString();
       whiteboardsStore.writeBoard(wctx.root, id, board);
-      const list = whiteboardsStore.readIndex(wctx.root);
-      const idx = list.findIndex(b => b.id === id);
-      if (idx !== -1) {
-        if ('title' in patch) list[idx].title = board.title;
-        list[idx].updatedAt = board.updatedAt;
-        whiteboardsStore.writeIndex(wctx.root, list);
-      }
+      await whiteboardsStore.upsertMeta(wctx.root, { id, title: board.title || '', updatedAt: board.updatedAt });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ id: board.id, title: board.title, updatedAt: board.updatedAt }));
     } catch (e) {
@@ -1371,11 +1476,11 @@ apiRouter.put('/api/whiteboards/:id', (req, res, ctx) => {
 });
 
 // DELETE /api/whiteboards/:id — permanent delete (destructive; front-end must confirm)
-apiRouter.delete('/api/whiteboards/:id', (req, res, ctx) => {
+apiRouter.delete('/api/whiteboards/:id', async (req, res, ctx) => {
   const wctx = resolveWorkspace(req);
   const board = whiteboardsStore.readBoard(wctx.root, ctx.params.id);
   if (!board) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-  whiteboardsStore.deleteBoard(wctx.root, ctx.params.id);
+  await whiteboardsStore.deleteBoard(wctx.root, ctx.params.id);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
 });
@@ -1388,7 +1493,7 @@ apiRouter.post('/api/whiteboards/:id/elements', (req, res, ctx) => {
   const id = ctx.params.id;
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1400,9 +1505,7 @@ apiRouter.post('/api/whiteboards/:id/elements', (req, res, ctx) => {
       board.elements = mode === 'replace' ? filled : (Array.isArray(board.elements) ? board.elements : []).concat(filled);
       board.updatedAt = new Date().toISOString();
       whiteboardsStore.writeBoard(wctx.root, id, board);
-      const list = whiteboardsStore.readIndex(wctx.root);
-      const idx = list.findIndex(b => b.id === id);
-      if (idx !== -1) { list[idx].updatedAt = board.updatedAt; whiteboardsStore.writeIndex(wctx.root, list); }
+      await whiteboardsStore.upsertMeta(wctx.root, { id, title: board.title || '', updatedAt: board.updatedAt });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, mode, count: filled.length, updatedAt: board.updatedAt }));
     } catch (e) {
@@ -1517,18 +1620,18 @@ apiRouter.put('/api/ui/tokens', (req, res) => {
 });
 
 // GET /api/ui/components — 列表（不含 html/css 內文，輕量）；空清單時前端要顯示「新建或匯入」提示
-apiRouter.get('/api/ui/components', (req, res) => {
+apiRouter.get('/api/ui/components', async (req, res) => {
   const wctx = resolveWorkspace(req);
-  const list = uidesignStore.readIndex(wctx.root);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(list));
+  const r = await uidesignStore.listComponents(wctx.root); // IDX-UID：只讀一份目錄（缺／壞時保底掃檔並背景重建）
+  res.writeHead(200, Object.assign({ 'Content-Type': 'application/json' }, r.fallback ? { 'X-Index-Fallback': '1' } : {}));
+  res.end(JSON.stringify(r.items));
 });
 
 // POST /api/ui/components — 建立。body {name, category?, description?, html?, css?, params?, variants?}
 apiRouter.post('/api/ui/components', (req, res) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1546,9 +1649,7 @@ apiRouter.post('/api/ui/components', (req, res) => {
         createdAt: now, updatedAt: now
       };
       uidesignStore.writeComponent(wctx.root, id, component);
-      const list = uidesignStore.readIndex(wctx.root);
-      list.push({ id, name: component.name, category: component.category, description: component.description, updatedAt: now });
-      uidesignStore.writeIndex(wctx.root, list);
+      await uidesignStore.upsertComponent(wctx.root, component);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(component));
     } catch (e) {
@@ -1572,7 +1673,7 @@ apiRouter.put('/api/ui/components/:id', (req, res, ctx) => {
   const id = ctx.params.id;
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const patch = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1582,15 +1683,7 @@ apiRouter.put('/api/ui/components/:id', (req, res, ctx) => {
       for (const f of FIELDS) { if (f in patch) component[f] = patch[f]; }
       component.updatedAt = new Date().toISOString();
       uidesignStore.writeComponent(wctx.root, id, component);
-      const list = uidesignStore.readIndex(wctx.root);
-      const idx = list.findIndex(c => c.id === id);
-      if (idx !== -1) {
-        list[idx].name = component.name;
-        list[idx].category = component.category;
-        list[idx].description = component.description;
-        list[idx].updatedAt = component.updatedAt;
-        uidesignStore.writeIndex(wctx.root, list);
-      }
+      await uidesignStore.upsertComponent(wctx.root, component);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(component));
     } catch (e) {
@@ -1601,11 +1694,11 @@ apiRouter.put('/api/ui/components/:id', (req, res, ctx) => {
 });
 
 // DELETE /api/ui/components/:id
-apiRouter.delete('/api/ui/components/:id', (req, res, ctx) => {
+apiRouter.delete('/api/ui/components/:id', async (req, res, ctx) => {
   const wctx = resolveWorkspace(req);
   const component = uidesignStore.readComponent(wctx.root, ctx.params.id);
   if (!component) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-  uidesignStore.deleteComponent(wctx.root, ctx.params.id);
+  await uidesignStore.deleteComponent(wctx.root, ctx.params.id);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
 });
@@ -1684,11 +1777,11 @@ apiRouter.delete('/api/ui/models/:id', (req, res, ctx) => {
 });
 
 // GET /api/ui/screens — 列當前工作區的畫面（index.json，輕量：不含 elements）
-apiRouter.get('/api/ui/screens', (req, res) => {
+apiRouter.get('/api/ui/screens', async (req, res) => {
   const wctx = resolveWorkspace(req);
-  const list = uidesignStore.readScreenIndex(wctx.root);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(list));
+  const r = await uidesignStore.listScreens(wctx.root);
+  res.writeHead(200, Object.assign({ 'Content-Type': 'application/json' }, r.fallback ? { 'X-Index-Fallback': '1' } : {}));
+  res.end(JSON.stringify(r.items));
 });
 
 // UID9：依 body 決定 unit。'dp'（尺寸模式）＝挑機型或自填「對角吋數＋實體解析度」，算出
@@ -1724,7 +1817,7 @@ function resolveScreenSizing(wctx, data) {
 apiRouter.post('/api/ui/screens', (req, res) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1754,9 +1847,7 @@ apiRouter.post('/api/ui/screens', (req, res) => {
         createdAt: now, updatedAt: now
       };
       uidesignStore.writeScreen(wctx.root, id, screen);
-      const list = uidesignStore.readScreenIndex(wctx.root);
-      list.push({ id, name: screen.name, device: screen.device, frame: screen.frame, unit: screen.unit, scale: screen.scale, updatedAt: now });
-      uidesignStore.writeScreenIndex(wctx.root, list);
+      await uidesignStore.upsertScreen(wctx.root, screen);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(screen));
     } catch (e) {
@@ -1780,7 +1871,7 @@ apiRouter.put('/api/ui/screens/:id', (req, res, ctx) => {
   const id = ctx.params.id;
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const patch = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1794,17 +1885,7 @@ apiRouter.put('/api/ui/screens/:id', (req, res, ctx) => {
       for (const f of FIELDS) { if (f in patch) screen[f] = patch[f]; }
       screen.updatedAt = new Date().toISOString();
       uidesignStore.writeScreen(wctx.root, id, screen);
-      const list = uidesignStore.readScreenIndex(wctx.root);
-      const idx = list.findIndex(s => s.id === id);
-      if (idx !== -1) {
-        list[idx].name = screen.name;
-        list[idx].device = screen.device;
-        list[idx].frame = screen.frame;
-        list[idx].unit = screen.unit;
-        list[idx].scale = screen.scale;
-        list[idx].updatedAt = screen.updatedAt;
-        uidesignStore.writeScreenIndex(wctx.root, list);
-      }
+      await uidesignStore.upsertScreen(wctx.root, screen);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(screen));
     } catch (e) {
@@ -1818,7 +1899,7 @@ apiRouter.put('/api/ui/screens/:id', (req, res, ctx) => {
 apiRouter.post('/api/ui/screens/:id/duplicate', (req, res, ctx) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const wctx = resolveWorkspace(req);
       const src = uidesignStore.readScreen(wctx.root, ctx.params.id);
@@ -1832,9 +1913,7 @@ apiRouter.post('/api/ui/screens/:id/duplicate', (req, res, ctx) => {
         createdAt: now, updatedAt: now
       });
       uidesignStore.writeScreen(wctx.root, id, copy);
-      const list = uidesignStore.readScreenIndex(wctx.root);
-      list.push({ id, name: copy.name, device: copy.device, frame: copy.frame, updatedAt: now });
-      uidesignStore.writeScreenIndex(wctx.root, list);
+      await uidesignStore.upsertScreen(wctx.root, copy);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(copy));
     } catch (e) {
@@ -1845,11 +1924,11 @@ apiRouter.post('/api/ui/screens/:id/duplicate', (req, res, ctx) => {
 });
 
 // DELETE /api/ui/screens/:id
-apiRouter.delete('/api/ui/screens/:id', (req, res, ctx) => {
+apiRouter.delete('/api/ui/screens/:id', async (req, res, ctx) => {
   const wctx = resolveWorkspace(req);
   const screen = uidesignStore.readScreen(wctx.root, ctx.params.id);
   if (!screen) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-  uidesignStore.deleteScreen(wctx.root, ctx.params.id);
+  await uidesignStore.deleteScreen(wctx.root, ctx.params.id);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
 });
@@ -1889,13 +1968,14 @@ apiRouter.put('/api/ui/guideline', (req, res) => {
 // 內建骨架範本與骨架佔位元件是「種子」——ensureTemplatesSeed 只在缺席時補、不覆寫已存在的檔案。
 
 // GET /api/ui/templates — 列表（輕量：不含 elements，含縮圖）；可用 ?device= 依裝置分類篩選
-apiRouter.get('/api/ui/templates', (req, res) => {
+apiRouter.get('/api/ui/templates', async (req, res) => {
   const wctx = resolveWorkspace(req);
-  let list = uidesignStore.readTemplateIndex(wctx.root);
+  const r = await uidesignStore.listTemplates(wctx.root); // 種子檢查每工作區只做一次
+  let list = r.items;
   const u = url.parse(req.url, true);
   const deviceGroup = u.query && u.query.device;
   if (deviceGroup && deviceGroup !== 'all') list = list.filter(t => t.deviceGroup === deviceGroup);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.writeHead(200, Object.assign({ 'Content-Type': 'application/json' }, r.fallback ? { 'X-Index-Fallback': '1' } : {}));
   res.end(JSON.stringify(list));
 });
 
@@ -1904,7 +1984,7 @@ apiRouter.get('/api/ui/templates', (req, res) => {
 apiRouter.post('/api/ui/templates', (req, res) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -1927,9 +2007,7 @@ apiRouter.post('/api/ui/templates', (req, res) => {
         createdAt: now, updatedAt: now
       };
       uidesignStore.writeTemplate(wctx.root, id, template);
-      const list = uidesignStore.readTemplateIndex(wctx.root);
-      list.push({ id, name, deviceGroup: template.deviceGroup, device: template.device, tags: template.tags, source: 'screen', updatedAt: now, thumbnail: template.thumbnail });
-      uidesignStore.writeTemplateIndex(wctx.root, list);
+      await uidesignStore.upsertTemplate(wctx.root, template);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(template));
     } catch (e) {
@@ -1949,11 +2027,11 @@ apiRouter.get('/api/ui/templates/:id', (req, res, ctx) => {
 });
 
 // DELETE /api/ui/templates/:id
-apiRouter.delete('/api/ui/templates/:id', (req, res, ctx) => {
+apiRouter.delete('/api/ui/templates/:id', async (req, res, ctx) => {
   const wctx = resolveWorkspace(req);
   const template = uidesignStore.readTemplate(wctx.root, ctx.params.id);
   if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-  uidesignStore.deleteTemplate(wctx.root, ctx.params.id);
+  await uidesignStore.deleteTemplate(wctx.root, ctx.params.id);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
 });
@@ -1963,7 +2041,7 @@ apiRouter.delete('/api/ui/templates/:id', (req, res, ctx) => {
 apiRouter.post('/api/ui/templates/:id/apply', (req, res, ctx) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const wctx = resolveWorkspace(req);
       const template = uidesignStore.readTemplate(wctx.root, ctx.params.id);
@@ -1985,9 +2063,7 @@ apiRouter.post('/api/ui/templates/:id/apply', (req, res, ctx) => {
         createdAt: now, updatedAt: now
       };
       uidesignStore.writeScreen(wctx.root, id, screen);
-      const list = uidesignStore.readScreenIndex(wctx.root);
-      list.push({ id, name: screen.name, device: screen.device, frame: screen.frame, updatedAt: now });
-      uidesignStore.writeScreenIndex(wctx.root, list);
+      await uidesignStore.upsertScreen(wctx.root, screen);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(screen));
     } catch (e) {
@@ -2029,7 +2105,7 @@ apiRouter.post('/api/ui/screens/:id/restyle/preview', (req, res, ctx) => {
 apiRouter.post('/api/ui/screens/:id/restyle/apply', (req, res, ctx) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -2045,9 +2121,7 @@ apiRouter.post('/api/ui/screens/:id/restyle/apply', (req, res, ctx) => {
       screen.elements = result.elements;
       screen.updatedAt = new Date().toISOString();
       uidesignStore.writeScreen(wctx.root, id, screen);
-      const list = uidesignStore.readScreenIndex(wctx.root);
-      const idx = list.findIndex(s => s.id === id);
-      if (idx !== -1) { list[idx].updatedAt = screen.updatedAt; uidesignStore.writeScreenIndex(wctx.root, list); }
+      await uidesignStore.upsertScreen(wctx.root, screen);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         screen, templateId: template.id, templateName: template.name,
@@ -2066,14 +2140,14 @@ apiRouter.post('/api/ui/screens/:id/restyle/apply', (req, res, ctx) => {
 apiRouter.post('/api/ui/screens/restyle/batch', (req, res) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
       const screenIds = Array.isArray(data.screenIds) ? data.screenIds : [];
       const template = uidesignStore.readTemplate(wctx.root, data.templateId);
       if (!template) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'template not found' })); return; }
-      const results = screenIds.map((screenId) => {
+      const results = await Promise.all(screenIds.map(async (screenId) => {
         const screen = uidesignStore.readScreen(wctx.root, screenId);
         if (!screen) return { screenId, ok: false, error: 'screen not found' };
         try {
@@ -2084,16 +2158,14 @@ apiRouter.post('/api/ui/screens/restyle/batch', (req, res) => {
           screen.elements = result.elements;
           screen.updatedAt = new Date().toISOString();
           uidesignStore.writeScreen(wctx.root, screenId, screen);
-          const list = uidesignStore.readScreenIndex(wctx.root);
-          const idx = list.findIndex(s => s.id === screenId);
-          if (idx !== -1) { list[idx].updatedAt = screen.updatedAt; uidesignStore.writeScreenIndex(wctx.root, list); }
+          await uidesignStore.upsertScreen(wctx.root, screen);
           return {
             screenId, ok: true, screenName: screen.name,
             matchedCount: result.matchedCount, templateElementCount: result.templateElementCount,
             unmatchedFromScreen: result.unmatchedFromScreen, unmatchedFromTemplate: result.unmatchedFromTemplate
           };
         } catch (e) { return { screenId, ok: false, error: e.message }; }
-      });
+      }));
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ templateId: template.id, templateName: template.name, results }));
     } catch (e) {
@@ -2113,7 +2185,7 @@ apiRouter.get('/api/ui/screens/:id/revisions', (req, res, ctx) => {
 
 // POST /api/ui/screens/:id/revisions/:revId/restore — 一鍵退回（UID-43）。退回前先把「即將被
 // 取代的當下版本」也存一份，讓這次退回本身仍是可逆的（不會把退回動作變成單向門）。
-apiRouter.post('/api/ui/screens/:id/revisions/:revId/restore', (req, res, ctx) => {
+apiRouter.post('/api/ui/screens/:id/revisions/:revId/restore', async (req, res, ctx) => {
   try {
     const wctx = resolveWorkspace(req);
     const id = ctx.params.id;
@@ -2124,13 +2196,7 @@ apiRouter.post('/api/ui/screens/:id/revisions/:revId/restore', (req, res, ctx) =
     uidesignStore.saveScreenRevision(wctx.root, id, current, { reason: 'restore-superseded', label: '退回前的版本（即將被取代）' });
     const restored = Object.assign({}, revision.snapshot, { id, updatedAt: new Date().toISOString() });
     uidesignStore.writeScreen(wctx.root, id, restored);
-    const list = uidesignStore.readScreenIndex(wctx.root);
-    const idx = list.findIndex(s => s.id === id);
-    if (idx !== -1) {
-      list[idx].name = restored.name; list[idx].device = restored.device; list[idx].frame = restored.frame;
-      list[idx].updatedAt = restored.updatedAt;
-      uidesignStore.writeScreenIndex(wctx.root, list);
-    }
+    await uidesignStore.upsertScreen(wctx.root, restored);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(restored));
   } catch (e) {
@@ -2171,18 +2237,18 @@ apiRouter.put('/api/ui/decisions', (req, res) => {
 // 不改動畫面——步驟只是「screenId + 一句說明」的敘事順序。
 
 // GET /api/ui/flows — 列當前工作區的流程（index.json，輕量：不含 steps 細節）
-apiRouter.get('/api/ui/flows', (req, res) => {
+apiRouter.get('/api/ui/flows', async (req, res) => {
   const wctx = resolveWorkspace(req);
-  const list = uidesignStore.readFlowIndex(wctx.root);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(list));
+  const r = await uidesignStore.listFlows(wctx.root);
+  res.writeHead(200, Object.assign({ 'Content-Type': 'application/json' }, r.fallback ? { 'X-Index-Fallback': '1' } : {}));
+  res.end(JSON.stringify(r.items));
 });
 
 // POST /api/ui/flows — 新建。body {name?, description?, device?, steps?:[]}
 apiRouter.post('/api/ui/flows', (req, res) => {
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -2197,9 +2263,7 @@ apiRouter.post('/api/ui/flows', (req, res) => {
         createdAt: now, updatedAt: now
       };
       uidesignStore.writeFlow(wctx.root, id, flow);
-      const list = uidesignStore.readFlowIndex(wctx.root);
-      list.push({ id, name: flow.name, description: flow.description, device: flow.device, stepCount: flow.steps.length, updatedAt: now });
-      uidesignStore.writeFlowIndex(wctx.root, list);
+      await uidesignStore.upsertFlow(wctx.root, flow);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(flow));
     } catch (e) {
@@ -2229,7 +2293,7 @@ apiRouter.put('/api/ui/flows/:id', (req, res, ctx) => {
   const id = ctx.params.id;
   let body = '';
   req.on('data', c => { body += c; });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const patch = JSON.parse(body || '{}');
       const wctx = resolveWorkspace(req);
@@ -2240,16 +2304,7 @@ apiRouter.put('/api/ui/flows/:id', (req, res, ctx) => {
       if (!Array.isArray(flow.steps)) flow.steps = [];
       flow.updatedAt = new Date().toISOString();
       uidesignStore.writeFlow(wctx.root, id, flow);
-      const list = uidesignStore.readFlowIndex(wctx.root);
-      const idx = list.findIndex(f => f.id === id);
-      if (idx !== -1) {
-        list[idx].name = flow.name;
-        list[idx].description = flow.description;
-        list[idx].device = flow.device;
-        list[idx].stepCount = flow.steps.length;
-        list[idx].updatedAt = flow.updatedAt;
-        uidesignStore.writeFlowIndex(wctx.root, list);
-      }
+      await uidesignStore.upsertFlow(wctx.root, flow);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(flow));
     } catch (e) {
@@ -2260,11 +2315,11 @@ apiRouter.put('/api/ui/flows/:id', (req, res, ctx) => {
 });
 
 // DELETE /api/ui/flows/:id
-apiRouter.delete('/api/ui/flows/:id', (req, res, ctx) => {
+apiRouter.delete('/api/ui/flows/:id', async (req, res, ctx) => {
   const wctx = resolveWorkspace(req);
   const flow = uidesignStore.readFlow(wctx.root, ctx.params.id);
   if (!flow) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-  uidesignStore.deleteFlow(wctx.root, ctx.params.id);
+  await uidesignStore.deleteFlow(wctx.root, ctx.params.id);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
 });
@@ -2409,7 +2464,8 @@ apiRouter.delete('/api/chat/history/:sessionId/messages/:index', (req, res, ctx)
       }));
 
       data.messages = nextMessages;
-      fs.writeFileSync(sessionPath, JSON.stringify(data, null, 2), 'utf8');
+      chatIndex.writeFileAtomicSync(sessionPath, JSON.stringify(data, null, 2));
+      chatIndex.syncUpsert(wctx.chatHistoryDir, data, sessionId);
 
       // Rewrite context_<sessionId>.md so the next turn doesn't resurrect the deleted content.
       // writeContextFile() no-ops on an empty array, so clear the file by hand in that case —
@@ -2983,46 +3039,79 @@ ${stylesTag}
     return;
   }
 
-  // API: Get Status & Folder Trees (manifest-driven sections)
+  // API: Get Status (manifest-driven sections). IDX-TREE: trees are FIRST LEVEL ONLY now —
+  // directories carry hasChildren:true and the sidebar loads deeper levels via /api/folder-tree.
   if (pathname === '/api/status') {
-    try {
-      const wctx = resolveWorkspace(req);
-      const manifest = getManifest(wctx.root);
-      const worktableTree = getFolderTree(wctx.worktableDir, wctx.root);
+    (async () => {
+      try {
+        const wctx = resolveWorkspace(req);
+        const manifest = getManifest(wctx.root);
+        const secDefs = manifest.sidebar.sections || [];
+        const [worktableTree, ...secTrees] = await Promise.all([
+          getFolderLevel(wctx.worktableDir, wctx.root),
+          ...secDefs.map(s => getFolderLevel(path.join(wctx.root, s.path), wctx.root, s.filter || null))
+        ]);
+        const sections = secDefs.map((s, i) => ({
+          label: s.label,
+          icon: s.icon || 'folder',
+          path: s.path,
+          tree: secTrees[i]
+        }));
 
-      // Each configured sidebar section gets its directory tree.
-      const sections = (manifest.sidebar.sections || []).map(s => ({
-        label: s.label,
-        icon: s.icon || 'folder',
-        path: s.path,
-        tree: getFolderTree(path.join(wctx.root, s.path), wctx.root, s.filter || null)
-      }));
+        const statusData = {
+          workspaceRoot: wctx.root,
+          manifest,
+          bootId: BOOT_ID,
+          version: RUNNING_VERSION,
+          lastRestart: LAST_RESTART,
+          dashboardExists: fs.existsSync(path.join(wctx.worktableDir, 'DASHBOARD.md')),
+          taskExists: fs.existsSync(path.join(wctx.worktableDir, 'TASK.md')),
+          worktable: worktableTree,
+          sections,
+          // P2 (SPEC-plugin-contract.md §3): workspace-contributed sidebar items. Frontend renders
+          // these into #dynamic-sections as nav buttons (router.navigate('/app/x/<name>')), not
+          // folder trees like `sections` above.
+          // WSX2: sorted per manifest.plugins.order, each entry flagged `hidden` per
+          // manifest.plugins.hidden — shell/sidebar.js skips hidden ones, views/settings.js needs
+          // the full flagged list to manage them.
+          plugins: applyPluginManifestOrder(getPlugins(wctx), manifest.plugins)
+        };
 
-      const statusData = {
-        workspaceRoot: wctx.root,
-        manifest,
-        bootId: BOOT_ID,
-        version: RUNNING_VERSION,
-        lastRestart: LAST_RESTART,
-        dashboardExists: fs.existsSync(path.join(wctx.worktableDir, 'DASHBOARD.md')),
-        taskExists: fs.existsSync(path.join(wctx.worktableDir, 'TASK.md')),
-        worktable: worktableTree,
-        sections,
-        // P2 (SPEC-plugin-contract.md §3): workspace-contributed sidebar items. Frontend renders
-        // these into #dynamic-sections as nav buttons (router.navigate('/app/x/<name>')), not
-        // folder trees like `sections` above.
-        // WSX2: sorted per manifest.plugins.order, each entry flagged `hidden` per
-        // manifest.plugins.hidden — shell/sidebar.js skips hidden ones, views/settings.js needs
-        // the full flagged list to manage them.
-        plugins: applyPluginManifestOrder(getPlugins(wctx), manifest.plugins)
-      };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(statusData));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    })();
+    return;
+  }
 
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(statusData));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
-    }
+  // API: one folder level for the sidebar tree (IDX-TREE). ?section=<worktable|label|path>&path=<rel>
+  // With ?q=<text> instead: walk every section and return matching files (sidebar search).
+  if (pathname === '/api/folder-tree' && req.method === 'GET') {
+    (async () => {
+      const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      try {
+        const wctx = resolveWorkspace(req);
+        const manifest = getManifest(wctx.root);
+        const q = new URL(req.url, 'http://x').searchParams;
+        const search = (q.get('q') || '').trim().toLowerCase();
+        if (search) {
+          const keys = ['worktable', ...(manifest.sidebar.sections || []).map(s => s.path)];
+          const files = [];
+          for (const k of keys) {
+            const r = await resolveTreeDir(wctx, manifest, k, '');
+            if (r.error) continue;
+            await searchFolderTree(r.dir, wctx.root, r.filter, search, files, 200);
+          }
+          return send(200, { items: files });
+        }
+        const r = await resolveTreeDir(wctx, manifest, q.get('section') || '', q.get('path') || '');
+        if (r.error) return send(r.code, { error: r.error });
+        send(200, { items: await getFolderLevel(r.dir, wctx.root, r.filter) });
+      } catch (err) { send(500, { error: err.message }); }
+    })();
     return;
   }
 
@@ -3595,9 +3684,15 @@ ${stylesTag}
   if (pathname === '/api/chat/history' && req.method === 'GET') {
     try {
       const wctx = resolveWorkspace(req);
-      const list = getChatHistories(wctx.chatHistoryDir);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(list));
+      // IDX-CHAT：讀工作區的對話目錄（chat.json），不再逐檔打開；目錄不可用時非同步掃資料夾保底。
+      chatIndex.listAll(wctx.chatHistoryDir).then(r => {
+        if (r.fallback) res.setHeader('X-Index-Fallback', '1');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(chatIndex.toHistoryList(r.items)));
+      }).catch(err => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      });
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
@@ -3614,43 +3709,17 @@ ${stylesTag}
     // filePath= — same 0/N-session contract, different match field. filePath path below is
     // left completely untouched for compatibility.
     const ctxKeyTarget = (parsedUrl.query.ctxKey || '').toString();
-    const out = [];
-    try {
-      if (target && fs.existsSync(wctx.chatHistoryDir)) {
-        for (const file of fs.readdirSync(wctx.chatHistoryDir)) {
-          if (!file.startsWith('chat_') || !file.endsWith('.json')) continue;
-          try {
-            const d = JSON.parse(fs.readFileSync(path.join(wctx.chatHistoryDir, file), 'utf8'));
-            if (d.filePath && d.filePath === target) {
-              let title = d.title;
-              if (!title) {
-                const fm = (d.messages || []).find(m => m.role === 'user' && typeof m.content === 'string');
-                title = fm ? fm.content.slice(0, 30) : '無主題對話';
-              }
-              out.push({ sessionId: d.sessionId, title, updatedAt: d.updatedAt, filePath: d.filePath });
-            }
-          } catch (e) {}
-        }
-      } else if (ctxKeyTarget && fs.existsSync(wctx.chatHistoryDir)) {
-        for (const file of fs.readdirSync(wctx.chatHistoryDir)) {
-          if (!file.startsWith('chat_') || !file.endsWith('.json')) continue;
-          try {
-            const d = JSON.parse(fs.readFileSync(path.join(wctx.chatHistoryDir, file), 'utf8'));
-            if (d.contextKey && d.contextKey === ctxKeyTarget) {
-              let title = d.title;
-              if (!title) {
-                const fm = (d.messages || []).find(m => m.role === 'user' && typeof m.content === 'string');
-                title = fm ? fm.content.slice(0, 30) : '無主題對話';
-              }
-              out.push({ sessionId: d.sessionId, title, updatedAt: d.updatedAt, contextLabel: d.contextLabel || null });
-            }
-          } catch (e) {}
-        }
-      }
-    } catch (e) {}
-    out.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ sessions: out }));
+    // IDX-CHAT：改讀對話目錄再過濾（filePath／ctxKey 兩條匹配欄位與回傳欄位都與改前相同）。
+    const wantList = !!(target || ctxKeyTarget);
+    (wantList ? chatIndex.listAll(wctx.chatHistoryDir) : Promise.resolve({ items: [], fallback: false })).then(r => {
+      if (r.fallback) res.setHeader('X-Index-Fallback', '1');
+      const out = target ? chatIndex.toSessionsByFile(r.items, target) : (ctxKeyTarget ? chatIndex.toSessionsByCtx(r.items, ctxKeyTarget) : []);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ sessions: chatIndex.sortSessions(out) }));
+    }).catch(() => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ sessions: [] }));
+    });
     return;
   }
 
@@ -3703,7 +3772,8 @@ ${stylesTag}
         if (!fs.existsSync(sessionPath)) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
         const data = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
         data.title = (title || '').slice(0, 120);
-        fs.writeFileSync(sessionPath, JSON.stringify(data, null, 2), 'utf8');
+        chatIndex.writeFileAtomicSync(sessionPath, JSON.stringify(data, null, 2));
+        chatIndex.syncUpsert(wctx.chatHistoryDir, data, sessionId);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, title: data.title }));
       } catch (err) {
@@ -3721,6 +3791,7 @@ ${stylesTag}
     const sessionPath = path.join(wctx.chatHistoryDir, `chat_${sessionId}.json`);
     try {
       if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+      chatIndex.syncRemove(wctx.chatHistoryDir, sessionId);   // IDX-CHAT
       // MM-M1-04: attachments live and die with the conversation. Sanitise the id and confirm the
       // folder resolves inside chatHistoryDir before recursive-removing it (no orphans, no traversal).
       const attDir = path.join(wctx.chatHistoryDir, 'attachments', sessionId);
@@ -4248,11 +4319,7 @@ ${stylesTag}
           createdAt: now,
           updatedAt: now,
         };
-        const pm = readPm();
-        pm.projects.push(project);
-        writePm(pm);
-        res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(project));
+        pmSend(res, updatePm(pm => { pm.projects.push(project); return project; }), 201);
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
@@ -4270,17 +4337,16 @@ ${stylesTag}
     req.on('end', () => {
       try {
         const patch = JSON.parse(body || '{}');
-        const pm = readPm();
-        const idx = pm.projects.findIndex(p => p.id === pid);
-        if (idx === -1) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-        const project = pm.projects[idx];
-        const FIELDS = ['name', 'description', 'color', 'archived'];
-        for (const f of FIELDS) { if (f in patch) project[f] = patch[f]; }
-        project.updatedAt = new Date().toISOString();
-        pm.projects[idx] = project;
-        writePm(pm);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(project));
+        pmSend(res, updatePm(pm => {
+          const idx = pm.projects.findIndex(p => p.id === pid);
+          if (idx === -1) throw new PmHttpError(404, 'not found');
+          const project = pm.projects[idx];
+          const FIELDS = ['name', 'description', 'color', 'archived'];
+          for (const f of FIELDS) { if (f in patch) project[f] = patch[f]; }
+          project.updatedAt = new Date().toISOString();
+          pm.projects[idx] = project;
+          return project;
+        }), 200);
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
@@ -4292,16 +4358,15 @@ ${stylesTag}
   // DELETE /api/pm/projects/:id — permanently delete project + all its tasks (destructive)
   if (pmProjectIdMatch && req.method === 'DELETE') {
     const pid = pmProjectIdMatch[1];
-    const pm = readPm();
-    const nextProjects = pm.projects.filter(p => p.id !== pid);
-    const ok = nextProjects.length !== pm.projects.length;
-    if (ok) {
-      pm.projects = nextProjects;
-      pm.tasks = pm.tasks.filter(t => t.projectId !== pid);
-      writePm(pm);
-    }
-    res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok }));
+    pmSend(res, updatePm(pm => {
+      const nextProjects = pm.projects.filter(p => p.id !== pid);
+      const ok = nextProjects.length !== pm.projects.length;
+      if (ok) {
+        pm.projects = nextProjects;
+        pm.tasks = pm.tasks.filter(t => t.projectId !== pid);
+      }
+      return { ok };
+    }), r => (r.ok ? 200 : 404), 500);
     return;
   }
 
@@ -4363,10 +4428,10 @@ ${stylesTag}
         const name = String(data.name || '').trim();
         if (!name) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'name required' })); return; }
         const wctx = resolveWorkspace(req);
-        const pm = readPm();
+        pmSend(res, updatePm(pm => {
         const project = pm.projects.find(p => p.id === pid);
         if (!project || pmNorm(project.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
+          throw new PmHttpError(404, 'not found');
         }
         const today = pmStore.localDateStr(new Date());
         const start = data.start || today;
@@ -4383,7 +4448,7 @@ ${stylesTag}
         if (data.assigneeId != null && data.assigneeId !== '') {
           const resource = pm.resources.find(r => r.id === data.assigneeId);
           if (!resource || pmNorm(resource.workspace || WORKSPACE_ROOT) !== pmNorm(project.workspace || WORKSPACE_ROOT)) {
-            res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'assigneeId must be a resource in the same workspace' })); return;
+            throw new PmHttpError(400, 'assigneeId must be a resource in the same workspace');
           }
           assigneeId = resource.id;
         }
@@ -4408,9 +4473,8 @@ ${stylesTag}
           updatedAt: now,
         };
         pm.tasks.push(task);
-        writePm(pm);
-        res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(task));
+        return task;
+        }), 201);
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
@@ -4424,20 +4488,17 @@ ${stylesTag}
   if (pmTaskBaselineMatch && req.method === 'POST') {
     const tid = pmTaskBaselineMatch[1];
     const wctx = resolveWorkspace(req);
-    const pm = readPm();
-    const idx = pm.tasks.findIndex(t => t.id === tid);
-    if (idx === -1) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-    const task = pm.tasks[idx];
-    const project = pm.projects.find(p => p.id === task.projectId);
-    if (!project || pmNorm(project.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
-      res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
-    }
-    task.baseline = { start: task.start, end: task.end };
-    task.updatedAt = new Date().toISOString();
-    pm.tasks[idx] = task;
-    writePm(pm);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(task));
+    pmSend(res, updatePm(pm => {
+      const idx = pm.tasks.findIndex(t => t.id === tid);
+      if (idx === -1) throw new PmHttpError(404, 'not found');
+      const task = pm.tasks[idx];
+      const project = pm.projects.find(p => p.id === task.projectId);
+      if (!project || pmNorm(project.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) throw new PmHttpError(404, 'not found');
+      task.baseline = { start: task.start, end: task.end };
+      task.updatedAt = new Date().toISOString();
+      pm.tasks[idx] = task;
+      return task;
+    }), 200, 500);
     return;
   }
 
@@ -4452,21 +4513,21 @@ ${stylesTag}
       try {
         const patch = JSON.parse(body || '{}');
         const wctx = resolveWorkspace(req);
-        const pm = readPm();
+        pmSend(res, updatePm(pm => {
         const idx = pm.tasks.findIndex(t => t.id === tid);
-        if (idx === -1) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
+        if (idx === -1) { throw new PmHttpError(404, 'not found'); }
         const task = pm.tasks[idx];
         const project = pm.projects.find(p => p.id === task.projectId);
         if (!project || pmNorm(project.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
+          throw new PmHttpError(404, 'not found');
         }
         if ('deps' in patch) {
-          if (!Array.isArray(patch.deps)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'deps must be an array' })); return; }
+          if (!Array.isArray(patch.deps)) { throw new PmHttpError(400, 'deps must be an array'); }
           const sameProjectIds = new Set(pm.tasks.filter(t => t.projectId === task.projectId).map(t => t.id));
           for (const depId of patch.deps) {
-            if (depId === tid) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'task cannot depend on itself' })); return; }
-            if (!sameProjectIds.has(depId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'dep must be in the same project' })); return; }
-            if (pmStore.wouldCycle(pm.tasks, tid, depId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'dep would create a cycle' })); return; }
+            if (depId === tid) { throw new PmHttpError(400, 'task cannot depend on itself'); }
+            if (!sameProjectIds.has(depId)) { throw new PmHttpError(400, 'dep must be in the same project'); }
+            if (pmStore.wouldCycle(pm.tasks, tid, depId)) { throw new PmHttpError(400, 'dep would create a cycle'); }
           }
         }
         // PMHR-03: assigneeId (if patched) must resolve to a resource in the SAME workspace as the task's project.
@@ -4474,7 +4535,7 @@ ${stylesTag}
           if (patch.assigneeId != null && patch.assigneeId !== '') {
             const resource = pm.resources.find(r => r.id === patch.assigneeId);
             if (!resource || pmNorm(resource.workspace || WORKSPACE_ROOT) !== pmNorm(project.workspace || WORKSPACE_ROOT)) {
-              res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'assigneeId must be a resource in the same workspace' })); return;
+              throw new PmHttpError(400, 'assigneeId must be a resource in the same workspace');
             }
             patch.assigneeId = resource.id;
           } else {
@@ -4485,9 +4546,8 @@ ${stylesTag}
         for (const f of FIELDS) { if (f in patch) task[f] = patch[f]; }
         task.updatedAt = new Date().toISOString();
         pm.tasks[idx] = task;
-        writePm(pm);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(task));
+        return task;
+        }), 200);
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
@@ -4498,21 +4558,18 @@ ${stylesTag}
   if (pmTaskIdMatch && req.method === 'DELETE') {
     const tid = pmTaskIdMatch[1];
     const wctx = resolveWorkspace(req);
-    const pm = readPm();
-    const task = pm.tasks.find(t => t.id === tid);
-    if (!task) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return; }
-    const project = pm.projects.find(p => p.id === task.projectId);
-    if (!project || pmNorm(project.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
-      res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
-    }
-    pm.tasks = pm.tasks.filter(t => t.id !== tid);
-    // Scrub dangling deps referencing the deleted task (avoid orphaned references).
-    for (const t of pm.tasks) {
-      if (Array.isArray(t.deps) && t.deps.includes(tid)) t.deps = t.deps.filter(d => d !== tid);
-    }
-    writePm(pm);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true }));
+    pmSend(res, updatePm(pm => {
+      const task = pm.tasks.find(t => t.id === tid);
+      if (!task) throw new PmHttpError(404, 'not found');
+      const project = pm.projects.find(p => p.id === task.projectId);
+      if (!project || pmNorm(project.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) throw new PmHttpError(404, 'not found');
+      pm.tasks = pm.tasks.filter(t => t.id !== tid);
+      // Scrub dangling deps referencing the deleted task (avoid orphaned references).
+      for (const t of pm.tasks) {
+        if (Array.isArray(t.deps) && t.deps.includes(tid)) t.deps = t.deps.filter(d => d !== tid);
+      }
+      return { ok: true };
+    }), 200, 500);
     return;
   }
 
@@ -4558,11 +4615,7 @@ ${stylesTag}
           createdAt: now,
           updatedAt: now,
         };
-        const pm = readPm();
-        pm.resources.push(resource);
-        writePm(pm);
-        res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(resource));
+        pmSend(res, updatePm(pm => { pm.resources.push(resource); return resource; }), 201);
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
@@ -4583,20 +4636,17 @@ ${stylesTag}
       try {
         const patch = JSON.parse(body || '{}');
         const wctx = resolveWorkspace(req);
-        const pm = readPm();
-        const idx = pm.resources.findIndex(r => r.id === rid);
-        if (idx === -1 || pmNorm(pm.resources[idx].workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
-        }
-        const resource = pm.resources[idx];
-        const FIELDS = ['name', 'role', 'color', 'weeklyHours', 'archived'];
-        for (const f of FIELDS) { if (f in patch) resource[f] = patch[f]; }
-        if ('daysOff' in patch) resource.daysOff = pmStore.normalizeDaysOff(patch.daysOff); // PMWD
-        resource.updatedAt = new Date().toISOString();
-        pm.resources[idx] = resource;
-        writePm(pm);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(resource));
+        pmSend(res, updatePm(pm => {
+          const idx = pm.resources.findIndex(r => r.id === rid);
+          if (idx === -1 || pmNorm(pm.resources[idx].workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) throw new PmHttpError(404, 'not found');
+          const resource = pm.resources[idx];
+          const FIELDS = ['name', 'role', 'color', 'weeklyHours', 'archived'];
+          for (const f of FIELDS) { if (f in patch) resource[f] = patch[f]; }
+          if ('daysOff' in patch) resource.daysOff = pmStore.normalizeDaysOff(patch.daysOff); // PMWD
+          resource.updatedAt = new Date().toISOString();
+          pm.resources[idx] = resource;
+          return resource;
+        }), 200);
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
@@ -4607,16 +4657,13 @@ ${stylesTag}
   if (pmResourceIdMatch && req.method === 'DELETE') {
     const rid = pmResourceIdMatch[1];
     const wctx = resolveWorkspace(req);
-    const pm = readPm();
-    const resource = pm.resources.find(r => r.id === rid);
-    if (!resource || pmNorm(resource.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) {
-      res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' })); return;
-    }
-    pm.resources = pm.resources.filter(r => r.id !== rid);
-    for (const t of pm.tasks) { if (t.assigneeId === rid) t.assigneeId = null; }
-    writePm(pm);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true }));
+    pmSend(res, updatePm(pm => {
+      const resource = pm.resources.find(r => r.id === rid);
+      if (!resource || pmNorm(resource.workspace || WORKSPACE_ROOT) !== pmNorm(wctx.root)) throw new PmHttpError(404, 'not found');
+      pm.resources = pm.resources.filter(r => r.id !== rid);
+      for (const t of pm.tasks) { if (t.assigneeId === rid) t.assigneeId = null; }
+      return { ok: true };
+    }), 200, 500);
     return;
   }
 
@@ -4845,20 +4892,31 @@ ${stylesTag}
   if (pathname === '/api/schedules' && req.method === 'GET') {
     const wctx = resolveWorkspace(req);
     const norm = p => { try { return path.resolve(String(p || '')).toLowerCase(); } catch (e) { return ''; } };
-    const active = norm(wctx.root);
-    const list = schedulerManager.loadSchedules()
-      .filter(s => norm(s.workspace || WORKSPACE_ROOT) === active)
-      // CBGV-1（SPEC-chat-background-task.md §3.6.2，指揮官 2026-10-01 推翻 §3.6 修法第 1 點）：
-      // 凡是「對話中為了把工作做掉而建立的一次性排程」一律從排程清單濾掉，不限於 chatTask:true
-      // 這一條路（§CBG 的 /api/chat/delegate）。指揮官主動要的「週期性（cron）定時任務」永遠留著
-      // ——判準見 isChatOnlySchedule()。
-      .filter(s => !isChatOnlySchedule(s))
-      .map(s => {  // SCHED-14: 附帶目前執行中的 run（開始時間 + 自動/手動）供清單顯示「執行中」
-        const r = schedulerManager.getRunningRun(s.id);
-        return Object.assign({}, s, { running: r ? { runId: r.id, startedAt: r.startedAt, trigger: r.trigger || 'auto' } : null });
-      });
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(list));
+    // IDX-SCH（SPEC-list-index.md §9.2）：改讀「該工作區的排程清單目錄」——預設只回現役，?archived=1 才讀歸檔；
+    // 不再整份解析 7.75MB 的 schedules.json，也不再回傳指示全文（task.prompt 改成 taskKind＋前 120 字 taskPreview，
+    // 要全文用 GET /api/schedules/:id）。回應標頭 X-Archived-Count＝該工作區歸檔筆數（前端「歷史」摺疊列用）；
+    // 目錄壞了／不存在 → 自動走保底（非同步讀主檔、同樣欄位形狀）並加 X-Index-Fallback: 1。
+    // 工作區隔離：目錄本身就是一個工作區一份（比對鍵＝path.resolve()+小寫，null workspace＝harness home）。
+    const wantArchived = /(?:^|&)archived=(?:1|true)(?:&|$)/.test(String(req.url || '').split('?')[1] || '');
+    schedulerManager.listSchedulesForWorkspace(wctx.root, wantArchived).then(idxRes => {
+      const list = idxRes.items
+        // CBGV-1（SPEC-chat-background-task.md §3.6.2，指揮官 2026-10-01 推翻 §3.6 修法第 1 點）：
+        // 凡是「對話中為了把工作做掉而建立的一次性排程」一律從排程清單濾掉，不限於 chatTask:true
+        // 這一條路（§CBG 的 /api/chat/delegate）。指揮官主動要的「週期性（cron）定時任務」永遠留著
+        // ——判準見 isChatOnlySchedule()。
+        .filter(s => !isChatOnlySchedule(s))
+        .map(s => {  // SCHED-14: 附帶目前執行中的 run（開始時間 + 自動/手動）供清單顯示「執行中」（IDX-RUN：讀記憶體）
+          const r = s.archived ? null : schedulerManager.getRunningRun(s.id);
+          return Object.assign({}, s, { running: r ? { runId: r.id, startedAt: r.startedAt, trigger: r.trigger || 'auto' } : null });
+        });
+      const hdr = { 'Content-Type': 'application/json', 'X-Archived-Count': String(idxRes.archivedCount) };
+      if (idxRes.fallback) hdr['X-Index-Fallback'] = '1';
+      res.writeHead(200, hdr);
+      res.end(JSON.stringify(list));
+    }).catch(err => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: String(err && err.message || err) }));
+    });
     return;
   }
 
@@ -4876,11 +4934,21 @@ ${stylesTag}
       if (r === norm(HARNESS_HOME)) return 'Harness';
       return path.basename(ws || WORKSPACE_ROOT);
     };
-    const list = schedulerManager.loadSchedules()
-      .filter(s => !isChatOnlySchedule(s))
-      .map(s => ({ id: s.id, name: s.name, workspace: labelOf(s.workspace), enabled: !!s.enabled, archived: !!s.archived }));
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(list));
+    // IDX-SCH：改讀各工作區的現役排程目錄（不整份解析主檔）；目錄尚未暖機／任一份不可讀 → 保底走主檔。
+    // 只回現役：前端下拉本來就濾掉已歸檔（views/schedule.js），歸檔的排程不再列入。
+    schedulerManager.listActiveSchedulesAllWorkspaces().then(async idxList => {
+      const src = idxList || await schedulerManager.loadSchedulesAsync();
+      const list = src
+        .filter(s => !isChatOnlySchedule(s))
+        .map(s => ({ id: s.id, name: s.name, workspace: labelOf(s.workspace), enabled: !!s.enabled, archived: !!s.archived }));
+      const hdr = { 'Content-Type': 'application/json' };
+      if (!idxList) hdr['X-Index-Fallback'] = '1';
+      res.writeHead(200, hdr);
+      res.end(JSON.stringify(list));
+    }).catch(err => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: String(err && err.message || err) }));
+    });
     return;
   }
 
@@ -5425,6 +5493,7 @@ ${stylesTag}
       // Delete chat_sched_<runId>.json
       const sessPath = path.join(wctxC.chatHistoryDir, `chat_sched_${run.id}.json`);
       try { if (fs.existsSync(sessPath)) fs.unlinkSync(sessPath); } catch (e) {}
+      chatIndex.syncRemove(wctxC.chatHistoryDir, 'sched_' + run.id);   // IDX-CHAT
       // Delete transcript artifacts; keep other artifact kinds
       const runDir = path.join(schedulerManager.runsDir, sid, run.id);
       const keptIds = [];
@@ -5567,18 +5636,23 @@ ${stylesTag}
   // Params: since, until, scheduleId, status, limit
   if (pathname === '/api/runs' && req.method === 'GET') {
     const qp = url.parse(req.url, true).query;
+    // IDX-RUN（SPEC-list-index.md §9.1／決策 D2）：預設只回「當前工作區」（X-Workspace）的執行記錄，
+    // 跨區用途帶 ?scope=all。目錄暖機後回的是清單摘要欄位（已含 fromChat／origin 標註）。
+    const runsWctx = resolveWorkspace(req);
     const runs = schedulerManager.queryRuns({
       since:      qp.since      || null,
       until:      qp.until      || null,
       scheduleId: qp.scheduleId || null,
       status:     qp.status     || null,
       limit:      Math.min(parseInt(qp.limit || '50', 10) || 50, 500),
+      workspace:  qp.scope === 'all' ? null : runsWctx.root,
     });
     // CBG-2: 對話觸發的背景任務不進排程清單，但仍保留在執行記錄——標註「來自對話」讓看的人
     // 知道這筆不是一般排程。查 schedule 一次性快取，避免同一批 runs 重複讀同一個排程檔。
     const schedCache = new Map();
     const getSched = id => { if (!schedCache.has(id)) schedCache.set(id, schedulerManager.getSchedule(id)); return schedCache.get(id); };
     const labeled = runs.map(r => {
+      if (r && r.fromChat !== undefined) return r;   // IDX-RUN：目錄摘要在寫入時就標好了 fromChat／origin
       const s = r && r.scheduleId ? getSched(r.scheduleId) : null;
       // CBGO-5 (SPEC-chat-background-task.md §3.6 查證結果): portal/index.html 的徽章/狀態小卡/
       // 停止連動（CBGU-2, fetchChatRunningTasks 等）全部只看 r.fromChat && r.origin.sessionId——
@@ -6121,13 +6195,50 @@ ${stylesTag}
     return;
   }
 
+  // IDX-0 (SPEC-list-index.md §5.1): 手動重建目錄。body { kind? }（不帶＝該工作區全部），帶 X-Workspace；
+  // 立刻回 202，進度看 GET /api/index/status。各功能由後續子項以 listIndex.registerIndexKind() 登錄。
+  if (pathname === '/api/index/rebuild' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { kind } = JSON.parse(body || '{}');
+        const wctx = resolveWorkspace(req);
+        const r = listIndex.rebuildWorkspace(wctx.root, kind || null);
+        if (kind && !r.accepted.length) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: '沒有這個目錄種類: ' + kind, kinds: listIndex.listKinds() }));
+          return;
+        }
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, workspace: wctx.root, accepted: r.accepted }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+  // IDX-0: 各目錄狀態（count／updatedAt／rebuiltAt／是否重建中），只看當前工作區。
+  if (pathname === '/api/index/status' && req.method === 'GET') {
+    const wctx = resolveWorkspace(req);
+    listIndex.statusWorkspace(wctx.root).then(kinds => {
+      // IDX-CHAT：對話目錄最近一次重建略過的空檔／壞檔（不刪檔），掛在 chat 那一項。
+      for (const k of kinds) if (k && k.kind === 'chat') { const sk = chatIndex.skippedFor(wctx.root); k.skipped = sk.length; k.skippedFiles = sk.slice(0, 20); }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, workspace: wctx.root, kinds }));
+    }).catch(e => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    });
+    return;
+  }
+
   // GET /api/documents — list documents for the active workspace (DOC-I1-02)
   if (pathname === '/api/documents' && req.method === 'GET') {
     try {
       const wctx = resolveWorkspace(req);
-      // Lazy backfill (DOC-J5): give pre-J5 docs an origin/born event so the list shows badges.
-      // Idempotent + workspace-isolated (only touches this workspace's registry).
-      try { docRegistry.backfillDocHistory(wctx.root); } catch (e) { console.error('[DocHistory] backfill failed:', e.message); }
+      // IDX-DOC: pre-J5 文件歷史回填（DOC-J5）不再每次列清單都跑；改在開機核對／重建目錄時背景做（document-registry.js rebuildDocuments）。
       const reg  = docRegistry.readRegistry(wctx.root);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, documents: reg.documents }));
@@ -7490,6 +7601,7 @@ ${stylesTag}
           topicId: (topicResolved && topicResolved.topic && topicResolved.topic.id) || null, prompt: promptToUse,
         };
         fs.writeFileSync(path.join(meetingDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8');
+        meetingsIndex.syncDir(meetingDir);
         meetingGitCommit(path.dirname(meetingDir), meetingId, 'started', 'Hana');
         const args = ['-u', path.join(RENDER_SERVICE_DIR, 'meeting_record.py'),
           '--dir', meetingDir, '--source', source, '--model', model, '--lang', lang];
@@ -7606,6 +7718,7 @@ ${stylesTag}
         if (kind === 'document') meta.templateId = templateId;
         const metaPath = path.join(meetingDir, 'meta.json');
         fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+        meetingsIndex.syncDir(meetingDir);
         meetingGitCommit(path.dirname(meetingDir), meetingId, 'import started', 'Hana');
 
         // MTGT-5: docx/txt 走純文字樣板解析，同步完成（無 STT，很快），不需背景 child process。
@@ -7621,11 +7734,13 @@ ${stylesTag}
           if (!result.ok) {
             meta.status = 'error'; meta.error = result.error || '匯入失敗';
             fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+            meetingsIndex.syncDir(meetingDir);
             console.log(`[Meeting] ${meetingId} import (document) failed: ${meta.error}`);
           } else {
             fs.writeFileSync(path.join(meetingDir, 'transcript.txt'), result.transcript || '', 'utf8');
             meta.status = 'done'; meta.finishedAt = new Date().toISOString();
             fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+            meetingsIndex.syncDir(meetingDir);
             meetingGitCommit(path.dirname(meetingDir), meetingId, 'import (document) done', 'Hana');
             finalizeMeetingSummary(meetingId, meetingDir, wctx).catch(e => console.error('[Meeting] import summary error:', e.message));
           }
@@ -7641,6 +7756,7 @@ ${stylesTag}
         child.on('exit', (code) => {
           console.log(`[Meeting] ${meetingId} import (${kind}) exited code=${code}`);
           if (code === 0) {
+            meetingsIndex.syncDir(meetingDir);   // python 自己把 status 寫成 done／error，這裡補上目錄
             // transcript.txt 就緒 → 完全重用既有多模型摘要（best-effort，比照錄製收尾）。
             finalizeMeetingSummary(meetingId, meetingDir, wctx).catch(e => console.error('[Meeting] import summary error:', e.message));
           } else {
@@ -7649,6 +7765,7 @@ ${stylesTag}
               const mp = path.join(meetingDir, 'meta.json');
               const m = JSON.parse(fs.readFileSync(mp, 'utf8'));
               if (m.status !== 'error') { m.status = 'error'; m.error = (errTail || 'import failed').slice(-500); fs.writeFileSync(mp, JSON.stringify(m, null, 2), 'utf8'); }
+              meetingsIndex.syncDir(meetingDir);
             } catch (e) {}
           }
         });
@@ -7694,6 +7811,7 @@ ${stylesTag}
           try { fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8'); } catch (e) {}
           console.log(`[Meeting] stop: ${meetingId} proc exited without done → marked aborted`);
         }
+        meetingsIndex.syncDir(meetingDir);
         meetingProcs.delete(meetingId);
         meetingGitCommit(path.join(wctx.harnessDir, 'runtime', 'meetings'), meetingId, 'stopped', 'Hana');
         // G3: summarise + write to chat_history asynchronously (don't block the response).
@@ -7711,16 +7829,16 @@ ${stylesTag}
   // GET /api/meetings — list this workspace's meetings (newest first)
   if (pathname === '/api/meetings' && req.method === 'GET') {
     const wctx = resolveWorkspace(req);
-    const meetingsDir = path.join(wctx.harnessDir, 'runtime', 'meetings');
-    const list = [];
-    try {
-      for (const id of fs.readdirSync(meetingsDir)) {
-        try { list.push(JSON.parse(fs.readFileSync(path.join(meetingsDir, id, 'meta.json'), 'utf8'))); } catch (e) {}
-      }
-    } catch (e) {}
-    list.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ meetings: list }));
+    // IDX-MTG：讀 <ws>/.harness/index/meetings.json（目錄不可用時自動走非同步掃資料夾保底）
+    meetingsIndex.listAll(wctx.root).then(r => {
+      const h = { 'Content-Type': 'application/json' };
+      if (r.fallback) h['X-Index-Fallback'] = '1';
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ meetings: r.items }));
+    }).catch(e => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    });
     return;
   }
 
@@ -7872,6 +7990,7 @@ ${stylesTag}
         return res.end(JSON.stringify({ ok: false, error: 'meeting not found' }));
       }
       fs.rmSync(meetingDir, { recursive: true, force: true });
+      meetingsIndex.syncRemove(meetingDir);
       meetingGitCommit(meetingsDir, meetingId, 'removed', '老闆');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
@@ -7900,6 +8019,7 @@ ${stylesTag}
         if (upd.tags !== undefined) meta.tags = Array.isArray(upd.tags) ? upd.tags : [];
         if (upd.speakers !== undefined) meta.speakers = upd.speakers;
         fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+        meetingsIndex.syncDir(meetingDir);
         meetingGitCommit(meetingsDir, mtgMetaMatch[1], 'meta updated', '老闆');
         res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, meta }));
       } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: e.message })); }
@@ -8435,6 +8555,7 @@ const HARNESS_HOME = process.env.HARNESS_HOME ? path.resolve(process.env.HARNESS
 // install dir via $HARNESS_HOME — no hardcoded path. Covers the case where we weren't launched by
 // the supervisor (direct `node`), where this env var wouldn't otherwise be set.
 process.env.HARNESS_HOME = HARNESS_HOME;
+issuesStore.registerIndex(HARNESS_HOME); // IDX-ISS: SPEC-list-index.md 9.7 — 必須在 HARNESS_HOME 宣告之後（放檔頭曾讓 v147/v148 開機即崩）
 const GLOBAL_KNOWLEDGE_DIR = path.join(HARNESS_HOME, 'global-knowledge');
 // Plugin tiers (SPEC-plugin-contract.md, TASK.md §P1) — same ship/global/project shape as
 // loadCommands() above, one directory-per-plugin (holding plugin.json) instead of one-file-per-command.
@@ -8685,26 +8806,11 @@ function buildTgSessionContextBlock(workspaceRoot, sessionId) {
 // getChatHistories()'s filtering (exclude schedule-origin and any view-scoped session tied to a
 // file/meeting/pm/context) but returns full `messages` too, since /chats /whichchat /back /recap
 // all need the transcript, not just the list metadata getChatHistories() returns.
-function _tgListChatSessions(workspaceRoot) {
+// IDX-CHAT：改讀對話目錄再過濾（async）；messages 只在被讀取時才開檔（/back、摘要卡、/recap 需要時）。
+async function _tgListChatSessions(workspaceRoot) {
   const dir = path.join(workspaceRoot || HARNESS_HOME, '.harness', 'runtime', 'chat_history');
-  if (!fs.existsSync(dir)) return [];
-  const out = [];
-  for (const file of fs.readdirSync(dir)) {
-    if (!file.startsWith('chat_') || !file.endsWith('.json')) continue;
-    try {
-      const data = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
-      const origin = data.origin || (data.sessionId && data.sessionId.startsWith('sched_') ? 'schedule' : 'human');
-      if (origin === 'schedule') continue;
-      if (data.filePath || data.meetingId || (Array.isArray(data.pmProjectIds) && data.pmProjectIds.length) || data.contextKind) continue;
-      let title = data.title;
-      if (!title) {
-        const firstUser = (data.messages || []).find(function (m) { return m.role === 'user' && typeof m.content === 'string'; });
-        title = firstUser ? firstUser.content.slice(0, 30) + (firstUser.content.length > 30 ? '...' : '') : '新對話';
-      }
-      out.push({ sessionId: data.sessionId, title, updatedAt: data.updatedAt, messages: Array.isArray(data.messages) ? data.messages : [] });
-    } catch (e) {}
-  }
-  return out.sort(function (a, b) { return (b.updatedAt || '').localeCompare(a.updatedAt || ''); });
+  const r = await chatIndex.listAll(dir);
+  return chatIndex.toTelegramList(r.items, dir);
 }
 
 // TGC8-04: /newchat — create an empty session (origin:'telegram') in this workspace's chat
@@ -8720,7 +8826,8 @@ function _tgCreateChatSession(workspaceRoot, title) {
       const p = path.join(wctx.chatHistoryDir, `chat_${sessionId}.json`);
       const data = JSON.parse(fs.readFileSync(p, 'utf8'));
       data.title = title;
-      fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
+      chatIndex.writeFileAtomicSync(p, JSON.stringify(data, null, 2));
+      chatIndex.syncUpsert(wctx.chatHistoryDir, data, sessionId);
     } catch (e) { console.error('[Telegram] _tgCreateChatSession title patch failed:', e.message); }
   }
   return sessionId;
@@ -8862,16 +8969,9 @@ const telegramBot = createTelegramBot(HARNESS_HOME, schedulerManager, {
   recapSessionFn: function (workspaceRoot, sessionId) { return _tgRecapSession(workspaceRoot, sessionId); },
 
   // /meeting command: list and read meetings for a given workspace
+  // IDX-MTG：改讀會議清單目錄（非同步，回 Promise<陣列>；telegram.js 的呼叫端已 await）
   meetingsFn: function (workspaceRoot) {
-    const meetingsDir = path.join(workspaceRoot || HARNESS_HOME, '.harness', 'runtime', 'meetings');
-    const list = [];
-    try {
-      for (const id of fs.readdirSync(meetingsDir)) {
-        try { list.push(JSON.parse(fs.readFileSync(path.join(meetingsDir, id, 'meta.json'), 'utf8'))); } catch (e) {}
-      }
-    } catch (e) {}
-    list.sort(function (a, b) { return String(b.startedAt || '').localeCompare(String(a.startedAt || '')); });
-    return list;
+    return meetingsIndex.listAll(workspaceRoot || HARNESS_HOME).then(function (r) { return r.items; });
   },
   meetingDetailFn: function (workspaceRoot, meetingId) {
     const meetingDir = path.join(workspaceRoot || HARNESS_HOME, '.harness', 'runtime', 'meetings', meetingId);
@@ -9518,12 +9618,30 @@ function normalizePluginCards(raw) {
   }
   return out;
 }
+// IDX-TREE: discovery result kept in memory per project plugins dir (was re-scanned on every
+// /api/status). Plugins are added/removed by writing files (the /plugin skill), not by a server
+// route, so instead of trusting "reload after the route" we validate with a few stat() calls: the
+// three tier dirs' mtime (add/remove a plugin dir) + every known plugin.json mtime (in-place edit).
+const pluginDiscoveryCache = new Map(); // projectDir -> { sig, list }
+function pluginDirSig(dirs, list) {
+  const m = (f) => { try { return fs.statSync(f).mtimeMs; } catch (e) { return 0; } };
+  return [dirs.shipDir, dirs.globalDir, dirs.projectDir].map(m).join(',') + '|' +
+    list.map(pl => m(path.join(pl.dir, 'plugin.json'))).join(',');
+}
+function invalidatePluginCache() { pluginDiscoveryCache.clear(); }
 function getPlugins(wctx) {
-  const list = pluginLoader.loadPlugins({
+  const dirs = {
     shipDir: SHIP_PLUGINS_DIR,
     globalDir: GLOBAL_PLUGINS_DIR,
     projectDir: path.join(wctx.harnessDir, 'plugins')
-  });
+  };
+  let hit = pluginDiscoveryCache.get(dirs.projectDir);
+  if (!hit || hit.sig !== pluginDirSig(dirs, hit.list)) {
+    const fresh = pluginLoader.loadPlugins(dirs);
+    hit = { sig: pluginDirSig(dirs, fresh), list: fresh };
+    pluginDiscoveryCache.set(dirs.projectDir, hit);
+  }
+  const list = hit.list;
   const trusted = isWorkspaceTrusted(wctx.root);
   return list.map(p => {
     const gated = p.trust === 'code' && !trusted;
@@ -9981,7 +10099,8 @@ function saveChatSession(sessionId, messages, trace, dir, filePath, origin, sche
     // makes finalize's call (which omits it) clear it: JSON.stringify drops the `undefined` key.
     ...(pending ? { pending } : {}),
   };
-  fs.writeFileSync(sessionPath, JSON.stringify(data, null, 2), 'utf8');
+  chatIndex.writeFileAtomicSync(sessionPath, JSON.stringify(data, null, 2));   // IDX-CHAT：先寫暫存再換名
+  chatIndex.syncUpsert(targetDir, data, sessionId);                           // IDX-CHAT：業務檔寫好後同步目錄
 }
 
 // CBG-3 (SPEC-chat-background-task.md §3.2): per-session serialization lock, shared by EVERY
@@ -10181,6 +10300,7 @@ function markMeetingAbortedIfCrashed(meetingId, meetingDir, code, errTail, wctx,
     m.finishedAt = new Date().toISOString();
     m.abortReason = reasonOverride || meetingAbortReason(code, errTail);
     fs.writeFileSync(metaPath, JSON.stringify(m, null, 2), 'utf8');
+    meetingsIndex.syncDir(meetingDir);
     console.error('[Meeting] ' + meetingId + ' 錄製中斷：' + m.abortReason);
     meetingGitCommit(path.dirname(meetingDir), meetingId, 'aborted (process died)', 'Hana');
     notifyMeetingAborted(m, wctx);
@@ -10561,6 +10681,7 @@ function _writeMeetingSummaryMeta(meetingDir, summaryMeta) {
     m.summarizedAt = summaryMeta.summarizedAt;   // keep legacy top-level field for back-compat
     m.summary = summaryMeta;                       // MTG-SUM-03 provenance block
     fs.writeFileSync(metaPath, JSON.stringify(m, null, 2), 'utf8');
+    meetingsIndex.syncDir(meetingDir);
   } catch (e) {}
 }
 
@@ -10669,6 +10790,7 @@ function _writeMeetingCorrectionMeta(meetingDir, correctionMeta) {
     try { m = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch (e) {}
     m.correction = correctionMeta;
     fs.writeFileSync(metaPath, JSON.stringify(m, null, 2), 'utf8');
+    meetingsIndex.syncDir(meetingDir);
   } catch (e) {}
 }
 
@@ -10930,43 +11052,7 @@ async function finalizeMeetingSummary(meetingId, meetingDir, wctx) {
   // Hana's self-awareness of past meetings comes from the meetings store, not the chat feed.
 }
 
-function getChatHistories(chatHistoryDir = CHAT_HISTORY_DIR) {
-  if (!fs.existsSync(chatHistoryDir)) return [];
-  const list = fs.readdirSync(chatHistoryDir);
-  const histories = [];
-
-  for (const file of list) {
-    if (file.startsWith('chat_') && file.endsWith('.json')) {
-      const fullPath = path.join(chatHistoryDir, file);
-      try {
-        const data = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-        // H1: infer origin for backward-compat (old sessions have no origin field).
-        const effectiveOrigin = data.origin || (data.sessionId?.startsWith('sched_') ? 'schedule' : 'human');
-        // H1: only surface human conversations in the history list; schedule sessions are shown in
-        // the scheduler panel under their respective schedule (H2 分流 UI).
-        if (effectiveOrigin !== 'human') continue;
-        // 只列「在 AI 對話面板裡直接開的對話」。針對特定脈絡（文件 / 會議 / 專案）開的浮動對話
-        // 有自己的入口（GET /api/chat-sessions?filePath= 等），列在這裡只會讓人誤刪。
-        // CTX6 (SPEC-view-chat-context.md §7): any session tagged with a generic view context
-        // (schedule/uidesign/whiteboard/notes/... via getChatContext()) is a 主題對話, not 自由對話.
-        if (data.filePath || data.meetingId || (Array.isArray(data.pmProjectIds) && data.pmProjectIds.length) || data.contextKind) continue;
-        // Custom title wins; otherwise derive from the first user message.
-        let title = data.title;
-        if (!title) {
-          const firstUserMsg = data.messages.find(m => m.role === 'user' && typeof m.content === 'string');
-          title = firstUserMsg ? firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '') : '無主題對話';
-        }
-        histories.push({
-          sessionId: data.sessionId,
-          title,
-          updatedAt: data.updatedAt
-        });
-      } catch (e) {}
-    }
-  }
-
-  return histories.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
+// IDX-CHAT：getChatHistories() 已由 chat-index.js 的對話目錄取代（toHistoryList）。
 
 // --- Gemini MCP Integration Helpers ---
 
@@ -11914,6 +12000,7 @@ function buildChatPrompt(messages, contextFilePath, wctx, context, provider, cha
   // 講清楚各自怎麼做、結果回不回得來——sessionId 是本輪確定值，直接照抄，不要自己猜。
   if (chatSessionId) {
     p += '\n【對話裡轉背景的三條路】'
+      + '【硬規則】長工一律走 POST /api/chat/delegate；不得用 CLI 內建 Agent 工具的背景模式、Bash 的背景執行、或任何「回覆結束後還要繼續跑」的方式代替——那些在本次回覆結束時就會被終止、平台看不到、也不會有結果回寫。前景、會在本次回覆內完成的子代理可以用。'
       + '①要在這次對話裡把一件長工做掉：直接 POST /api/chat/delegate（帶 sessionId:"' + chatSessionId + '"），'
       + '它天然不會出現在排程清單、完成後結果自動回寫這條對話。'
       + '②若情況特殊改用 POST /api/schedules 建一次性任務（trigger:{"type":"once"}）再 POST /api/schedules/<id>/run 觸發：'
@@ -12802,6 +12889,7 @@ function runDailyHousekeeping() {
     const chatDir = path.join(wsRoot, '.harness', 'runtime', 'chat_history');
     const chatFile = path.join(chatDir, 'chat_sched_' + t.runId + '.json');
     try { if (fs.existsSync(chatFile)) fs.unlinkSync(chatFile); } catch (e) {}
+    chatIndex.syncRemove(chatDir, 'sched_' + t.runId);   // IDX-CHAT
     // Delete transcript artifacts; keep candidate.json and other non-transcript kinds
     const runDir = path.join(schedulerManager.runsDir, t.scheduleId, t.runId);
     const run = schedulerManager.getRun(t.scheduleId, t.runId);
@@ -12840,7 +12928,7 @@ async function runNoteReminderScan() {
   try {
     const list = notesStore.readNotes(HARNESS_HOME);
     const now = new Date();
-    let changed = false;
+    const reminded = [];   // 已成功推播的便條 id；寫回時重新讀最新檔再標記，不用掃描開始時的舊清單覆寫
     for (const n of list) {
       if (n.status !== 'active' || !n.dueAt) continue;
       const due = new Date(n.dueAt);
@@ -12852,9 +12940,14 @@ async function runNoteReminderScan() {
         text: n.text,
         workspaceLabel: wsLabel,
       });
-      if (ok) { n.remindedAt = now.toISOString(); changed = true; }
+      if (ok) reminded.push(n.id);
     }
-    if (changed) notesStore.writeNotes(HARNESS_HOME, list);
+    if (reminded.length) {
+      const stamp = now.toISOString();
+      await notesStore.updateNotes(HARNESS_HOME, latest => {
+        for (const n of latest) if (reminded.includes(n.id)) n.remindedAt = stamp;
+      });
+    }
   } catch (e) { console.error('[Notes] SN4 reminder scan error:', e.message); }
 }
 schedulerManager.setNoteReminderFn(runNoteReminderScan);
@@ -13547,6 +13640,8 @@ server.listen(PORT, BIND, () => {
   try { schedulerManager.flushPendingDeliveries(); } catch (e) { console.error('[Scheduler] flushPendingDeliveries error:', e.message); }
   // SCHED-DEPLOY Z4: recover a postRun deploy that was in flight when this process got replaced.
   try { reconcilePendingDeploy(); } catch (e) { console.error('[Deploy] reconcilePendingDeploy boot error:', e.message); }
+  // IDX-0 (SPEC-list-index.md §5.1): 開始接請求之後，背景核對每個已登錄工作區的清單目錄（對不上就重建）；不 await、不拖慢開機。
+  try { const reg = loadRegistry(); listIndex.verifyAllOnBoot([HARNESS_HOME].concat((reg.projects || []).map(p => p.root))).catch(e => console.error('[ListIndex] boot verify error:', e.message)); } catch (e) { console.error('[ListIndex] boot verify error:', e.message); }
   // Reconcile orphaned recordings: deploy restarts portal and orphans the meeting_record.py child.
   // Any meeting still showing status=recording at boot has no live proc → mark aborted.
   try {
@@ -13565,6 +13660,7 @@ server.listen(PORT, BIND, () => {
           if (meta && meta.status === 'recording') {
             const updated = Object.assign({}, meta, { status: 'aborted', finishedAt: now });
             fs.writeFileSync(metaPath, JSON.stringify(updated, null, 2), 'utf8');
+            meetingsIndex.syncDir(path.join(meetingsDir, id));
             console.log('[Meeting] boot reconcile: ' + id + ' marked aborted (orphaned on restart)');
           }
         } catch (e) {}

@@ -2655,10 +2655,14 @@
           const folderId = 'folder-' + item.path.replace(/\//g, '-');
           const childrenContainer = document.getElementById(folderId);
           if (!childrenContainer) return;
-          childrenContainer.classList.remove('hidden');
-          const arrow = document.getElementById('arrow-' + folderId);
-          if (arrow) arrow.style.transform = 'rotate(0deg)';
-          childrenContainer.scrollIntoView({ block: 'nearest' });
+          // IDX-TREE: folder children load lazily — open it through the folder button's own
+          // click handler (which fetches the level) instead of just un-hiding the container.
+          if (childrenContainer.classList.contains('hidden') && childrenContainer.previousElementSibling) {
+            Promise.resolve(childrenContainer.previousElementSibling.onclick && childrenContainer.previousElementSibling.onclick())
+              .then(() => childrenContainer.scrollIntoView({ block: 'nearest' }));
+          } else {
+            childrenContainer.scrollIntoView({ block: 'nearest' });
+          }
         });
       }
     }

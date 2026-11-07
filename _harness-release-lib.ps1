@@ -307,7 +307,9 @@ function Switch-LiveVersion {
     # might kill the port. The no-supervisor path hard-kills immediately (Stop-HarnessOnPort, no
     # graceful /api/restart) — this used to be the exact gap that lost a whole conversation turn.
     # Best-effort: 3s timeout, failure never blocks the deploy.
-    try { Invoke-RestMethod -Method Post -Uri ("http://localhost:{0}/api/chat/flush" -f $Port) -TimeoutSec 3 | Out-Null } catch { }
+    # The flush reply's `flushed` is also the number of RUNNING jobs (chat turns + scheduled runs).
+    $busy = 0
+    try { $fr = Invoke-RestMethod -Method Post -Uri ("http://localhost:{0}/api/chat/flush" -f $Port) -TimeoutSec 3; if ($fr -and $fr.flushed) { $busy = [int]$fr.flushed } } catch { }
     if (Test-SupervisorFlag) {
         # A supervisor OWNS the process. Just SIGNAL a restart — it relaunches current.json and has its
         # OWN crash-loop fallback to last-known-good. We do NOT poll-and-rollback here: that race (Deploy
@@ -324,7 +326,17 @@ function Switch-LiveVersion {
     # No supervisor: we own the process directly. If the old server CANNOT be stopped, do NOT launch
     # into a busy port (that produced a bogus "new version failed" + rollback). Return "BLOCKED" so the
     # caller can say exactly what is wrong, and leave production running whatever it is running.
+    # DEFER-NOSUP: never hard-kill :3400 while a job is running — when a chat turn ran this deploy, that
+    # killed the very server carrying the turn and its reply never came back. Hand the switch to a
+    # DETACHED waiter that goes live once the server is idle (the server-side deferred restart only
+    # exists when a supervisor owns the process). It re-reads current.json when it finally switches.
+    if ($busy -gt 0) {
+        $waiter = Join-Path $script:HarnessRoot "_harness-deferred-golive.ps1"
+        $exe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+        Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $waiter, "-Port", "$Port", "-HarnessHome", $HarnessHome) | Out-Null
+        return "DEFERRED"
+    }
     if (-not (Stop-HarnessOnPort $Port)) { return "BLOCKED" }
     Start-HarnessRelease -Version $Version -Port $Port -HarnessHome $HarnessHome | Out-Null
-    return (Test-HarnessHealth -Port $Port -TimeoutSec 25)
+    return (Test-HarnessHealth -Port $Port -TimeoutSec 90)
 }

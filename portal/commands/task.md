@@ -30,7 +30,13 @@ type: prompt
 - **⚠️ 別把「自己這筆 run」當成要讓路的並行任務（踩過的死結）**：走排程觸發時，這次執行本身就會被登記成一筆狀態 `running` 的 schedule run。若你在動手前去看排程清單／執行紀錄，會看到一筆「正在跑的同名任務」——**那就是你自己**，不是別人在做。**絕不可**因此判定「已經有排程在做了、我動手會衝突」而停下來問要不要等它／停它——那會導致「報成功卻零改動」。判斷是否真有並行衝突，只認**別的 `runId`**（狀態 running 且不是本次執行的那筆）；查不到別的，就正常往下做，不要自我讓路。
 
 ## 3. 自測
-- 平台 JS：`node --check`；前端 inline script 可用 `new Function()` 檢查；必要時本地手測。
+- 平台 JS：`node --check`；前端 inline script 可用 `new Function()` 檢查。**`node --check` 只查語法，不算驗證**（語法對、合起來一開機就當掉的錯它抓不到——IDX-ISS 就是這樣讓 v147／v148 部署失敗）。
+- **硬規則（隔離開機檢查）**：本次改動只要碰到 `portal/` 底下任何會被伺服器載入的 `.js`（`server.js` 及它 `require` 的模組），收尾前**必須**跑 `pwsh -File portal/checks/boot-smoke.ps1`（約 20 秒，用空資料目錄、埠 3398 隔離開機，不碰正式區）。
+  - **沒有印出 `BOOT-SMOKE PASS` 就不可把 `TASK.md` 的子項勾成 `[x]`**；先看它印出的 log 末段修到 PASS。
+  - 修不好 → 不勾，並在報告最後加 `<run-outcome status="blocked" reason="隔離開機失敗：<一句話>" />`，附 log 摘要。
+  - **報告裡必須寫出開機檢查結果那一行（`BOOT-SMOKE PASS` 或 `BOOT-SMOKE FAIL: …`）。**
+  - 不要為了測試自己另起第二顆完整 server（會跑排程、搶 Telegram bot、燒額度）；一律用這支腳本。
+- 必要時本地手測。
 - 內容（簡報等）：實際 render／播放確認、F12 console 乾淨。
 
 ## 4. 上線（僅平台程式需要）

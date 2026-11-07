@@ -7,6 +7,9 @@ const fs   = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { buildTimeline } = require('./issue-timeline');
+const listIndex = require('./list-index');   // SPEC-list-index.md §9.7（IDX-ISS）：清單目錄檔
+
+const fsp = fs.promises;
 
 const MAX_BODY_BYTES = 30 * 1024 * 1024;   // §5.4：單筆上限 30MB
 const TYPES = ['bug', 'feature'];
@@ -29,16 +32,35 @@ function readConfig(harnessHome) {
 function clipStr(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n) : s; }
 function arr(a, max) { return Array.isArray(a) ? a.slice(-max) : []; }
 
-// 搶下一個流水號並建好資料夾。回傳 { id, dir }。
+// ── 下一個編號：HARNESS_HOME/.harness/issues/next-id（不存在或壞掉時從 readdir 算一次）──
+function nextIdPath(harnessHome) { return path.join(issuesDir(harnessHome), 'next-id'); }
+function scanMaxId(root) {
+  let max = 0;
+  for (const n of fs.readdirSync(root)) { const v = /^\d+$/.test(n) ? parseInt(n, 10) : 0; if (v > max) max = v; }
+  return max;
+}
+function readNextId(harnessHome, root) {
+  try {
+    const v = parseInt(String(fs.readFileSync(nextIdPath(harnessHome), 'utf8')).trim(), 10);
+    if (isFinite(v) && v >= 1) return v;
+  } catch (e) {}
+  return scanMaxId(root) + 1;
+}
+function writeNextId(harnessHome, n) {
+  try { fs.writeFileSync(nextIdPath(harnessHome), String(n), 'utf8'); } catch (e) {}   // 失敗無妨：下次 EEXIST 會往後找、或重算
+}
+
+// 搶下一個流水號並建好資料夾。回傳 { id, dir }。仍用「非遞迴 mkdir」搶號，next-id 只是起點（跨行程安全不變）。
 function allocate(harnessHome) {
   const root = issuesDir(harnessHome);
   fs.mkdirSync(root, { recursive: true });
-  let max = 0;
-  for (const n of fs.readdirSync(root)) { const v = /^\d+$/.test(n) ? parseInt(n, 10) : 0; if (v > max) max = v; }
-  for (let id = max + 1; id < max + 1000; id++) {
-    const dir = path.join(root, String(id));
-    try { fs.mkdirSync(dir); return { id, dir }; }
-    catch (e) { if (e.code !== 'EEXIST') throw e; }
+  for (let round = 0; round < 2; round++) {
+    const start = round === 0 ? readNextId(harnessHome, root) : scanMaxId(root) + 1;   // 第二輪：next-id 落後太多，改用實際資料夾重算
+    for (let id = start; id < start + 1000; id++) {
+      const dir = path.join(root, String(id));
+      try { fs.mkdirSync(dir); writeNextId(harnessHome, id + 1); return { id, dir }; }
+      catch (e) { if (e.code !== 'EEXIST') throw e; }
+    }
   }
   throw new Error('cannot allocate issue id');
 }
@@ -98,6 +120,7 @@ function createIssue(harnessHome, payload, ctx) {
     catch (e) { tl = '# 問題單 #' + id + ' 時間軸\n\n（時間軸產生失敗：' + e.message + '；原始紀錄見 replay.json.gz）\n'; }
     fs.writeFileSync(path.join(dir, 'timeline.md'), tl, 'utf8');
     fs.writeFileSync(path.join(dir, 'issue.json'), JSON.stringify(issue, null, 2), 'utf8');
+    syncIndex(harnessHome, issue);   // 業務檔先寫成功，再更新目錄（不 await、不丟出）
     return issue;
   } catch (e) {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e2) {}   // 失敗不留半成品
@@ -109,6 +132,84 @@ function readIssue(harnessHome, id) {
   if (!/^\d+$/.test(String(id))) return null;
   try { return JSON.parse(fs.readFileSync(path.join(issuesDir(harnessHome), String(id), 'issue.json'), 'utf8')); }
   catch (e) { return null; }
+}
+
+// ── 清單目錄（IDX-ISS）──
+// 問題單是 D2 的刻意例外：所有工作區共用一份、前端清單本來就顯示全部（每筆自帶 workspace 欄位）。
+// 所以目錄只有「一份」，放在 harness home 名下：HARNESS_HOME/.harness/issues/index/<雜湊>/issues.json；
+// 已結案、不處理進 issues.archive.json。issue.json 才是真相，目錄只是快取。
+const ARCHIVED_STATUSES = ['已結案', '不處理'];
+const ALL_STATUSES = ['待處理', '處理中', '已修正待驗證', '已結案', '不處理'];
+
+// 清單 API 以前 map 出來的那些欄位（前端 portal/views/issues.js 只用這些）。
+function entryOf(i) {
+  return { id: i.id, type: i.type, title: i.title, status: i.status, workspace: i.workspace, route: i.route, view: i.view, version: i.version, createdAt: i.createdAt };
+}
+const byIdDesc = (a, b) => b.id - a.id;
+
+async function scanAll(harnessHome) {
+  let names = [];
+  try { names = (await fsp.readdir(issuesDir(harnessHome))).filter(n => /^\d+$/.test(n)); } catch (e) { return []; }
+  return listIndex.eachYield(names, async (n) => {
+    try { return entryOf(JSON.parse(await fsp.readFile(path.join(issuesDir(harnessHome), n, 'issue.json'), 'utf8'))); }
+    catch (e) { return undefined; }   // 壞檔／半成品資料夾略過（與舊的 readIssue 回 null 一致）
+  });
+}
+async function fingerprintIds(harnessHome) {
+  let names = [];
+  try { names = (await fsp.readdir(issuesDir(harnessHome))).filter(n => /^\d+$/.test(n)); } catch (e) {}
+  return listIndex.idSetFingerprint(names);
+}
+
+// 伺服器啟動時呼叫一次。其他工作區的路徑回 null（問題單只有 harness home 這一份目錄）。
+function registerIndex(harnessHome) {
+  const homeKey = listIndex.normalizeWorkspace(harnessHome);
+  listIndex.registerIndexKind('issues', (wsRoot) => {
+    if (listIndex.normalizeWorkspace(wsRoot) !== homeKey) return null;
+    const dir = listIndex.sharedIndexDirFor(issuesDir(harnessHome), harnessHome);
+    return listIndex.open({
+      kind: 'issues',
+      indexPath: path.join(dir, 'issues.json'),
+      archivePath: path.join(dir, 'issues.archive.json'),
+      workspace: harnessHome,
+      sort: byIdDesc,
+      isArchived: (e) => ARCHIVED_STATUSES.includes(e.status),
+      scanSource: () => scanAll(harnessHome),
+      fingerprintSource: () => fingerprintIds(harnessHome),
+    });
+  });
+}
+function handleFor(harnessHome) {
+  try { return listIndex.getIndex('issues', harnessHome); } catch (e) { return null; }
+}
+// issue.json 已寫成功之後呼叫；永不丟出，目錄失敗＝下次核對／重建補回。
+function syncIndex(harnessHome, issue) {
+  try {
+    const h = handleFor(harnessHome);
+    if (h && issue) h.upsert(entryOf(issue)).catch(() => {});
+  } catch (e) {}
+}
+
+// 清單用：一次請求只讀一次目錄（主＋歸檔），清單、待處理數、總數都從這份結果算。
+// 回 { items（新到舊，欄位同舊 API）, open, total, fallback }。目錄不可用時走非同步逐檔保底，fallback:true。
+// 歸檔也一併讀入：前端清單本來就含已結案／不處理（用狀態篩選器切換），不能讓畫面少東西。
+async function listIndexed(harnessHome, filter) {
+  const f = filter || {};
+  let all = null, fallback = false;
+  const h = handleFor(harnessHome);
+  if (h) {
+    try {
+      const m = await h.list();
+      if (!m.fallback) {
+        const a = await h.listArchived();
+        if (!a.fallback) { const seen = new Set(); all = m.items.concat(a.items).filter(i => !seen.has(i.id) && seen.add(i.id)).sort(byIdDesc); }   // 去重：正好遇到搬移（主→歸檔）的瞬間也不會重複
+      }
+    } catch (e) {}
+  }
+  if (!all) { fallback = true; all = (await scanAll(harnessHome)).sort(byIdDesc); }
+  const open = all.filter(i => OPEN_STATUSES.includes(i.status)).length;
+  const items = all.filter(i => (!f.status || i.status === f.status) && (!f.type || i.type === f.type));
+  return { items, open, total: all.length, fallback };
 }
 
 function listIssues(harnessHome, filter) {
@@ -169,11 +270,30 @@ function linkSession(harnessHome, id, sessionId, label) {
   if (!Array.isArray(it.linkedSessions)) it.linkedSessions = [];
   if (it.linkedSessions.some(s => s && s.sessionId === sid)) return it.linkedSessions;
   it.linkedSessions.push({ sessionId: sid, at: new Date().toISOString(), label: clipStr(label, 80) || null });
+  writeIssueFile(harnessHome, id, it);
+  syncIndex(harnessHome, it);
+  return it.linkedSessions;
+}
+
+function writeIssueFile(harnessHome, id, it) {
   const file = path.join(issuesDir(harnessHome), String(id), 'issue.json');
   const tmp = file + '.tmp-' + process.pid + '-' + Date.now();
   fs.writeFileSync(tmp, JSON.stringify(it, null, 2), 'utf8');
   fs.renameSync(tmp, file);   // 先寫暫存再改名，讀的人不會讀到寫一半的檔
-  return it.linkedSessions;
 }
 
-module.exports = { MAX_BODY_BYTES, DEFAULT_BUFFER_MINUTES, OPEN_STATUSES, issuesDir, readConfig, createIssue, readIssue, listIssues, readTimeline, countOpen, readReplayGz, resolveFile, linkSession };
+// 改狀態的唯一入口（目前沒有 UI／路由呼叫它；日後改狀態一律走這裡，才會同步目錄、並在已結案／不處理時搬進歸檔）。
+// 回更新後的問題單；找不到回 null；狀態不合法丟 400。
+function updateIssueStatus(harnessHome, id, status, by, note) {
+  if (!ALL_STATUSES.includes(status)) { const e = new Error('invalid status'); e.status = 400; throw e; }
+  const it = readIssue(harnessHome, id);
+  if (!it) return null;
+  if (!Array.isArray(it.history)) it.history = [];
+  it.history.push({ at: new Date().toISOString(), by: clipStr(by, 40) || 'commander', from: it.status, to: status, note: clipStr(note, 500) || null });
+  it.status = status;
+  writeIssueFile(harnessHome, id, it);
+  syncIndex(harnessHome, it);
+  return it;
+}
+
+module.exports = { MAX_BODY_BYTES, DEFAULT_BUFFER_MINUTES, OPEN_STATUSES, ALL_STATUSES, issuesDir, readConfig, createIssue, readIssue, listIssues, listIndexed, registerIndex, updateIssueStatus, readTimeline, countOpen, readReplayGz, resolveFile, linkSession };

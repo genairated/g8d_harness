@@ -4,6 +4,7 @@
 // Already git-ignored via the blanket `global-knowledge/` rule.
 const fs   = require('fs');
 const path = require('path');
+const listIndex = require('./list-index');
 
 function pmPath(harnessHome) {
   return path.join(harnessHome, 'global-knowledge', 'pm', 'pm.json');
@@ -27,10 +28,26 @@ function readPm(harnessHome) {
   } catch (e) { return { projects: [], tasks: [], resources: [] }; }
 }
 
-function writePm(harnessHome, data) {
+// 所有寫入一律走這裡（SPEC-list-index.md §9.11、D8）：同一份 pm.json 一條排隊，
+// 每次動作都是「讀最新 → 套用變更 → 暫存檔換名寫回」，連續快速拖動多個任務也不會互相覆蓋。
+// mutator(pm) 直接改 pm（projects／tasks／resources）後，回傳值原樣交回呼叫端；
+// mutator 丟錯 → 不寫檔、錯誤交回呼叫端（Promise reject）。
+const queues = new Map();   // pmPath → 排隊尾端 Promise
+function updatePm(harnessHome, mutator) {
   const p = pmPath(harnessHome);
-  try { fs.mkdirSync(path.dirname(p), { recursive: true }); } catch (e) {}
-  fs.writeFileSync(p, JSON.stringify(data, null, 2));
+  const prev = queues.get(p) || Promise.resolve();
+  const run = prev.then(async () => {
+    // 檔案存在但壞掉時不可當成空資料覆寫（readPm 為了讀取容錯會回空），直接拒絕寫入、保留原檔。
+    if (fs.existsSync(p)) { try { JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { throw new Error('pm.json 無法解析，已拒絕寫入：' + e.message); } }
+    const pm = readPm(harnessHome);
+    const ret = mutator(pm);
+    await listIndex.writeAtomic(p, JSON.stringify(pm, null, 2));
+    return ret;
+  });
+  const tail = run.catch(() => {});
+  queues.set(p, tail);
+  tail.then(() => { if (queues.get(p) === tail) queues.delete(p); });
+  return run;
 }
 
 function genProjectId() { return 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
@@ -200,7 +217,7 @@ function computeWorkload({ resources, tasks }, opts) {
 }
 
 module.exports = {
-  pmPath, readPm, writePm, genProjectId, genTaskId, genResourceId, normWs,
+  pmPath, readPm, updatePm, genProjectId, genTaskId, genResourceId, normWs,
   localDateStr, addDaysStr, wouldCycle, mondayStr, daysBetweenStr, computeWorkload,
   dayOfWeekStr, isWeekendStr, daysOffSetOf, isWorkdayStr, weekWorkdays, normalizeDaysOff,
 };

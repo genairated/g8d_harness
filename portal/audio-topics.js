@@ -6,11 +6,37 @@
 // visible from every workspace while a workspace topic must stay isolated. See SPEC-audio-topic.md §4.
 const fs = require('fs');
 const path = require('path');
+const listIndex = require('./list-index');
 
 // Whisper's real hard limit is ~224 tokens (half its 448-token text window) — see
 // global-knowledge/audio-topic-guide.md §1. Estimation is intentionally approximate (no tokenizer
 // dependency): ~1.5 "tokens" per CJK character, ~1 per whitespace-delimited latin word/number.
 const TOKEN_BUDGET = 224;
+
+
+// 寫入一律走共用模組（SPEC-list-index.md §9.14）：同一份檔一條排隊、暫存檔換名寫回。
+// 呼叫端（server.js）是「同步讀 → 改 → 呼叫 writeX」，寫檔改非同步後，下一個請求可能在換名前讀到舊檔；
+// 所以寫入當下先把最新內容放進 pending（同步），讀取先看 pending，寫完且沒被更新的才清掉——不會丟更新。
+// 不加目錄、不改檔案格式；檔案仍是真相。
+const pending = new Map();   // 檔案路徑 → 最新待寫內容（物件）
+const queues = new Map();    // 檔案路徑 → 排隊尾端 Promise
+function queuedWrite(p, data) {
+  pending.set(p, data);
+  try { fs.mkdirSync(path.dirname(p), { recursive: true }); } catch (e) {}   // 目錄先建好，免得共用模組當成「自己建的快取目錄」塞 .gitignore
+  const prev = queues.get(p) || Promise.resolve();
+  const run = prev.then(async () => {
+    const snap = pending.get(p);   // 合併：排到時寫當下最新版；前面的一輪已寫掉就略過
+    if (snap === undefined) return;
+    try { await listIndex.writeAtomic(p, JSON.stringify(snap, null, 2)); }
+    catch (e) { console.warn('[audio-topics] 寫入失敗 ' + p + ': ' + (e && e.message || e)); }
+    if (pending.get(p) === snap) pending.delete(p);
+  });
+  const tail = run.catch(() => {});
+  queues.set(p, tail);
+  tail.then(() => { if (queues.get(p) === tail) queues.delete(p); });
+  return run;
+}
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
 function globalTopicsPath(harnessHome) {
   return path.join(harnessHome, 'global-knowledge', 'audio-topics.json');
@@ -21,6 +47,7 @@ function workspaceTopicsPath(workspaceRoot) {
 
 function readGlobal(harnessHome) {
   const p = globalTopicsPath(harnessHome);
+  if (pending.has(p)) { const d = clone(pending.get(p)); return { topics: Array.isArray(d.topics) ? d.topics : [] }; }
   try {
     if (!fs.existsSync(p)) {
       fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -32,12 +59,12 @@ function readGlobal(harnessHome) {
 }
 function writeGlobal(harnessHome, data) {
   const p = globalTopicsPath(harnessHome);
-  try { fs.mkdirSync(path.dirname(p), { recursive: true }); } catch (e) {}
-  fs.writeFileSync(p, JSON.stringify({ topics: data.topics || [] }, null, 2));
+  return queuedWrite(p, clone({ topics: data.topics || [] }));
 }
 
 function readWorkspace(workspaceRoot) {
   const p = workspaceTopicsPath(workspaceRoot);
+  if (pending.has(p)) { const d = clone(pending.get(p)); return { defaultTopicId: d.defaultTopicId || null, topics: Array.isArray(d.topics) ? d.topics : [] }; }
   try {
     if (!fs.existsSync(p)) {
       fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -49,8 +76,7 @@ function readWorkspace(workspaceRoot) {
 }
 function writeWorkspace(workspaceRoot, data) {
   const p = workspaceTopicsPath(workspaceRoot);
-  try { fs.mkdirSync(path.dirname(p), { recursive: true }); } catch (e) {}
-  fs.writeFileSync(p, JSON.stringify({ defaultTopicId: data.defaultTopicId || null, topics: data.topics || [] }, null, 2));
+  return queuedWrite(p, clone({ defaultTopicId: data.defaultTopicId || null, topics: data.topics || [] }));
 }
 
 // Same normalisation convention used everywhere else workspace isolation is enforced

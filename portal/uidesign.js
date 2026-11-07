@@ -9,6 +9,7 @@
 //   components/<id>.css  — 元件樣式
 const fs = require('fs');
 const path = require('path');
+const listIndex = require('./list-index'); // IDX-UID: SPEC-list-index.md 9.13 — 四份目錄一律經共用模組讀寫
 
 function uidesignDir(root) { return path.join(root, '.harness', 'uidesign'); }
 function libraryPath(root) { return path.join(uidesignDir(root), 'library.json'); }
@@ -43,17 +44,26 @@ function defaultTokens() {
 }
 
 // 已存在則不覆寫（D12/UID-01）：只在目錄/檔案缺席時建立種子。
+// IDX-UID：種子檢查每個工作區、每種資料「第一次讀時做一次」（記憶體記住已做過），之後不再 existsSync。
+// 目錄檔（index.json）不再由種子建立——缺檔由共用模組走保底掃描並背景重建。
+const seeded = new Set();
+function seedKey(kind, root) { return kind + '|' + listIndex.normalizeWorkspace(root); }
+function seedOnce(kind, root, fn) {
+  const k = seedKey(kind, root);
+  if (seeded.has(k)) return;
+  fn();
+  seeded.add(k); // fn 丟錯就不記住，下次再試
+}
+
 function ensureSeed(root) {
   const dir = uidesignDir(root);
-  try { fs.mkdirSync(componentsDir(root), { recursive: true }); } catch (e) {}
-  const libP = libraryPath(root);
-  if (!fs.existsSync(libP)) {
-    fs.writeFileSync(libP, JSON.stringify({ tokens: defaultTokens(), createdAt: new Date().toISOString() }, null, 2));
-  }
-  const idxP = indexPath(root);
-  if (!fs.existsSync(idxP)) {
-    fs.writeFileSync(idxP, JSON.stringify([], null, 2));
-  }
+  seedOnce('lib', root, () => {
+    try { fs.mkdirSync(componentsDir(root), { recursive: true }); } catch (e) {}
+    const libP = libraryPath(root);
+    if (!fs.existsSync(libP)) {
+      fs.writeFileSync(libP, JSON.stringify({ tokens: defaultTokens(), createdAt: new Date().toISOString() }, null, 2));
+    }
+  });
   return dir;
 }
 
@@ -71,18 +81,107 @@ function writeLibrary(root, lib) {
   fs.writeFileSync(libraryPath(root), JSON.stringify(lib, null, 2));
 }
 
-function readIndex(root) {
-  ensureSeed(root);
+// ── 四份清單目錄（IDX-UID）────────────────────────────────────────────────────
+// 位置不變：components → uidesign/index.json、screens/templates/flows → 各自資料夾的 index.json。
+// 內容改為共用模組格式 { schema, kind, items:[…] }；舊版純陣列檔會被視為「壞檔」→ 第一次清單走保底掃描、
+// 背景重建一次（每個工作區升級後只發生一次）。實際檔案才是真相，目錄壞了／刪了都能重建。
+// 同步讀（readIndex 等）只留給「頭像對話脈絡」「刪畫面前的引用檢查」這類不方便 await 的地方：
+// 直接讀目錄檔、相容兩種格式、不做種子檢查、不寫任何東西。清單 API 請用 listComponents 等非同步版。
+function readIndexFile(p) {
   try {
-    const data = JSON.parse(fs.readFileSync(indexPath(root), 'utf8'));
-    return Array.isArray(data) ? data : [];
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (Array.isArray(data)) return data;
+    return data && Array.isArray(data.items) ? data.items : [];
   } catch (e) { return []; }
 }
 
-function writeIndex(root, list) {
-  try { fs.mkdirSync(uidesignDir(root), { recursive: true }); } catch (e) {}
-  fs.writeFileSync(indexPath(root), JSON.stringify(list, null, 2));
+// 每種清單項目的欄位（清單回應與改前一致；重建與寫入共用同一個函式，避免兩邊欄位漂移）。
+function componentMeta(c) {
+  return { id: c.id, name: c.name, category: c.category, description: c.description, updatedAt: c.updatedAt };
 }
+function screenMeta(s) {
+  return { id: s.id, name: s.name, device: s.device, frame: s.frame, unit: s.unit, scale: s.scale, updatedAt: s.updatedAt };
+}
+function templateMeta(t) {
+  return { id: t.id, name: t.name, deviceGroup: t.deviceGroup, device: t.device, tags: t.tags, source: t.source, updatedAt: t.updatedAt, thumbnail: t.thumbnail };
+}
+function flowMeta(f) {
+  return { id: f.id, name: f.name, description: f.description, device: f.device, stepCount: Array.isArray(f.steps) ? f.steps.length : 0, updatedAt: f.updatedAt };
+}
+
+// 列出某資料夾下的 <id>.json 的 id（排除 index.json）；只列檔名、不開檔（核對用，§5.2）。
+async function jsonIdsIn(dir) {
+  try {
+    return (await fs.promises.readdir(dir, { withFileTypes: true }))
+      .filter(d => d.isFile() && /\.json$/.test(d.name) && d.name !== 'index.json')
+      .map(d => d.name.slice(0, -5));
+  } catch (_) { return []; }
+}
+
+// 從實際檔案掃出清單欄位（依建立時間排序，與新增時「推到最後」的順序一致）；非同步、每 50 筆讓出。
+async function scanKind(dir, toMeta) {
+  const ids = await jsonIdsIn(dir);
+  const rows = await listIndex.eachYield(ids, async (id) => {
+    let obj;
+    try { obj = JSON.parse(await fs.promises.readFile(path.join(dir, id + '.json'), 'utf8')); } catch (_) { return undefined; }
+    if (!obj || typeof obj !== 'object') return undefined;
+    const meta = toMeta(Object.assign({}, obj, { id }));
+    return { id, at: String(obj.createdAt || obj.updatedAt || ''), meta };
+  });
+  return rows.filter(Boolean)
+    .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
+    .map(r => r.meta);
+}
+
+const KIND_DEFS = {
+  'ui-components': { dir: componentsDir, file: indexPath, meta: componentMeta },
+  'ui-screens': { dir: screensDir, file: screensIndexPath, meta: screenMeta },
+  'ui-templates': { dir: templatesDir, file: templatesIndexPath, meta: templateMeta },
+  'ui-flows': { dir: flowsDir, file: flowsIndexPath, meta: flowMeta },
+};
+
+function getIdx(kind, root) {
+  const def = KIND_DEFS[kind];
+  if (!def || !root) return null;
+  return listIndex.open({
+    kind,
+    indexPath: def.file(root),
+    workspace: root,
+    scanSource: () => scanKind(def.dir(root), def.meta),
+    fingerprintSource: async () => listIndex.idSetFingerprint(await jsonIdsIn(def.dir(root))),
+  });
+}
+
+// 清單：先讀目錄；目錄缺／壞就直接掃實際檔案（保底，模組已排重建），回 { items, fallback }。
+async function listKind(kind, root) {
+  const def = KIND_DEFS[kind];
+  const r = await getIdx(kind, root).list();
+  if (!r.fallback) return r;
+  if (!fs.existsSync(def.dir(root))) return { items: [], fallback: true };
+  return { items: await scanKind(def.dir(root), def.meta), fallback: true };
+}
+// 新增／更新一筆目錄（實際檔案要先寫成功再呼叫）。永不丟出。
+async function upsertKind(kind, root, obj) {
+  const idx = getIdx(kind, root);
+  if (!idx) return { ok: false };
+  return idx.upsert(KIND_DEFS[kind].meta(obj));
+}
+async function removeKind(kind, root, id) {
+  const idx = getIdx(kind, root);
+  if (!idx) return { ok: false };
+  return idx.remove(id);
+}
+
+// 登錄成目錄的四種 kind：開機核對、POST /api/index/rebuild、GET /api/index/status 才管得到。
+function registerIndexKind() {
+  for (const kind of Object.keys(KIND_DEFS)) {
+    listIndex.registerIndexKind(kind, (wsRoot) => (fs.existsSync(KIND_DEFS[kind].dir(wsRoot)) ? getIdx(kind, wsRoot) : null));
+  }
+}
+
+function readIndex(root) { return readIndexFile(indexPath(root)); }
+async function listComponents(root) { ensureSeed(root); return listKind('ui-components', root); }
+function upsertComponent(root, component) { return upsertKind('ui-components', root, component); }
 
 function readComponent(root, id) {
   const metaP = componentMetaPath(root, id);
@@ -103,12 +202,11 @@ function writeComponent(root, id, component) {
   fs.writeFileSync(componentCssPath(root, id), css || '');
 }
 
-function deleteComponent(root, id) {
+async function deleteComponent(root, id) {
   for (const p of [componentMetaPath(root, id), componentHtmlPath(root, id), componentCssPath(root, id)]) {
     try { fs.unlinkSync(p); } catch (e) {}
   }
-  const list = readIndex(root).filter(c => c.id !== id);
-  writeIndex(root, list);
+  return removeKind('ui-components', root, id);
 }
 
 function genComponentId() { return 'uic_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
@@ -179,24 +277,13 @@ function deleteCustomDevice(root, id) {
 
 function ensureScreenSeed(root) {
   const dir = screensDir(root);
-  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
-  const idxP = screensIndexPath(root);
-  if (!fs.existsSync(idxP)) fs.writeFileSync(idxP, JSON.stringify([], null, 2));
+  seedOnce('screens', root, () => { try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {} });
   return dir;
 }
 
-function readScreenIndex(root) {
-  ensureScreenSeed(root);
-  try {
-    const data = JSON.parse(fs.readFileSync(screensIndexPath(root), 'utf8'));
-    return Array.isArray(data) ? data : [];
-  } catch (e) { return []; }
-}
-
-function writeScreenIndex(root, list) {
-  try { fs.mkdirSync(screensDir(root), { recursive: true }); } catch (e) {}
-  fs.writeFileSync(screensIndexPath(root), JSON.stringify(list, null, 2));
-}
+function readScreenIndex(root) { return readIndexFile(screensIndexPath(root)); }
+async function listScreens(root) { ensureScreenSeed(root); return listKind('ui-screens', root); }
+function upsertScreen(root, screen) { return upsertKind('ui-screens', root, screen); }
 
 function readScreen(root, id) {
   const p = screenPath(root, id);
@@ -209,10 +296,9 @@ function writeScreen(root, id, screen) {
   fs.writeFileSync(screenPath(root, id), JSON.stringify(screen, null, 2));
 }
 
-function deleteScreen(root, id) {
+async function deleteScreen(root, id) {
   try { fs.unlinkSync(screenPath(root, id)); } catch (e) {}
-  const list = readScreenIndex(root).filter(s => s.id !== id);
-  writeScreenIndex(root, list);
+  return removeKind('ui-screens', root, id);
 }
 
 function genScreenId() { return 'uis_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
@@ -545,65 +631,48 @@ function genThumbnailSvg(frame, elements) {
 }
 
 // 已存在則不覆寫（D12 種子原則）：判斷單位是「id 是否已存在」——指揮官改過名字/內容也不會被種回去。
+// IDX-UID：每個工作區只做一次（記在記憶體）；同一時間的多個呼叫共用同一個 Promise。
+// 缺的種子檔照舊逐一補、不覆寫已存在的；補出來的項目用共用模組 upsert 進目錄（不再整份覆寫）。
+const templateSeedRuns = new Map();
 function ensureTemplatesSeed(root) {
+  const k = seedKey('templates', root);
+  if (seeded.has(k)) return Promise.resolve(templatesDir(root));
+  if (templateSeedRuns.has(k)) return templateSeedRuns.get(k);
+  const p = seedTemplatesNow(root).then(
+    (dir) => { seeded.add(k); templateSeedRuns.delete(k); return dir; },
+    (e) => { templateSeedRuns.delete(k); throw e; });
+  templateSeedRuns.set(k, p);
+  return p;
+}
+
+async function seedTemplatesNow(root) {
   ensureSeed(root); // 骨架佔位元件要寫進元件庫，先確保元件庫目錄存在
   const dir = templatesDir(root);
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
 
   // 1) 骨架佔位元件：逐一檢查，缺哪個補哪個，不動已存在的（含指揮官自己改過的同名 id）。
-  const compIndex = readIndex(root);
-  const compIndexIds = new Set(compIndex.map(c => c.id));
-  let compIndexChanged = false;
   for (const def of PLACEHOLDER_COMPONENTS) {
     if (fs.existsSync(componentMetaPath(root, def.id))) continue;
     const now = new Date().toISOString();
     const { id, ...meta } = def;
     writeComponent(root, id, Object.assign({}, meta, { createdAt: now, updatedAt: now }));
-    if (!compIndexIds.has(id)) {
-      compIndex.push({ id, name: def.name, category: def.category, description: def.description, updatedAt: now });
-      compIndexIds.add(id);
-      compIndexChanged = true;
-    }
+    await upsertComponent(root, { id, name: def.name, category: def.category, description: def.description, updatedAt: now });
   }
-  if (compIndexChanged) writeIndex(root, compIndex);
 
   // 2) 範本索引：沒有就建空的；骨架範本逐一檢查缺哪個補哪個（同樣不覆寫既有檔）。
-  const idxP = templatesIndexPath(root);
-  let tplIndex = [];
-  if (fs.existsSync(idxP)) {
-    try { tplIndex = JSON.parse(fs.readFileSync(idxP, 'utf8')); if (!Array.isArray(tplIndex)) tplIndex = []; } catch (e) { tplIndex = []; }
-  }
-  const tplIds = new Set(tplIndex.map(t => t.id));
-  let tplIndexChanged = false;
   for (const def of seedTemplateDefs()) {
     if (fs.existsSync(templatePath(root, def.id))) continue;
     const now = new Date().toISOString();
     const template = Object.assign({}, def, { source: 'seed', createdAt: now, updatedAt: now, thumbnail: genThumbnailSvg(def.frame, def.elements) });
     fs.writeFileSync(templatePath(root, def.id), JSON.stringify(template, null, 2));
-    if (!tplIds.has(def.id)) {
-      tplIndex.push({ id: def.id, name: template.name, deviceGroup: template.deviceGroup, device: template.device, tags: template.tags, source: 'seed', updatedAt: now, thumbnail: template.thumbnail });
-      tplIds.add(def.id);
-      tplIndexChanged = true;
-    }
+    await upsertTemplate(root, template);
   }
-  if (tplIndexChanged || !fs.existsSync(idxP)) writeTemplateIndexRaw(root, tplIndex);
   return dir;
 }
 
-function writeTemplateIndexRaw(root, list) {
-  try { fs.mkdirSync(templatesDir(root), { recursive: true }); } catch (e) {}
-  fs.writeFileSync(templatesIndexPath(root), JSON.stringify(list, null, 2));
-}
-
-function readTemplateIndex(root) {
-  ensureTemplatesSeed(root);
-  try {
-    const data = JSON.parse(fs.readFileSync(templatesIndexPath(root), 'utf8'));
-    return Array.isArray(data) ? data : [];
-  } catch (e) { return []; }
-}
-
-function writeTemplateIndex(root, list) { writeTemplateIndexRaw(root, list); }
+function readTemplateIndex(root) { return readIndexFile(templatesIndexPath(root)); }
+async function listTemplates(root) { await ensureTemplatesSeed(root); return listKind('ui-templates', root); }
+function upsertTemplate(root, template) { return upsertKind('ui-templates', root, template); }
 
 function readTemplate(root, id) {
   const p = templatePath(root, id);
@@ -616,10 +685,9 @@ function writeTemplate(root, id, template) {
   fs.writeFileSync(templatePath(root, id), JSON.stringify(template, null, 2));
 }
 
-function deleteTemplate(root, id) {
+async function deleteTemplate(root, id) {
   try { fs.unlinkSync(templatePath(root, id)); } catch (e) {}
-  const list = readTemplateIndex(root).filter(t => t.id !== id);
-  writeTemplateIndex(root, list);
+  return removeKind('ui-templates', root, id);
 }
 
 function genTemplateId() { return 'uit_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
@@ -850,24 +918,13 @@ function flowPath(root, id) { return path.join(flowsDir(root), id + '.json'); }
 
 function ensureFlowSeed(root) {
   const dir = flowsDir(root);
-  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
-  const idxP = flowsIndexPath(root);
-  if (!fs.existsSync(idxP)) fs.writeFileSync(idxP, JSON.stringify([], null, 2));
+  seedOnce('flows', root, () => { try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {} });
   return dir;
 }
 
-function readFlowIndex(root) {
-  ensureFlowSeed(root);
-  try {
-    const data = JSON.parse(fs.readFileSync(flowsIndexPath(root), 'utf8'));
-    return Array.isArray(data) ? data : [];
-  } catch (e) { return []; }
-}
-
-function writeFlowIndex(root, list) {
-  try { fs.mkdirSync(flowsDir(root), { recursive: true }); } catch (e) {}
-  fs.writeFileSync(flowsIndexPath(root), JSON.stringify(list, null, 2));
-}
+function readFlowIndex(root) { return readIndexFile(flowsIndexPath(root)); }
+async function listFlows(root) { ensureFlowSeed(root); return listKind('ui-flows', root); }
+function upsertFlow(root, flow) { return upsertKind('ui-flows', root, flow); }
 
 function readFlow(root, id) {
   const p = flowPath(root, id);
@@ -884,10 +941,9 @@ function writeFlow(root, id, flow) {
   fs.writeFileSync(flowPath(root, id), JSON.stringify(flow, null, 2));
 }
 
-function deleteFlow(root, id) {
+async function deleteFlow(root, id) {
   try { fs.unlinkSync(flowPath(root, id)); } catch (e) {}
-  const list = readFlowIndex(root).filter(f => f.id !== id);
-  writeFlowIndex(root, list);
+  return removeKind('ui-flows', root, id);
 }
 
 function genFlowId() { return 'uif_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
@@ -1197,14 +1253,15 @@ module.exports = {
   uidesignDir, libraryPath, indexPath, componentsDir,
   defaultTokens, ensureSeed,
   readLibrary, writeLibrary,
-  readIndex, writeIndex,
+  readIndex, listComponents, upsertComponent, registerIndexKind,
+  componentMeta, screenMeta, templateMeta, flowMeta, getIdx,
   readComponent, writeComponent, deleteComponent,
   genComponentId,
   // UID2
   DEVICE_PRESETS, screensDir, screensIndexPath, screenPath,
   customDevicesPath, readCustomDevices, writeCustomDevices,
   listDevices, findDevice, addCustomDevice, deleteCustomDevice,
-  ensureScreenSeed, readScreenIndex, writeScreenIndex,
+  ensureScreenSeed, readScreenIndex, listScreens, upsertScreen,
   readScreen, writeScreen, deleteScreen, genScreenId,
   // UID6
   guidelineDir, guidelineMdPath, decisionsPath,
@@ -1212,7 +1269,7 @@ module.exports = {
   readGuidelineMd, writeGuidelineMd, readDecisions, writeDecisions,
   // UID5
   templatesDir, templatesIndexPath, templatePath, PLACEHOLDER_COMPONENTS,
-  ensureTemplatesSeed, readTemplateIndex, writeTemplateIndex,
+  ensureTemplatesSeed, readTemplateIndex, listTemplates, upsertTemplate,
   readTemplate, writeTemplate, deleteTemplate, genTemplateId,
   genThumbnailSvg, deviceGroupOf,
   // UID9
@@ -1223,7 +1280,7 @@ module.exports = {
   screenRevisionsDir, saveScreenRevision, listScreenRevisions, readScreenRevision,
   // UID12
   flowsDir, flowsIndexPath, flowPath, ensureFlowSeed,
-  readFlowIndex, writeFlowIndex, readFlow, writeFlow, deleteFlow, genFlowId,
+  readFlowIndex, listFlows, upsertFlow, readFlow, writeFlow, deleteFlow, genFlowId,
   findScreenUsageInFlows,
   // UID13
   exportsDir, exportFlowDir, computeFlowExport, writeFlowExport

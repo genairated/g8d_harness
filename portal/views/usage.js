@@ -67,12 +67,16 @@ let _scheduleNameMap = new Map();   // scheduleId -> 排程名稱
 let _chatTitleMap = new Map();      // sessionId -> 對話標題
 function shortCode(id) { return String(id || '').slice(-6) || '??????'; }
 async function loadNameMaps() {
-  const [schedules, chatHistories] = await Promise.all([
+  // IDX-SCH：/api/schedules 預設只回現役；歷史排程的用量也要解析得出名稱，所以再帶 ?archived=1 取歸檔清單（只有 id/名稱要用）。
+  const [schedules, archivedSchedules, chatHistories] = await Promise.all([
     fetchJson('/api/schedules'),
+    fetchJson('/api/schedules?archived=1'),
     fetchJson('/api/chat/history'),
   ]);
   _scheduleNameMap = new Map();
-  (Array.isArray(schedules) ? schedules : []).forEach((s) => { if (s && s.id) _scheduleNameMap.set(s.id, s.name || null); });
+  [schedules, archivedSchedules].forEach((arr) => {
+    (Array.isArray(arr) ? arr : []).forEach((s) => { if (s && s.id) _scheduleNameMap.set(s.id, s.name || null); });
+  });
   _chatTitleMap = new Map();
   (Array.isArray(chatHistories) ? chatHistories : []).forEach((h) => { if (h && h.sessionId) _chatTitleMap.set(h.sessionId, h.title || null); });
 }
